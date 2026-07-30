@@ -1,26 +1,263 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+* {
+  box-sizing: border-box;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: #eef2f5;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  margin: 0;
+  min-height: 100vh;
+  color: #17202a;
+  background:
+    radial-gradient(circle at top, #dbe8ef 0, transparent 38%),
+    #eef2f5;
   font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.launcher-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 24px;
+  border: 1px solid #d8e0e5;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 18px 55px rgba(28, 43, 54, 0.12);
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 16px;
+  color: #ffffff;
+  background: #176b87;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: #176b87;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.15;
+}
+
+.date-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 24px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #f1f6f8;
+}
+
+.date-panel span {
+  color: #66747e;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.date-panel strong {
+  font-size: 16px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  color: #33434d;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1px solid #cbd6dc;
+  border-radius: 12px;
+  outline: none;
+  color: #17202a;
+  background: #ffffff;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: #176b87;
+  box-shadow: 0 0 0 3px rgba(23, 107, 135, 0.12);
+}
+
+.primary-button {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 24px;
+  border: 0;
+  border-radius: 14px;
+  color: #ffffff;
+  background: #176b87;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primary-button:hover {
+  background: #125970;
+}
+
+.primary-button:active {
+  transform: translateY(1px);
+}
+
+.autosave-note {
+  margin: 14px 0 0;
+  color: #6d7b84;
+  font-size: 13px;
+  text-align: center;
+}
+
+.timeline {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.timeline-card {
+  display: flex;
+  gap: 18px;
+  padding: 18px;
+  border-radius: 18px;
+  background: white;
+  border: 1px solid #dde4e8;
+}
+
+.timeline-time {
+  width: 60px;
+  font-weight: 700;
+  color: #176b87;
+}
+
+.timeline-body {
+  flex: 1;
+}
+
+.timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.timeline-icon {
+  font-size: 22px;
+}
+
+.timeline-subtitle {
+  margin: 8px 0 0;
+  color: #60707b;
+}
+
+.app-layout {
+  min-height: 100vh;
+  padding-bottom: 78px;
+}
+
+.bottom-nav {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  min-height: 72px;
+  border-top: 1px solid #d8e0e5;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+}
+
+.bottom-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  color: #75838c;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.bottom-nav-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.bottom-nav-item.active {
+  color: #176b87;
+}
+
+@media (max-width: 480px) {
+  .app-shell {
+    padding: 0;
+  }
+
+  .launcher-card {
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+@media (min-width: 481px) {
+  .bottom-nav {
+    right: 50%;
+    left: auto;
+    width: 440px;
+    transform: translateX(50%);
+    border-right: 1px solid #d8e0e5;
+    border-left: 1px solid #d8e0e5;
+    border-radius: 18px 18px 0 0;
+  }
 }
