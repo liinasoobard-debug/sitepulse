@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { operatives } from "@/lib/operatives";
-import { loadDay, saveDay } from "@/lib/storage";
+import {
+  loadDay,
+  loadOperatives,
+  saveDay,
+} from "@/lib/storage";
 import type {
   AttendanceRecord,
   Crew,
+  Operative,
   SiteDay,
   TimelineEvent,
 } from "@/types/site";
@@ -19,6 +23,19 @@ function getTodayDate(): string {
 
 function getDefaultGangName(index: number): string {
   return `Gang ${String.fromCharCode(65 + index)}`;
+}
+
+function createCrewId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `crew-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 9)}`;
 }
 
 function normaliseAttendance(
@@ -50,12 +67,15 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
 }
 
 export default function CrewsPage() {
+  const [operatives, setOperatives] = useState<Operative[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [crews, setCrews] = useState<Crew[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
+    setOperatives(loadOperatives());
+
     const savedDay = loadDay() as SiteDay | null;
 
     if (savedDay) {
@@ -102,7 +122,7 @@ export default function CrewsPage() {
     return operatives.filter((operative) =>
       signedInIds.has(String(operative.id))
     );
-  }, [attendance]);
+  }, [attendance, operatives]);
 
   const operativeGangMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -116,9 +136,13 @@ export default function CrewsPage() {
     return map;
   }, [crews]);
 
-  const unassignedOperatives = signedInOperatives.filter(
-    (operative) =>
-      !operativeGangMap.has(String(operative.id))
+  const unassignedOperatives = useMemo(
+    () =>
+      signedInOperatives.filter(
+        (operative) =>
+          !operativeGangMap.has(String(operative.id))
+      ),
+    [operativeGangMap, signedInOperatives]
   );
 
   function addGang() {
@@ -127,7 +151,7 @@ export default function CrewsPage() {
     }
 
     const newCrew: Crew = {
-      id: crypto.randomUUID(),
+      id: createCrewId(),
       name: getDefaultGangName(crews.length),
       operativeIds: [],
     };
@@ -156,7 +180,9 @@ export default function CrewsPage() {
       const isAlreadyInSelectedCrew = current.some(
         (crew) =>
           crew.id === selectedCrewId &&
-          crew.operativeIds.includes(operativeId)
+          crew.operativeIds.some(
+            (id) => String(id) === String(operativeId)
+          )
       );
 
       return current.map((crew) => {
@@ -200,19 +226,21 @@ export default function CrewsPage() {
     );
   }
 
-  const today = new Date().toLocaleDateString("en-GB", {
+  const today = new Intl.DateTimeFormat("en-GB", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
-  });
+  }).format(new Date());
 
   return (
     <main className="timeline-page">
       <section className="timeline-panel">
         <header className="timeline-header">
           <div>
-            <p className="eyebrow">{today}</p>
+            <p className="eyebrow" suppressHydrationWarning>
+              {today}
+            </p>
             <h1>Gang Setup</h1>
           </div>
 
@@ -271,7 +299,7 @@ export default function CrewsPage() {
           </div>
         </section>
 
-        {signedInOperatives.length === 0 && (
+        {operatives.length === 0 && (
           <section
             style={{
               marginBottom: 20,
@@ -281,16 +309,35 @@ export default function CrewsPage() {
               background: "#f7f9fa",
             }}
           >
-            <strong>
-              No operatives are currently signed in.
-            </strong>
+            <strong>No operatives have been added.</strong>
 
             <p style={{ margin: "8px 0 0" }}>
-              Go to Attendance and sign operatives in before
-              assigning them to gangs.
+              Go to Attendance and add or import operatives first.
             </p>
           </section>
         )}
+
+        {operatives.length > 0 &&
+          signedInOperatives.length === 0 && (
+            <section
+              style={{
+                marginBottom: 20,
+                padding: 20,
+                border: "1px solid #d7dde3",
+                borderRadius: 16,
+                background: "#f7f9fa",
+              }}
+            >
+              <strong>
+                No operatives are currently signed in.
+              </strong>
+
+              <p style={{ margin: "8px 0 0" }}>
+                Go to Attendance and sign operatives in before
+                assigning them to gangs.
+              </p>
+            </section>
+          )}
 
         {unassignedOperatives.length > 0 && (
           <section
@@ -425,13 +472,10 @@ export default function CrewsPage() {
                 >
                   {signedInOperatives.map((operative) => {
                     const operativeId = String(operative.id);
-
                     const assignedGangId =
                       operativeGangMap.get(operativeId);
-
                     const isSelected =
                       assignedGangId === crew.id;
-
                     const assignedGang = crews.find(
                       (item) =>
                         item.id === assignedGangId
@@ -484,6 +528,7 @@ export default function CrewsPage() {
                               fontSize: 13,
                             }}
                           >
+                            {operative.company} ·{" "}
                             {operative.position}
                           </span>
 
