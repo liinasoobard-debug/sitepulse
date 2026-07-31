@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import AddActivityModal from "@/components/AddActivityModal";
-import { loadDay, saveDay } from "@/lib/storage";
+import { loadActivities, loadDay, saveDay } from "@/lib/storage";
 import type {
+  Activity,
   AttendanceRecord,
   Crew,
   SiteDay,
@@ -42,9 +43,7 @@ function getTodayDate(): string {
 function normaliseAttendance(
   records: AttendanceRecord[] | undefined
 ): AttendanceRecord[] {
-  if (!Array.isArray(records)) {
-    return [];
-  }
+  if (!Array.isArray(records)) return [];
 
   return records.map((record) => ({
     operativeId: String(record.operativeId),
@@ -54,9 +53,7 @@ function normaliseAttendance(
 }
 
 function normaliseCrews(records: Crew[] | undefined): Crew[] {
-  if (!Array.isArray(records)) {
-    return [];
-  }
+  if (!Array.isArray(records)) return [];
 
   return records.map((crew) => ({
     id: String(crew.id),
@@ -78,12 +75,11 @@ function normaliseEvents(
   return sourceEvents.map((record) => ({
     ...record,
     id: String(record.id),
-    crewId: record.crewId
-      ? String(record.crewId)
+    crewId: record.crewId ? String(record.crewId) : undefined,
+    activityId: record.activityId
+      ? String(record.activityId)
       : undefined,
-    affectedOperativeIds: Array.isArray(
-      record.affectedOperativeIds
-    )
+    affectedOperativeIds: Array.isArray(record.affectedOperativeIds)
       ? record.affectedOperativeIds.map(String)
       : undefined,
     type:
@@ -94,30 +90,17 @@ function normaliseEvents(
 }
 
 function getEventLabel(type: TimelineEvent["type"]): string {
-  if (type === "work") {
-    return "Productive";
-  }
-
-  if (type === "disruption") {
-    return "Disruption";
-  }
-
-  if (type === "variation") {
-    return "Variation";
-  }
-
+  if (type === "work") return "Productive";
+  if (type === "disruption") return "Disruption";
+  if (type === "variation") return "Variation";
   return "Break";
 }
 
 export default function TimelinePage() {
-  const [events, setEvents] =
-    useState<TimelineEvent[]>(startingEvents);
-
-  const [attendance, setAttendance] =
-    useState<AttendanceRecord[]>([]);
-
+  const [events, setEvents] = useState<TimelineEvent[]>(startingEvents);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [crews, setCrews] = useState<Crew[]>([]);
-
   const [showModal, setShowModal] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [today, setToday] = useState("Today");
@@ -131,13 +114,13 @@ export default function TimelinePage() {
       })
     );
 
+    setActivities(loadActivities());
+
     const savedDay = loadDay() as SiteDay | null;
 
     if (savedDay) {
       setEvents(normaliseEvents(savedDay.events));
-      setAttendance(
-        normaliseAttendance(savedDay.attendance)
-      );
+      setAttendance(normaliseAttendance(savedDay.attendance));
       setCrews(normaliseCrews(savedDay.crews));
     }
 
@@ -145,9 +128,7 @@ export default function TimelinePage() {
   }, []);
 
   useEffect(() => {
-    if (!hasLoaded) {
-      return;
-    }
+    if (!hasLoaded) return;
 
     const existingDay = loadDay() as SiteDay | null;
 
@@ -170,7 +151,11 @@ export default function TimelinePage() {
   function addSiteRecord(record: NewSiteRecord) {
     const newEvent: TimelineEvent = {
       ...record,
-      id: crypto.randomUUID(),
+      id:
+        typeof crypto !== "undefined" &&
+        typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `event-${Date.now()}`,
     };
 
     setEvents((current) =>
@@ -183,15 +168,23 @@ export default function TimelinePage() {
   }
 
   function getCrewName(crewId?: string): string | null {
-    if (!crewId) {
-      return null;
-    }
+    if (!crewId) return null;
 
     const crew = crews.find(
       (item) => String(item.id) === String(crewId)
     );
 
     return crew?.name ?? "Unknown Gang";
+  }
+
+  function getActivity(activityId?: string): Activity | null {
+    if (!activityId) return null;
+
+    return (
+      activities.find(
+        (activity) => String(activity.id) === String(activityId)
+      ) ?? null
+    );
   }
 
   const onSiteCount = attendance.filter(
@@ -219,10 +212,11 @@ export default function TimelinePage() {
               flexWrap: "wrap",
             }}
           >
-            <Link
-              href="/crews"
-              className="secondary-button"
-            >
+            <Link href="/activities" className="secondary-button">
+              Activities
+            </Link>
+
+            <Link href="/crews" className="secondary-button">
               Gangs
             </Link>
 
@@ -236,17 +230,12 @@ export default function TimelinePage() {
         <div className="timeline-list">
           {sortedEvents.map((event, index) => {
             const crewName = getCrewName(event.crewId);
+            const activity = getActivity(event.activityId);
 
             return (
-              <article
-                key={event.id}
-                className="timeline-row"
-              >
+              <article key={event.id} className="timeline-row">
                 <div className="timeline-marker-column">
-                  <div
-                    className={`timeline-marker ${event.type}`}
-                  />
-
+                  <div className={`timeline-marker ${event.type}`} />
                   {index < sortedEvents.length - 1 && (
                     <div className="timeline-line" />
                   )}
@@ -254,7 +243,6 @@ export default function TimelinePage() {
 
                 <div className="timeline-time">
                   <span>{event.time}</span>
-
                   {event.endTime && (
                     <span className="timeline-end-time">
                       {event.endTime}
@@ -262,9 +250,7 @@ export default function TimelinePage() {
                   )}
                 </div>
 
-                <div
-                  className={`event-card ${event.type}`}
-                >
+                <div className={`event-card ${event.type}`}>
                   <div className="event-card-top">
                     <div>
                       {crewName && (
@@ -282,7 +268,6 @@ export default function TimelinePage() {
                           {crewName}
                         </span>
                       )}
-
                       <strong>{event.title}</strong>
                     </div>
 
@@ -291,21 +276,66 @@ export default function TimelinePage() {
                     </span>
                   </div>
 
+                  {activity && (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        marginTop: 10,
+                      }}
+                    >
+                      <span
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: "#eef2f5",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {activity.code}
+                      </span>
+
+                      {activity.location && (
+                        <span
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: "#eef2f5",
+                            fontSize: 12,
+                          }}
+                        >
+                          {activity.location}
+                        </span>
+                      )}
+
+                      {typeof event.quantity === "number" && (
+                        <span
+                          style={{
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: "#eef8f2",
+                            fontSize: 12,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {event.quantity} {event.unit || activity.unit}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {event.reason && (
-                    <p className="event-reason">
-                      {event.reason}
-                    </p>
+                    <p className="event-reason">{event.reason}</p>
                   )}
 
                   {event.notes && (
-                    <p className="event-notes">
-                      {event.notes}
-                    </p>
+                    <p className="event-notes">{event.notes}</p>
                   )}
 
                   {event.type === "disruption" &&
-                    typeof event.lostLabourHours ===
-                      "number" && (
+                    typeof event.lostLabourHours === "number" && (
                       <div
                         style={{
                           marginTop: 10,
@@ -313,8 +343,7 @@ export default function TimelinePage() {
                           fontWeight: 700,
                         }}
                       >
-                        Lost labour:{" "}
-                        {event.lostLabourHours.toFixed(2)} hours
+                        Lost labour: {event.lostLabourHours.toFixed(2)} hours
                       </div>
                     )}
 
@@ -341,29 +370,18 @@ export default function TimelinePage() {
         <button
           type="button"
           className="attendance-card"
-          onClick={() =>
-            window.location.assign("/attendance")
-          }
+          onClick={() => window.location.assign("/attendance")}
         >
-          <span className="attendance-card-icon">
-            👷
-          </span>
-
+          <span className="attendance-card-icon">👷</span>
           <span className="attendance-card-content">
             <strong>Attendance</strong>
-            <span>
-              View or record site attendance
-            </span>
+            <span>View or record site attendance</span>
           </span>
-
           <span className="attendance-card-count">
             {onSiteCount}
             <span>on site</span>
           </span>
-
-          <span className="attendance-card-arrow">
-            ›
-          </span>
+          <span className="attendance-card-arrow">›</span>
         </button>
 
         {showModal && (

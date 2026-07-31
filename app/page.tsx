@@ -30,6 +30,15 @@ export default function HomePage() {
             <span className="attendance-card-arrow">›</span>
           </Link>
 
+          <Link href="/activities" className="attendance-card">
+            <span className="attendance-card-icon">📋</span>
+            <span className="attendance-card-content">
+              <strong>Activities</strong>
+              <span>Add planned work activities and quantities</span>
+            </span>
+            <span className="attendance-card-arrow">›</span>
+          </Link>
+
           <Link href="/timeline" className="attendance-card">
             <span className="attendance-card-icon">🕒</span>
             <span className="attendance-card-content">
@@ -39,22 +48,6 @@ export default function HomePage() {
             <span className="attendance-card-arrow">›</span>
           </Link>
         </div>
-
-        <section
-          style={{
-            marginTop: 22,
-            padding: 18,
-            border: "1px solid #d7dde3",
-            borderRadius: 16,
-            background: "#f7f9fa",
-          }}
-        >
-          <strong>Project-based records are now active.</strong>
-          <p style={{ margin: "8px 0 0" }}>
-            Use the project selector at the top of the screen. Attendance,
-            gangs and timeline records are stored separately for each selected project.
-          </p>
-        </section>
       </section>
     </main>
   );

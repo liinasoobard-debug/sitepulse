@@ -33,9 +33,20 @@ export interface Crew {
   operativeIds: string[];
 }
 
+export interface Activity {
+  id: string;
+  code: string;
+  description: string;
+  location: string;
+  unit: string;
+  plannedQuantity: number;
+  createdAt: string;
+}
+
 export interface TimelineEvent {
   id: string;
   crewId?: string;
+  activityId?: string;
   time: string;
   endTime?: string;
   status?: "active" | "completed";
@@ -43,6 +54,9 @@ export interface TimelineEvent {
   type: SiteRecordType;
   reason?: string;
   notes?: string;
+  location?: string;
+  unit?: string;
+  quantity?: number;
   affectedOperativeIds?: string[];
   lostLabourHours?: number;
   labourCost?: number;
