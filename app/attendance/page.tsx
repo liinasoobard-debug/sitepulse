@@ -113,6 +113,7 @@ export default function AttendancePage() {
   const [newPosition, setNewPosition] = useState("");
   const [newHourlyRate, setNewHourlyRate] = useState("");
   const [formError, setFormError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     setOperatives(loadOperatives());
@@ -149,7 +150,21 @@ export default function AttendancePage() {
   }, [attendance, events, hasLoaded]);
 
   const attendanceRows = useMemo(() => {
-    return operatives.map((operative) => {
+    const search = searchTerm.trim().toLowerCase();
+
+    const filteredOperatives = search
+      ? operatives.filter((operative) =>
+          [
+            operative.name,
+            operative.company,
+            operative.position,
+          ].some((value) =>
+            value.toLowerCase().includes(search)
+          )
+        )
+      : operatives;
+
+    return filteredOperatives.map((operative) => {
       const record = attendance.find(
         (item) =>
           String(item.operativeId) === String(operative.id)
@@ -169,7 +184,7 @@ export default function AttendancePage() {
         cost,
       };
     });
-  }, [attendance, operatives]);
+  }, [attendance, operatives, searchTerm]);
 
   const totals = useMemo(() => {
     return attendanceRows.reduce(
@@ -327,11 +342,11 @@ export default function AttendancePage() {
   }
 
   const today = new Intl.DateTimeFormat("en-GB", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-}).format(new Date());
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
 
   return (
     <main className="timeline-page">
@@ -339,8 +354,8 @@ export default function AttendancePage() {
         <header className="timeline-header">
           <div>
             <p className="eyebrow" suppressHydrationWarning>
-  {today}
-</p>
+              {today}
+            </p>
             <h1>Attendance</h1>
           </div>
 
@@ -575,6 +590,35 @@ export default function AttendancePage() {
           </div>
         </section>
 
+        <div style={{ marginBottom: 16 }}>
+          <label
+            htmlFor="operative-search"
+            style={{
+              display: "block",
+              marginBottom: 6,
+              fontWeight: 600,
+            }}
+          >
+            Search operatives
+          </label>
+
+          <input
+            id="operative-search"
+            type="search"
+            value={searchTerm}
+            onChange={(event) =>
+              setSearchTerm(event.target.value)
+            }
+            placeholder="Search by name, company or trade..."
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              minHeight: 42,
+              padding: "8px 10px",
+            }}
+          />
+        </div>
+
         <div className="attendance-table-wrapper">
           <table className="attendance-table">
             <thead>
@@ -592,109 +636,100 @@ export default function AttendancePage() {
             </thead>
 
             <tbody>
-              {attendanceRows.map(
-                ({
-                  operative,
-                  record,
-                  hours,
-                  cost,
-                }) => (
-                  <tr key={operative.id}>
-                    <td>{operative.company}</td>
+              {attendanceRows.length > 0 ? (
+                attendanceRows.map(
+                  ({ operative, record, hours, cost }) => (
+                    <tr key={operative.id}>
+                      <td>{operative.company}</td>
 
-                    <td>
-                      <strong>{operative.name}</strong>
-                    </td>
+                      <td>
+                        <strong>{operative.name}</strong>
+                      </td>
 
-                    <td>{operative.position}</td>
+                      <td>{operative.position}</td>
 
-                    <td>
-                      <div className="attendance-time-control">
-                        <input
-                          type="time"
-                          value={record?.signIn ?? ""}
-                          onChange={(event) =>
-                            updateAttendance(
-                              operative,
-                              "signIn",
-                              event.target.value
-                            )
-                          }
-                          aria-label={`Sign in time for ${operative.name}`}
-                        />
-
-                        {!record?.signIn && (
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() =>
-                              signInNow(operative)
+                      <td>
+                        <div className="attendance-time-control">
+                          <input
+                            type="time"
+                            value={record?.signIn ?? ""}
+                            onChange={(event) =>
+                              updateAttendance(
+                                operative,
+                                "signIn",
+                                event.target.value
+                              )
                             }
-                          >
-                            Now
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                            aria-label={`Sign in time for ${operative.name}`}
+                          />
 
-                    <td>
-                      <div className="attendance-time-control">
-                        <input
-                          type="time"
-                          value={record?.signOut ?? ""}
-                          onChange={(event) =>
-                            updateAttendance(
-                              operative,
-                              "signOut",
-                              event.target.value
-                            )
-                          }
-                          aria-label={`Sign out time for ${operative.name}`}
-                        />
-
-                        {record?.signIn &&
-                          !record?.signOut && (
+                          {!record?.signIn && (
                             <button
                               type="button"
                               className="secondary-button"
-                              onClick={() =>
-                                signOutNow(operative)
-                              }
+                              onClick={() => signInNow(operative)}
                             >
                               Now
                             </button>
                           )}
-                      </div>
-                    </td>
+                        </div>
+                      </td>
 
-                    <td>{formatHours(hours)}</td>
+                      <td>
+                        <div className="attendance-time-control">
+                          <input
+                            type="time"
+                            value={record?.signOut ?? ""}
+                            onChange={(event) =>
+                              updateAttendance(
+                                operative,
+                                "signOut",
+                                event.target.value
+                              )
+                            }
+                            aria-label={`Sign out time for ${operative.name}`}
+                          />
 
-                    <td>
-                      {formatCurrency(
-                        operative.hourlyRate
-                      )}
-                    </td>
+                          {record?.signIn && !record?.signOut && (
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => signOutNow(operative)}
+                            >
+                              Now
+                            </button>
+                          )}
+                        </div>
+                      </td>
 
-                    <td>{formatCurrency(cost)}</td>
+                      <td>{formatHours(hours)}</td>
 
-                    <td>
-                      {(record?.signIn ||
-                        record?.signOut) && (
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() =>
-                            clearRecord(
-                              String(operative.id)
-                            )
-                          }
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                      <td>{formatCurrency(operative.hourlyRate)}</td>
+
+                      <td>{formatCurrency(cost)}</td>
+
+                      <td>
+                        {(record?.signIn || record?.signOut) && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() =>
+                              clearRecord(String(operative.id))
+                            }
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
                 )
+              ) : (
+                <tr>
+                  <td colSpan={9}>
+                    No operatives match your search.
+                  </td>
+                </tr>
               )}
             </tbody>
 
