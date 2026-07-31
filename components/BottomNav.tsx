@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/", label: "Home", icon: "⌂" },
+  { href: "/attendance", label: "Attendance", icon: "👷" },
+  { href: "/crews", label: "Gangs", icon: "👥" },
   { href: "/timeline", label: "Timeline", icon: "◷" },
-  { href: "/camera", label: "Camera", icon: "◉" },
   { href: "/reports", label: "Reports", icon: "▤" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
@@ -17,10 +17,7 @@ export default function BottomNav() {
   return (
     <nav className="bottom-nav" aria-label="Main navigation">
       {items.map((item) => {
-        const isActive =
-          item.href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(item.href);
+        const isActive = pathname.startsWith(item.href);
 
         return (
           <Link

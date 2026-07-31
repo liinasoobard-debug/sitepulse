@@ -1,91 +1,110 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import AddActivityModal from "@/components/AddActivityModal";
+export default function DailyLauncher() {
+  const router = useRouter();
 
-type Event = {
+  const [project, setProject] = useState("HVB");
+  const [building, setBuilding] = useState("HVB");
+  const [workArea, setWorkArea] = useState("South Elevation");
+  const [shift, setShift] = useState("Day");
 
-  id: number;
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
-  time: string;
+  function openTimeline() {
+    localStorage.setItem(
+      "sitepulse-selection",
+      JSON.stringify({
+        project,
+        building,
+        workArea,
+        shift,
+      })
+    );
 
-  activity: string;
-
-  reason?: string;
-
-};
-
-export default function TimelinePage() {
-
-  const [events, setEvents] = useState<Event[]>([
-
-    {
-
-      id: 1,
-
-      time: "08:00",
-
-      activity: "Signed In",
-
-    },
-
-  ]);
-
-  const [showModal, setShowModal] = useState(false);
-function addActivity(activity: string) {
-
-  setEvents([
-
-    ...events,
-
-    {
-
-      id: Date.now(),
-
-      time: new Date().toLocaleTimeString([], {
-
-        hour: "2-digit",
-
-        minute: "2-digit",
-
-      }),
-
-      activity,
-
-    },
-
-  ]);
-
-  setShowModal(false);
-
-}
+    router.push("/timeline");
+  }
 
   return (
-    <main className="app-shell">
-      <section className="launcher-card">
-        <h1>Today's Timeline</h1>
+    <main className="launcher-page">
+      <section className="launcher-panel">
+        <div className="launcher-header">
+          <p className="eyebrow">{today}</p>
+          <h1>SitePulse</h1>
+          <p className="launcher-description">
+            Select today&apos;s working location to open the site timeline.
+          </p>
+        </div>
 
-        {events.map((event) => (
-          <div key={event.id} className="timeline-item">
-            <div className="time">{event.time}</div>
+        <div className="launcher-fields">
+          <label className="attendance-field">
+            <span>Project</span>
 
-            <div className="content">
-              <strong>{event.activity}</strong>
+            <select
+              value={project}
+              onChange={(event) => setProject(event.target.value)}
+            >
+              <option value="HVB">HVB</option>
+              <option value="HBX">HBX</option>
+              <option value="HZN">HZN</option>
+            </select>
+          </label>
 
-              {event.reason && <p>{event.reason}</p>}
-            </div>
-          </div>
-        ))}
+          <label className="attendance-field">
+            <span>Building</span>
+
+            <select
+              value={building}
+              onChange={(event) => setBuilding(event.target.value)}
+            >
+              <option value="HVB">HVB</option>
+              <option value="HBX">HBX</option>
+              <option value="HZN">HZN</option>
+            </select>
+          </label>
+
+          <label className="attendance-field">
+            <span>Work area</span>
+
+            <select
+              value={workArea}
+              onChange={(event) => setWorkArea(event.target.value)}
+            >
+              <option value="South Elevation">South Elevation</option>
+              <option value="North Elevation">North Elevation</option>
+              <option value="East Elevation">East Elevation</option>
+              <option value="West Elevation">West Elevation</option>
+            </select>
+          </label>
+
+          <label className="attendance-field">
+            <span>Shift</span>
+
+            <select
+              value={shift}
+              onChange={(event) => setShift(event.target.value)}
+            >
+              <option value="Day">Day</option>
+              <option value="Night">Night</option>
+              <option value="Weekend">Weekend</option>
+            </select>
+          </label>
+        </div>
 
         <button
-  className="primary-button"
-  onClick={() => setShowModal(true)}
->{showModal && (
-  <AddActivityModal onAdd={addActivity} />
-)}
-  + Add Activity
-</button>
+          type="button"
+          className="add-event-button"
+          onClick={openTimeline}
+        >
+          Open Today&apos;s Timeline
+        </button>
       </section>
     </main>
   );

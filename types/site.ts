@@ -1,0 +1,56 @@
+export interface Operative {
+  id: string;
+  company: string;
+  name: string;
+  position: string;
+  hourlyRate: number;
+}
+
+export interface AttendanceRecord {
+  operativeId: string;
+  signIn?: string;
+  signOut?: string;
+}
+
+export type SiteRecordType =
+  | "work"
+  | "disruption"
+  | "variation"
+  | "break";
+
+export interface Crew {
+  id: string;
+  name: string;
+  operativeIds: string[];
+}
+
+export interface TimelineEvent {
+  id: string;
+
+  crewId?: string;
+
+  time: string;
+  endTime?: string;
+  status?: "active" | "completed";
+
+  title: string;
+  type: SiteRecordType;
+
+  reason?: string;
+  notes?: string;
+
+  affectedOperativeIds?: string[];
+  lostLabourHours?: number;
+  labourCost?: number;
+
+  photoIds?: string[];
+  drawingReference?: string;
+  instructionReference?: string;
+}
+
+export interface SiteDay {
+  date: string;
+  attendance: AttendanceRecord[];
+  crews?: Crew[];
+  events: TimelineEvent[];
+}

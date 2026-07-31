@@ -53,7 +53,9 @@ function normaliseAttendance(
   }));
 }
 
-function normaliseCrews(records: Crew[] | undefined): Crew[] {
+function normaliseCrews(
+  records: Crew[] | undefined
+): Crew[] {
   if (!Array.isArray(records)) {
     return [];
   }
@@ -70,30 +72,31 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
 function normaliseEvents(
   records: TimelineEvent[] | undefined
 ): TimelineEvent[] {
-  const sourceEvents =
-    Array.isArray(records) && records.length > 0
-      ? records
-      : startingEvents;
+  if (!Array.isArray(records)) {
+    return startingEvents;
+  }
 
-  return sourceEvents.map((record) => ({
-    ...record,
-    id: String(record.id),
-    crewId: record.crewId
-      ? String(record.crewId)
-      : undefined,
-    affectedOperativeIds: Array.isArray(
-      record.affectedOperativeIds
-    )
-      ? record.affectedOperativeIds.map(String)
+  return records.map((event) => ({
+    ...event,
+    id: String(event.id),
+    crewId: event.crewId
+      ? String(event.crewId)
       : undefined,
     type:
-      (record.type as string) === "delay"
+      (event.type as string) === "delay"
         ? "disruption"
-        : record.type,
+        : event.type,
+    affectedOperativeIds: Array.isArray(
+      event.affectedOperativeIds
+    )
+      ? event.affectedOperativeIds.map(String)
+      : undefined,
   }));
 }
 
-function getEventLabel(type: TimelineEvent["type"]): string {
+function getEventLabel(
+  type: TimelineEvent["type"]
+): string {
   if (type === "work") {
     return "Productive";
   }
@@ -109,36 +112,37 @@ function getEventLabel(type: TimelineEvent["type"]): string {
   return "Break";
 }
 
-export default function TimelinePage() {
+export default function SignInPage() {
   const [events, setEvents] =
     useState<TimelineEvent[]>(startingEvents);
 
   const [attendance, setAttendance] =
     useState<AttendanceRecord[]>([]);
 
-  const [crews, setCrews] = useState<Crew[]>([]);
+  const [crews, setCrews] =
+    useState<Crew[]>([]);
 
-  const [showModal, setShowModal] = useState(false);
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [today, setToday] = useState("Today");
+  const [showModal, setShowModal] =
+    useState(false);
+
+  const [hasLoaded, setHasLoaded] =
+    useState(false);
 
   useEffect(() => {
-    setToday(
-      new Date().toLocaleDateString("en-GB", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      })
-    );
-
     const savedDay = loadDay() as SiteDay | null;
 
     if (savedDay) {
-      setEvents(normaliseEvents(savedDay.events));
+      setEvents(
+        normaliseEvents(savedDay.events)
+      );
+
       setAttendance(
         normaliseAttendance(savedDay.attendance)
       );
-      setCrews(normaliseCrews(savedDay.crews));
+
+      setCrews(
+        normaliseCrews(savedDay.crews)
+      );
     }
 
     setHasLoaded(true);
@@ -149,7 +153,8 @@ export default function TimelinePage() {
       return;
     }
 
-    const existingDay = loadDay() as SiteDay | null;
+    const existingDay =
+      loadDay() as SiteDay | null;
 
     const updatedDay: SiteDay = {
       ...(existingDay ?? {
@@ -165,9 +170,16 @@ export default function TimelinePage() {
     };
 
     saveDay(updatedDay);
-  }, [events, attendance, crews, hasLoaded]);
+  }, [
+    attendance,
+    crews,
+    events,
+    hasLoaded,
+  ]);
 
-  function addSiteRecord(record: NewSiteRecord) {
+  function addActivity(
+    record: NewSiteRecord
+  ) {
     const newEvent: TimelineEvent = {
       ...record,
       id: crypto.randomUUID(),
@@ -182,33 +194,38 @@ export default function TimelinePage() {
     setShowModal(false);
   }
 
-  function getCrewName(crewId?: string): string | null {
-    if (!crewId) {
-      return null;
-    }
-
-    const crew = crews.find(
-      (item) => String(item.id) === String(crewId)
-    );
-
-    return crew?.name ?? "Unknown Gang";
-  }
-
   const onSiteCount = attendance.filter(
-    (record) => record.signIn && !record.signOut
+    (record) =>
+      record.signIn && !record.signOut
   ).length;
 
-  const sortedEvents = [...events].sort((a, b) =>
-    a.time.localeCompare(b.time)
+  const sortedEvents = [...events].sort(
+    (a, b) =>
+      a.time.localeCompare(b.time)
   );
+
+  const today =
+    new Date().toLocaleDateString(
+      "en-GB",
+      {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }
+    );
 
   return (
     <main className="timeline-page">
       <section className="timeline-panel">
         <header className="timeline-header">
           <div>
-            <p className="eyebrow">{today}</p>
-            <h1>Today&apos;s Timeline</h1>
+            <p className="eyebrow">
+              {today}
+            </p>
+
+            <h1>
+              Today&apos;s Timeline
+            </h1>
           </div>
 
           <div
@@ -219,6 +236,13 @@ export default function TimelinePage() {
               flexWrap: "wrap",
             }}
           >
+            <Link
+              href="/attendance"
+              className="secondary-button"
+            >
+              Attendance
+            </Link>
+
             <Link
               href="/crews"
               className="secondary-button"
@@ -234,10 +258,8 @@ export default function TimelinePage() {
         </header>
 
         <div className="timeline-list">
-          {sortedEvents.map((event, index) => {
-            const crewName = getCrewName(event.crewId);
-
-            return (
+          {sortedEvents.map(
+            (event, index) => (
               <article
                 key={event.id}
                 className="timeline-row"
@@ -247,7 +269,9 @@ export default function TimelinePage() {
                     className={`timeline-marker ${event.type}`}
                   />
 
-                  {index < sortedEvents.length - 1 && (
+                  {index <
+                    sortedEvents.length -
+                      1 && (
                     <div className="timeline-line" />
                   )}
                 </div>
@@ -266,28 +290,14 @@ export default function TimelinePage() {
                   className={`event-card ${event.type}`}
                 >
                   <div className="event-card-top">
-                    <div>
-                      {crewName && (
-                        <span
-                          style={{
-                            display: "block",
-                            marginBottom: 4,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: "#5f6b76",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.04em",
-                          }}
-                        >
-                          {crewName}
-                        </span>
-                      )}
-
-                      <strong>{event.title}</strong>
-                    </div>
+                    <strong>
+                      {event.title}
+                    </strong>
 
                     <span className="event-label">
-                      {getEventLabel(event.type)}
+                      {getEventLabel(
+                        event.type
+                      )}
                     </span>
                   </div>
 
@@ -303,56 +313,46 @@ export default function TimelinePage() {
                     </p>
                   )}
 
-                  {event.type === "disruption" &&
-                    typeof event.lostLabourHours ===
-                      "number" && (
-                      <div
-                        style={{
-                          marginTop: 10,
-                          fontSize: 13,
-                          fontWeight: 700,
-                        }}
-                      >
-                        Lost labour:{" "}
-                        {event.lostLabourHours.toFixed(2)} hours
-                      </div>
-                    )}
-
-                  {event.type === "variation" && (
+                  {event.type ===
+                    "variation" && (
                     <div className="event-evidence-status">
-                      Photo or markup can be added
+                      Photo or markup can be
+                      added
                     </div>
                   )}
                 </div>
               </article>
-            );
-          })}
+            )
+          )}
         </div>
 
         <button
           type="button"
           className="add-event-button"
-          onClick={() => setShowModal(true)}
+          onClick={() =>
+            setShowModal(true)
+          }
         >
           <span>+</span>
           Add Site Record
         </button>
 
-        <button
-          type="button"
+        <Link
+          href="/attendance"
           className="attendance-card"
-          onClick={() =>
-            window.location.assign("/attendance")
-          }
         >
           <span className="attendance-card-icon">
             👷
           </span>
 
           <span className="attendance-card-content">
-            <strong>Attendance</strong>
+            <strong>
+              Attendance
+            </strong>
+
             <span>
-              View or record site attendance
+              View who is on site or
+              record attendance
             </span>
           </span>
 
@@ -364,12 +364,14 @@ export default function TimelinePage() {
           <span className="attendance-card-arrow">
             ›
           </span>
-        </button>
+        </Link>
 
         {showModal && (
           <AddActivityModal
-            onAdd={addSiteRecord}
-            onClose={() => setShowModal(false)}
+            onAdd={addActivity}
+            onClose={() =>
+              setShowModal(false)
+            }
           />
         )}
       </section>

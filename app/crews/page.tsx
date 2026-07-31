@@ -1,0 +1,542 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { operatives } from "@/lib/operatives";
+import { loadDay, saveDay } from "@/lib/storage";
+import type {
+  AttendanceRecord,
+  Crew,
+  SiteDay,
+  TimelineEvent,
+} from "@/types/site";
+
+const MAX_GANGS = 10;
+
+function getTodayDate(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getDefaultGangName(index: number): string {
+  return `Gang ${String.fromCharCode(65 + index)}`;
+}
+
+function normaliseAttendance(
+  records: AttendanceRecord[] | undefined
+): AttendanceRecord[] {
+  if (!Array.isArray(records)) {
+    return [];
+  }
+
+  return records.map((record) => ({
+    operativeId: String(record.operativeId),
+    signIn: record.signIn ?? "",
+    signOut: record.signOut ?? "",
+  }));
+}
+
+function normaliseCrews(records: Crew[] | undefined): Crew[] {
+  if (!Array.isArray(records)) {
+    return [];
+  }
+
+  return records.map((crew) => ({
+    id: String(crew.id),
+    name: crew.name || "Unnamed Gang",
+    operativeIds: Array.isArray(crew.operativeIds)
+      ? crew.operativeIds.map(String)
+      : [],
+  }));
+}
+
+export default function CrewsPage() {
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [crews, setCrews] = useState<Crew[]>([]);
+  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  useEffect(() => {
+    const savedDay = loadDay() as SiteDay | null;
+
+    if (savedDay) {
+      setAttendance(normaliseAttendance(savedDay.attendance));
+      setCrews(normaliseCrews(savedDay.crews));
+      setEvents(
+        Array.isArray(savedDay.events) ? savedDay.events : []
+      );
+    }
+
+    setHasLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoaded) {
+      return;
+    }
+
+    const existingDay = loadDay() as SiteDay | null;
+
+    const updatedDay: SiteDay = {
+      ...(existingDay ?? {
+        date: getTodayDate(),
+        attendance: [],
+        crews: [],
+        events: [],
+      }),
+      date: getTodayDate(),
+      attendance,
+      crews,
+      events,
+    };
+
+    saveDay(updatedDay);
+  }, [attendance, crews, events, hasLoaded]);
+
+  const signedInOperatives = useMemo(() => {
+    const signedInIds = new Set(
+      attendance
+        .filter((record) => record.signIn && !record.signOut)
+        .map((record) => String(record.operativeId))
+    );
+
+    return operatives.filter((operative) =>
+      signedInIds.has(String(operative.id))
+    );
+  }, [attendance]);
+
+  const operativeGangMap = useMemo(() => {
+    const map = new Map<string, string>();
+
+    crews.forEach((crew) => {
+      crew.operativeIds.forEach((operativeId) => {
+        map.set(String(operativeId), String(crew.id));
+      });
+    });
+
+    return map;
+  }, [crews]);
+
+  const unassignedOperatives = signedInOperatives.filter(
+    (operative) =>
+      !operativeGangMap.has(String(operative.id))
+  );
+
+  function addGang() {
+    if (crews.length >= MAX_GANGS) {
+      return;
+    }
+
+    const newCrew: Crew = {
+      id: crypto.randomUUID(),
+      name: getDefaultGangName(crews.length),
+      operativeIds: [],
+    };
+
+    setCrews((current) => [...current, newCrew]);
+  }
+
+  function updateGangName(crewId: string, name: string) {
+    setCrews((current) =>
+      current.map((crew) =>
+        crew.id === crewId
+          ? {
+              ...crew,
+              name,
+            }
+          : crew
+      )
+    );
+  }
+
+  function toggleOperative(
+    selectedCrewId: string,
+    operativeId: string
+  ) {
+    setCrews((current) => {
+      const isAlreadyInSelectedCrew = current.some(
+        (crew) =>
+          crew.id === selectedCrewId &&
+          crew.operativeIds.includes(operativeId)
+      );
+
+      return current.map((crew) => {
+        const withoutOperative = crew.operativeIds.filter(
+          (id) => String(id) !== String(operativeId)
+        );
+
+        if (
+          crew.id === selectedCrewId &&
+          !isAlreadyInSelectedCrew
+        ) {
+          return {
+            ...crew,
+            operativeIds: [...withoutOperative, operativeId],
+          };
+        }
+
+        return {
+          ...crew,
+          operativeIds: withoutOperative,
+        };
+      });
+    });
+  }
+
+  function deleteGang(crewId: string) {
+    const crewHasEvents = events.some(
+      (event) => String(event.crewId) === String(crewId)
+    );
+
+    if (crewHasEvents) {
+      window.alert(
+        "This gang already has site records and cannot be deleted."
+      );
+
+      return;
+    }
+
+    setCrews((current) =>
+      current.filter((crew) => crew.id !== crewId)
+    );
+  }
+
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <main className="timeline-page">
+      <section className="timeline-panel">
+        <header className="timeline-header">
+          <div>
+            <p className="eyebrow">{today}</p>
+            <h1>Gang Setup</h1>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <Link
+              href="/attendance"
+              className="secondary-button"
+            >
+              Attendance
+            </Link>
+
+            <Link
+              href="/timeline"
+              className="secondary-button"
+            >
+              Timeline
+            </Link>
+          </div>
+        </header>
+
+        <section className="attendance-summary">
+          <div>
+            <span className="attendance-summary-number">
+              {crews.length}
+            </span>
+
+            <span className="attendance-summary-label">
+              Active gangs
+            </span>
+          </div>
+
+          <div>
+            <span className="attendance-summary-number">
+              {operativeGangMap.size}
+            </span>
+
+            <span className="attendance-summary-label">
+              Assigned operatives
+            </span>
+          </div>
+
+          <div>
+            <span className="attendance-summary-number">
+              {unassignedOperatives.length}
+            </span>
+
+            <span className="attendance-summary-label">
+              Unassigned on site
+            </span>
+          </div>
+        </section>
+
+        {signedInOperatives.length === 0 && (
+          <section
+            style={{
+              marginBottom: 20,
+              padding: 20,
+              border: "1px solid #d7dde3",
+              borderRadius: 16,
+              background: "#f7f9fa",
+            }}
+          >
+            <strong>
+              No operatives are currently signed in.
+            </strong>
+
+            <p style={{ margin: "8px 0 0" }}>
+              Go to Attendance and sign operatives in before
+              assigning them to gangs.
+            </p>
+          </section>
+        )}
+
+        {unassignedOperatives.length > 0 && (
+          <section
+            style={{
+              marginBottom: 20,
+              padding: 20,
+              border: "1px solid #e0b84f",
+              borderRadius: 16,
+              background: "#fff9e8",
+            }}
+          >
+            <strong>
+              {unassignedOperatives.length} operative
+              {unassignedOperatives.length === 1 ? "" : "s"} on
+              site not assigned to a gang
+            </strong>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              {unassignedOperatives.map((operative) => (
+                <span
+                  key={operative.id}
+                  style={{
+                    padding: "6px 10px",
+                    border: "1px solid #e4d39b",
+                    borderRadius: 999,
+                    background: "#ffffff",
+                    fontSize: 13,
+                  }}
+                >
+                  {operative.name}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {crews.length === 0 && (
+          <section
+            style={{
+              padding: 28,
+              border: "1px dashed #b9c2ca",
+              borderRadius: 18,
+              background: "#f7f9fa",
+              textAlign: "center",
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>
+              No gangs created yet
+            </h2>
+
+            <p>
+              Create your first gang and assign the operatives
+              working together today.
+            </p>
+          </section>
+        )}
+
+        <div
+          style={{
+            display: "grid",
+            gap: 16,
+          }}
+        >
+          {crews.map((crew) => (
+            <article
+              key={crew.id}
+              style={{
+                padding: 20,
+                border: "1px solid #d7dde3",
+                borderRadius: 18,
+                background: "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  marginBottom: 18,
+                }}
+              >
+                <input
+                  type="text"
+                  value={crew.name}
+                  onChange={(event) =>
+                    updateGangName(
+                      crew.id,
+                      event.target.value
+                    )
+                  }
+                  aria-label="Gang name"
+                  style={{
+                    width: "100%",
+                    maxWidth: 320,
+                    padding: "10px 12px",
+                    border: "1px solid #ccd3da",
+                    borderRadius: 10,
+                    fontSize: 20,
+                    fontWeight: 700,
+                  }}
+                />
+
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => deleteGang(crew.id)}
+                >
+                  Delete
+                </button>
+              </div>
+
+              {signedInOperatives.length === 0 ? (
+                <p style={{ margin: 0 }}>
+                  No signed-in operatives available.
+                </p>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  {signedInOperatives.map((operative) => {
+                    const operativeId = String(operative.id);
+
+                    const assignedGangId =
+                      operativeGangMap.get(operativeId);
+
+                    const isSelected =
+                      assignedGangId === crew.id;
+
+                    const assignedGang = crews.find(
+                      (item) =>
+                        item.id === assignedGangId
+                    );
+
+                    return (
+                      <label
+                        key={operative.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          padding: 12,
+                          border: isSelected
+                            ? "2px solid #1f7a4d"
+                            : "1px solid #d7dde3",
+                          borderRadius: 12,
+                          background: isSelected
+                            ? "#eef8f2"
+                            : "#ffffff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() =>
+                            toggleOperative(
+                              crew.id,
+                              operativeId
+                            )
+                          }
+                          style={{ marginTop: 3 }}
+                        />
+
+                        <span>
+                          <strong
+                            style={{
+                              display: "block",
+                            }}
+                          >
+                            {operative.name}
+                          </strong>
+
+                          <span
+                            style={{
+                              display: "block",
+                              marginTop: 3,
+                              color: "#5f6b76",
+                              fontSize: 13,
+                            }}
+                          >
+                            {operative.position}
+                          </span>
+
+                          {assignedGangId &&
+                            assignedGangId !== crew.id && (
+                              <span
+                                style={{
+                                  display: "block",
+                                  marginTop: 5,
+                                  color: "#7a5a00",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Currently in{" "}
+                                {assignedGang?.name ??
+                                  "another gang"}
+                              </span>
+                            )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div
+                style={{
+                  marginTop: 16,
+                  fontWeight: 700,
+                }}
+              >
+                {crew.operativeIds.length} operative
+                {crew.operativeIds.length === 1 ? "" : "s"}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          className="add-event-button"
+          onClick={addGang}
+          disabled={crews.length >= MAX_GANGS}
+          style={{ marginTop: 20 }}
+        >
+          <span>+</span>
+
+          {crews.length >= MAX_GANGS
+            ? "Maximum 10 Gangs"
+            : "Add Gang"}
+        </button>
+      </section>
+    </main>
+  );
+}
