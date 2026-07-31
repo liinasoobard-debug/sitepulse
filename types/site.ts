@@ -33,35 +33,69 @@ export interface Crew {
   operativeIds: string[];
 }
 
-export interface Activity {
-  id: string;
-  code: string;
-  description: string;
-  location: string;
+export interface ProgrammeActivity {
+  id: string; // internal UUID
+
+  programmeActivityId: string; // P6 / Asta Activity ID
+
+  building: string;
+
+  elevation: string;
+
+  level: string;
+
+  activity: string;
+
+  description?: string;
+
+  trade?: string;
+
+  wbs?: string;
+
   unit: string;
+
   plannedQuantity: number;
+
+  plannedStart?: string;
+
+  plannedFinish?: string;
+
   createdAt: string;
 }
 
 export interface TimelineEvent {
   id: string;
+
   crewId?: string;
-  activityId?: string;
+
+  programmeActivityId?: string;
+
   time: string;
+
   endTime?: string;
+
   status?: "active" | "completed";
+
   title: string;
+
   type: SiteRecordType;
+
   reason?: string;
+
   notes?: string;
-  location?: string;
-  unit?: string;
+
   quantity?: number;
+
   affectedOperativeIds?: string[];
+
   lostLabourHours?: number;
+
   labourCost?: number;
+
   photoIds?: string[];
+
   drawingReference?: string;
+
   instructionReference?: string;
 }
 
