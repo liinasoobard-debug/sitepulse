@@ -1,3 +1,12 @@
+export interface Project {
+  id: string;
+  name: string;
+  code?: string;
+  location?: string;
+  isArchived?: boolean;
+  createdAt: string;
+}
+
 export interface Operative {
   id: string;
   company: string;
@@ -26,23 +35,17 @@ export interface Crew {
 
 export interface TimelineEvent {
   id: string;
-
   crewId?: string;
-
   time: string;
   endTime?: string;
   status?: "active" | "completed";
-
   title: string;
   type: SiteRecordType;
-
   reason?: string;
   notes?: string;
-
   affectedOperativeIds?: string[];
   lostLabourHours?: number;
   labourCost?: number;
-
   photoIds?: string[];
   drawingReference?: string;
   instructionReference?: string;

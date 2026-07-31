@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
+import * as XLSX from "xlsx";
 import {
   loadDay,
   loadOperatives,
@@ -15,6 +16,15 @@ import type {
   SiteDay,
   TimelineEvent,
 } from "@/types/site";
+
+type ImportRow = {
+  Name?: unknown;
+  Company?: unknown;
+  Position?: unknown;
+  "Hourly Rate"?: unknown;
+  HourlyRate?: unknown;
+  Rate?: unknown;
+};
 
 function getTodayDate(): string {
   return new Date().toISOString().split("T")[0];
@@ -101,6 +111,31 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
+function getText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
+function getRate(row: ImportRow): number {
+  const rawValue =
+    row["Hourly Rate"] ??
+    row.HourlyRate ??
+    row.Rate ??
+    "";
+
+  const cleaned = String(rawValue)
+    .replace("£", "")
+    .replace(",", "")
+    .trim();
+
+  const parsed = Number(cleaned);
+
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
 export default function AttendancePage() {
   const [operatives, setOperatives] = useState<Operative[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
@@ -114,6 +149,10 @@ export default function AttendancePage() {
   const [newHourlyRate, setNewHourlyRate] = useState("");
   const [formError, setFormError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [importMessage, setImportMessage] = useState("");
+  const [importError, setImportError] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setOperatives(loadOperatives());
@@ -283,6 +322,107 @@ export default function AttendancePage() {
     closeAddPersonForm();
   }
 
+  async function handleImport(
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setImportMessage("");
+    setImportError("");
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        throw new Error("The spreadsheet does not contain a worksheet.");
+      }
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json<ImportRow>(worksheet, {
+        defval: "",
+      });
+
+      if (rows.length === 0) {
+        throw new Error("The spreadsheet does not contain any rows.");
+      }
+
+      const existingKeys = new Set(
+        operatives.map(
+          (operative) =>
+            `${operative.name.trim().toLowerCase()}|${operative.company
+              .trim()
+              .toLowerCase()}`
+        )
+      );
+
+      const importedOperatives: Operative[] = [];
+      let skippedRows = 0;
+
+      rows.forEach((row) => {
+        const name = getText(row.Name);
+        const company = getText(row.Company);
+        const position = getText(row.Position);
+        const hourlyRate = getRate(row);
+
+        if (!name || !company || !position) {
+          skippedRows += 1;
+          return;
+        }
+
+        const duplicateKey = `${name.toLowerCase()}|${company.toLowerCase()}`;
+
+        if (existingKeys.has(duplicateKey)) {
+          skippedRows += 1;
+          return;
+        }
+
+        existingKeys.add(duplicateKey);
+
+        importedOperatives.push({
+          id: createOperativeId(),
+          name,
+          company,
+          position,
+          hourlyRate,
+        });
+      });
+
+      if (importedOperatives.length === 0) {
+        throw new Error(
+          "No new operatives were imported. Check the column headings and duplicates."
+        );
+      }
+
+      const updatedOperatives = [
+        ...operatives,
+        ...importedOperatives,
+      ];
+
+      setOperatives(updatedOperatives);
+      saveOperatives(updatedOperatives);
+
+      setImportMessage(
+        `${importedOperatives.length} operative${
+          importedOperatives.length === 1 ? "" : "s"
+        } imported${skippedRows > 0 ? `, ${skippedRows} skipped` : ""}.`
+      );
+    } catch (error) {
+      setImportError(
+        error instanceof Error
+          ? error.message
+          : "The spreadsheet could not be imported."
+      );
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   function updateAttendance(
     operative: Operative,
     field: "signIn" | "signOut",
@@ -376,6 +516,22 @@ export default function AttendancePage() {
               {showAddPerson ? "Cancel" : "+ Add Person"}
             </button>
 
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Import Excel
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleImport}
+              style={{ display: "none" }}
+            />
+
             <Link
               href="/crews"
               className="secondary-button"
@@ -391,6 +547,21 @@ export default function AttendancePage() {
             </Link>
           </div>
         </header>
+
+        {(importMessage || importError) && (
+          <div
+            style={{
+              marginBottom: 18,
+              padding: "12px 14px",
+              borderRadius: 10,
+              background: importError ? "#fff1f0" : "#f0fdf4",
+              color: importError ? "#b42318" : "#166534",
+              fontWeight: 600,
+            }}
+          >
+            {importError || importMessage}
+          </div>
+        )}
 
         {showAddPerson && (
           <section
@@ -638,7 +809,12 @@ export default function AttendancePage() {
             <tbody>
               {attendanceRows.length > 0 ? (
                 attendanceRows.map(
-                  ({ operative, record, hours, cost }) => (
+                  ({
+                    operative,
+                    record,
+                    hours,
+                    cost,
+                  }) => (
                     <tr key={operative.id}>
                       <td>{operative.company}</td>
 
@@ -667,7 +843,9 @@ export default function AttendancePage() {
                             <button
                               type="button"
                               className="secondary-button"
-                              onClick={() => signInNow(operative)}
+                              onClick={() =>
+                                signInNow(operative)
+                              }
                             >
                               Now
                             </button>
@@ -690,31 +868,41 @@ export default function AttendancePage() {
                             aria-label={`Sign out time for ${operative.name}`}
                           />
 
-                          {record?.signIn && !record?.signOut && (
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              onClick={() => signOutNow(operative)}
-                            >
-                              Now
-                            </button>
-                          )}
+                          {record?.signIn &&
+                            !record?.signOut && (
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() =>
+                                  signOutNow(operative)
+                                }
+                              >
+                                Now
+                              </button>
+                            )}
                         </div>
                       </td>
 
                       <td>{formatHours(hours)}</td>
 
-                      <td>{formatCurrency(operative.hourlyRate)}</td>
+                      <td>
+                        {formatCurrency(
+                          operative.hourlyRate
+                        )}
+                      </td>
 
                       <td>{formatCurrency(cost)}</td>
 
                       <td>
-                        {(record?.signIn || record?.signOut) && (
+                        {(record?.signIn ||
+                          record?.signOut) && (
                           <button
                             type="button"
                             className="secondary-button"
                             onClick={() =>
-                              clearRecord(String(operative.id))
+                              clearRecord(
+                                String(operative.id)
+                              )
                             }
                           >
                             Clear
