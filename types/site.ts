@@ -44,6 +44,8 @@ export interface ProgrammeActivity {
 
   level: string;
 
+  gridline?: string;
+
   activity: string;
 
   description?: string;

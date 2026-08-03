@@ -132,6 +132,7 @@ function normaliseProgrammeActivity(
     building: activity.building?.trim() || activity.location?.trim() || "",
     elevation: activity.elevation?.trim() || "",
     level: activity.level?.trim() || "",
+    gridline: activity.gridline?.trim() || "",
     activity:
       activity.activity?.trim() ||
       activity.description?.trim() ||
@@ -435,6 +436,7 @@ export function addProgrammeActivity(
     building: activity.building.trim(),
     elevation: activity.elevation.trim(),
     level: activity.level.trim(),
+    gridline: activity.gridline?.trim() || "",
     activity: activity.activity.trim(),
     description: activity.description?.trim() || "",
     trade: activity.trade?.trim() || "",

@@ -36,6 +36,7 @@ type ProgrammeForm = {
   building: string;
   elevation: string;
   level: string;
+  gridline: string;
   activity: string;
   plannedQuantity: string;
   budgetLabourHours: string;
@@ -51,6 +52,7 @@ const emptyForm: ProgrammeForm = {
   building: "",
   elevation: "",
   level: "",
+  gridline: "",
   activity: "",
   plannedQuantity: "",
   budgetLabourHours: "",
@@ -66,6 +68,7 @@ const headerAliases: Record<string, string[]> = {
   building: ["building"],
   elevation: ["elevation", "facade", "façade"],
   level: ["level", "floor"],
+  gridline: ["gridline", "grid line", "gridlines", "grid lines"],
   activity: ["activity", "activity name", "name"],
   description: ["description", "activity description"],
   trade: ["trade", "discipline"],
@@ -127,6 +130,7 @@ export default function ProgrammePage() {
   const [buildingFilter, setBuildingFilter] = useState("");
   const [elevationFilter, setElevationFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
+  const [gridlineFilter, setGridlineFilter] = useState("");
   const [form, setForm] = useState<ProgrammeForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -162,18 +166,20 @@ export default function ProgrammePage() {
   const filteredActivities = useMemo(() => {
     const query = search.trim().toLowerCase();
     return programmeActivities.filter((item) =>
-      (!query || [item.programmeActivityId, item.activity, item.description, item.building, item.elevation, item.level, item.trade, item.wbs]
+      (!query || [item.programmeActivityId, item.activity, item.description, item.building, item.elevation, item.level, item.gridline, item.trade, item.wbs]
         .some((value) => value?.toLowerCase().includes(query))) &&
       (!buildingFilter || item.building === buildingFilter) &&
       (!elevationFilter || item.elevation === elevationFilter) &&
       (!levelFilter || item.level === levelFilter)
+      && (!gridlineFilter || item.gridline === gridlineFilter)
     );
-  }, [programmeActivities, search, buildingFilter, elevationFilter, levelFilter]);
+  }, [programmeActivities, search, buildingFilter, elevationFilter, levelFilter, gridlineFilter]);
 
   const filterOptions = useMemo(() => ({
     buildings: [...new Set(programmeActivities.map((item) => item.building).filter(Boolean))].sort(),
     elevations: [...new Set(programmeActivities.map((item) => item.elevation).filter(Boolean))].sort(),
     levels: [...new Set(programmeActivities.map((item) => item.level).filter(Boolean))].sort(),
+    gridlines: [...new Set(programmeActivities.map((item) => item.gridline).filter(Boolean))].sort(),
   }), [programmeActivities]);
 
   const progressByActivityId = useMemo(
@@ -232,6 +238,7 @@ export default function ProgrammePage() {
       building: form.building.trim(),
       elevation: form.elevation.trim(),
       level: form.level.trim(),
+      gridline: form.gridline.trim(),
       activity: activityName,
       plannedQuantity,
       budgetLabourHours,
@@ -266,6 +273,7 @@ export default function ProgrammePage() {
       building: item.building,
       elevation: item.elevation,
       level: item.level,
+      gridline: item.gridline ?? "",
       activity: item.activity,
       plannedQuantity: item.plannedQuantity ? String(item.plannedQuantity) : "",
       budgetLabourHours: item.budgetLabourHours ? String(item.budgetLabourHours) : "",
@@ -326,6 +334,7 @@ export default function ProgrammePage() {
         const building = asText(valueFor(row, "building"));
         const elevation = asText(valueFor(row, "elevation"));
         const level = asText(valueFor(row, "level"));
+        const gridline = asText(valueFor(row, "gridline"));
         const activity = asText(valueFor(row, "activity"));
         const unit = asText(valueFor(row, "unit"));
         const plannedQuantity = parsePositiveNumber(valueFor(row, "plannedQuantity"));
@@ -366,6 +375,7 @@ export default function ProgrammePage() {
           building,
           elevation,
           level,
+          gridline,
           activity,
           description: asText(valueFor(row, "description")),
           trade: asText(valueFor(row, "trade")),
@@ -409,6 +419,7 @@ export default function ProgrammePage() {
       Building: "Block A",
       Elevation: "North",
       Level: "Level 01",
+      Gridlines: "A-B",
       Activity: "Install curtain wall panels",
       Description: "Example row — replace or remove before importing",
       Trade: "Facade",
@@ -479,6 +490,10 @@ export default function ProgrammePage() {
             <label className="attendance-field">
               <span>Level</span>
               <input value={form.level} onChange={(event) => updateForm("level", event.target.value)} placeholder="e.g. Level 02" />
+            </label>
+            <label className="attendance-field">
+              <span>Gridlines</span>
+              <input value={form.gridline} onChange={(event) => updateForm("gridline", event.target.value)} placeholder="e.g. A-B" />
             </label>
             <label className="attendance-field">
               <span>Activity *</span>
@@ -567,8 +582,12 @@ export default function ProgrammePage() {
             <span>Level</span>
             <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}><option value="">All levels</option>{filterOptions.levels.map((value) => <option key={value} value={value}>{value}</option>)}</select>
           </label>
+          <label className="attendance-field">
+            <span>Gridlines</span>
+            <select value={gridlineFilter} onChange={(event) => setGridlineFilter(event.target.value)}><option value="">All gridlines</option>{filterOptions.gridlines.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+          </label>
           <div style={{ display: "flex", alignItems: "end" }}>
-            <button type="button" className="secondary-button" onClick={() => { setBuildingFilter(""); setElevationFilter(""); setLevelFilter(""); setSearch(""); }}>Clear filters</button>
+            <button type="button" className="secondary-button" onClick={() => { setBuildingFilter(""); setElevationFilter(""); setLevelFilter(""); setGridlineFilter(""); setSearch(""); }}>Clear filters</button>
           </div>
         </div>
 
@@ -579,7 +598,7 @@ export default function ProgrammePage() {
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
-              <thead><tr>{["Activity ID", "Building", "Elevation", "Level", "Activity", "Planned Quantity", "Unit", "Budget Labour Hours", "Planned Production Rate", "Planned Crew Size", "Planned Start", "Planned Finish", "Baseline Status", "Completed", "% Complete", ""].map((heading) => <th key={heading} style={{ padding: 10, textAlign: "left", borderBottom: "2px solid #d7dde3" }}>{heading}</th>)}</tr></thead>
+              <thead><tr>{["Activity ID", "Building", "Elevation", "Level", "Gridlines", "Activity", "Planned Quantity", "Unit", "Budget Labour Hours", "Planned Production Rate", "Planned Crew Size", "Planned Start", "Planned Finish", "Baseline Status", "Completed", "% Complete", ""].map((heading) => <th key={heading} style={{ padding: 10, textAlign: "left", borderBottom: "2px solid #d7dde3" }}>{heading}</th>)}</tr></thead>
               <tbody>{filteredActivities.map((item) => {
                 const progress = progressByActivityId.get(item.programmeActivityId);
                 return (
@@ -588,6 +607,7 @@ export default function ProgrammePage() {
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.building || "—"}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.elevation || "—"}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.level || "—"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.gridline || "—"}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}><strong>{item.activity}</strong>{item.description && <small style={{ display: "block", color: "#5f6b76" }}>{item.description}</small>}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(item.plannedQuantity)}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.unit || "—"}</td>
