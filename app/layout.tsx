@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import BottomNav from "@/components/BottomNav";
-import ProjectSelector from "@/components/ProjectSelector";
+import AppChrome from "@/components/AppChrome";
 
 export const metadata: Metadata = {
   title: "SitePulse",
@@ -17,9 +16,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <div className="app-layout">
-          <ProjectSelector />
-          {children}
-          <BottomNav />
+          <AppChrome>{children}</AppChrome>
         </div>
       </body>
     </html>

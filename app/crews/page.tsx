@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   loadDay,
   loadOperatives,
+  getActiveDate,
   saveDay,
 } from "@/lib/storage";
 import type {
@@ -18,7 +19,7 @@ import type {
 const MAX_GANGS = 10;
 
 function getTodayDate(): string {
-  return new Date().toISOString().split("T")[0];
+  return getActiveDate();
 }
 
 function getDefaultGangName(index: number): string {
@@ -74,19 +75,22 @@ export default function CrewsPage() {
   const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
-    setOperatives(loadOperatives());
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setOperatives(loadOperatives());
 
-    const savedDay = loadDay() as SiteDay | null;
-
-    if (savedDay) {
-      setAttendance(normaliseAttendance(savedDay.attendance));
-      setCrews(normaliseCrews(savedDay.crews));
-      setEvents(
-        Array.isArray(savedDay.events) ? savedDay.events : []
-      );
-    }
-
-    setHasLoaded(true);
+      const savedDay = loadDay() as SiteDay | null;
+      if (savedDay) {
+        setAttendance(normaliseAttendance(savedDay.attendance));
+        setCrews(normaliseCrews(savedDay.crews));
+        setEvents(
+          Array.isArray(savedDay.events) ? savedDay.events : []
+        );
+      }
+      setHasLoaded(true);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -231,7 +235,7 @@ export default function CrewsPage() {
     day: "numeric",
     month: "long",
     year: "numeric",
-  }).format(new Date());
+  }).format(new Date(`${getActiveDate()}T12:00:00`));
 
   return (
     <main className="timeline-page">
@@ -397,7 +401,7 @@ export default function CrewsPage() {
 
             <p>
               Create your first gang and assign the operatives
-              working together today.
+              working together on this date.
             </p>
           </section>
         )}

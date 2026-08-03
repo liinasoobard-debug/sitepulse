@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import {
   loadDay,
   loadOperatives,
+  getActiveDate,
   saveDay,
   saveOperatives,
 } from "@/lib/storage";
@@ -27,7 +28,7 @@ type ImportRow = {
 };
 
 function getTodayDate(): string {
-  return new Date().toISOString().split("T")[0];
+  return getActiveDate();
 }
 
 function getCurrentTime(): string {
@@ -155,16 +156,19 @@ export default function AttendancePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setOperatives(loadOperatives());
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setOperatives(loadOperatives());
 
-    const savedDay = loadDay();
-
-    if (savedDay) {
-      setAttendance(normaliseAttendance(savedDay.attendance));
-      setEvents(Array.isArray(savedDay.events) ? savedDay.events : []);
-    }
-
-    setHasLoaded(true);
+      const savedDay = loadDay();
+      if (savedDay) {
+        setAttendance(normaliseAttendance(savedDay.attendance));
+        setEvents(Array.isArray(savedDay.events) ? savedDay.events : []);
+      }
+      setHasLoaded(true);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -423,6 +427,18 @@ export default function AttendancePage() {
     }
   }
 
+  function downloadAttendanceTemplate() {
+    const worksheet = XLSX.utils.json_to_sheet([{
+      Name: "Jane Smith",
+      Company: "Example Contractor",
+      Position: "Installer",
+      "Hourly Rate": 25,
+    }]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Operatives");
+    XLSX.writeFile(workbook, "sitepulse-attendance-template.xlsx");
+  }
+
   function updateAttendance(
     operative: Operative,
     field: "signIn" | "signOut",
@@ -486,7 +502,7 @@ export default function AttendancePage() {
     day: "numeric",
     month: "long",
     year: "numeric",
-  }).format(new Date());
+  }).format(new Date(`${getActiveDate()}T12:00:00`));
 
   return (
     <main className="timeline-page">
@@ -522,6 +538,14 @@ export default function AttendancePage() {
               onClick={() => fileInputRef.current?.click()}
             >
               Import Excel
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={downloadAttendanceTemplate}
+            >
+              Download template
             </button>
 
             <input

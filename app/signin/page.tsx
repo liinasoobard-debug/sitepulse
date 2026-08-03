@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import AddActivityModal from "@/components/AddActivityModal";
-import { loadDay, saveDay } from "@/lib/storage";
+import AddWorkModal from "@/components/AddWorkModal";
+import { getActiveDate, loadDay, saveDay } from "@/lib/storage";
 import type {
   AttendanceRecord,
   Crew,
@@ -11,32 +11,12 @@ import type {
   TimelineEvent,
 } from "@/types/site";
 
-const startingEvents: TimelineEvent[] = [
-  {
-    id: "1",
-    time: "08:15",
-    title: "Installing curtain wall",
-    type: "work",
-  },
-  {
-    id: "2",
-    time: "10:25",
-    title: "Waiting for crane",
-    type: "disruption",
-    reason: "Crane unavailable",
-  },
-  {
-    id: "3",
-    time: "11:10",
-    title: "Installation resumed",
-    type: "work",
-  },
-];
+const startingEvents: TimelineEvent[] = [];
 
 type NewSiteRecord = Omit<TimelineEvent, "id">;
 
 function getTodayDate(): string {
-  return new Date().toISOString().split("T")[0];
+  return getActiveDate();
 }
 
 function normaliseAttendance(
@@ -129,23 +109,19 @@ export default function SignInPage() {
     useState(false);
 
   useEffect(() => {
-    const savedDay = loadDay() as SiteDay | null;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const savedDay = loadDay() as SiteDay | null;
 
-    if (savedDay) {
-      setEvents(
-        normaliseEvents(savedDay.events)
-      );
-
-      setAttendance(
-        normaliseAttendance(savedDay.attendance)
-      );
-
-      setCrews(
-        normaliseCrews(savedDay.crews)
-      );
-    }
-
-    setHasLoaded(true);
+      if (savedDay) {
+        setEvents(normaliseEvents(savedDay.events));
+        setAttendance(normaliseAttendance(savedDay.attendance));
+        setCrews(normaliseCrews(savedDay.crews));
+      }
+      setHasLoaded(true);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -177,7 +153,7 @@ export default function SignInPage() {
     hasLoaded,
   ]);
 
-  function addActivity(
+  function addSiteRecord(
     record: NewSiteRecord
   ) {
     const newEvent: TimelineEvent = {
@@ -205,7 +181,7 @@ export default function SignInPage() {
   );
 
   const today =
-    new Date().toLocaleDateString(
+    new Date(`${getActiveDate()}T12:00:00`).toLocaleDateString(
       "en-GB",
       {
         weekday: "long",
@@ -224,7 +200,7 @@ export default function SignInPage() {
             </p>
 
             <h1>
-              Today&apos;s Timeline
+              Site Timeline
             </h1>
           </div>
 
@@ -279,9 +255,9 @@ export default function SignInPage() {
                 <div className="timeline-time">
                   <span>{event.time}</span>
 
-                  {event.endTime && (
+                  {event.finishTime && (
                     <span className="timeline-end-time">
-                      {event.endTime}
+                      {event.finishTime}
                     </span>
                   )}
                 </div>
@@ -367,8 +343,8 @@ export default function SignInPage() {
         </Link>
 
         {showModal && (
-          <AddActivityModal
-            onAdd={addActivity}
+          <AddWorkModal
+            onAdd={addSiteRecord}
             onClose={() =>
               setShowModal(false)
             }

@@ -9,6 +9,7 @@ import {
 import type { Project } from "@/types/site";
 import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
+import UserIndicator from "@/components/UserIndicator";
 
 export default function ProjectSelector() {
   const pathname = usePathname();
@@ -26,7 +27,10 @@ export default function ProjectSelector() {
   }
 
   useEffect(() => {
-    refreshProjects();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) refreshProjects();
+    });
 
     function handleProjectChange() {
       refreshProjects();
@@ -34,6 +38,7 @@ export default function ProjectSelector() {
 
     window.addEventListener("sitepulse-project-changed", handleProjectChange);
     return () => {
+      cancelled = true;
       window.removeEventListener("sitepulse-project-changed", handleProjectChange);
     };
   }, []);
@@ -143,6 +148,7 @@ export default function ProjectSelector() {
           >
             {showForm ? "Cancel" : "+ New Project"}
           </button>
+          <UserIndicator />
         </div>
 
         {showForm && (

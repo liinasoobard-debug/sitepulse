@@ -63,6 +63,15 @@ export interface ProgrammeActivity {
   createdAt: string;
 }
 
+export interface ProgrammeProgress {
+  plannedQuantity: number;
+  completedQuantity: number;
+  remainingQuantity: number;
+  percentageComplete: number;
+  labourHours: number;
+  productivity: number;
+}
+
 export interface TimelineEvent {
   id: string;
 
@@ -70,9 +79,17 @@ export interface TimelineEvent {
 
   programmeActivityId?: string;
 
+  location?: string;
+
+  unit?: string;
+
   time: string;
 
-  endTime?: string;
+  startTime?: string;
+
+  finishTime?: string;
+
+  duration?: number; // minutes
 
   status?: "active" | "completed";
 

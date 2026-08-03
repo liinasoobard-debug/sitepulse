@@ -7,7 +7,7 @@ export default function HomePage() {
         <header className="timeline-header">
           <div>
             <p className="eyebrow">SitePulse</p>
-            <h1>Today&apos;s Site</h1>
+            <h1>Site Day</h1>
           </div>
         </header>
 
@@ -30,11 +30,11 @@ export default function HomePage() {
             <span className="attendance-card-arrow">›</span>
           </Link>
 
-          <Link href="/activities" className="attendance-card">
+          <Link href="/programme" className="attendance-card">
             <span className="attendance-card-icon">📋</span>
             <span className="attendance-card-content">
-              <strong>Activities</strong>
-              <span>Add planned work activities and quantities</span>
+              <strong>Programme</strong>
+              <span>Import planned work from Excel</span>
             </span>
             <span className="attendance-card-arrow">›</span>
           </Link>
@@ -43,7 +43,7 @@ export default function HomePage() {
             <span className="attendance-card-icon">🕒</span>
             <span className="attendance-card-content">
               <strong>Timeline</strong>
-              <span>View today&apos;s site records</span>
+              <span>View the selected date&apos;s site records</span>
             </span>
             <span className="attendance-card-arrow">›</span>
           </Link>

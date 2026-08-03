@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { loadActivities, loadDay } from "@/lib/storage";
+import { loadProgramme, loadDay } from "@/lib/storage";
 import type {
-  Activity,
   Crew,
+  ProgrammeActivity,
   SiteDay,
   SiteRecordType,
   TimelineEvent,
@@ -69,75 +69,158 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
   }));
 }
 
-export default function AddActivityModal({ onAdd, onClose }: Props) {
+const EMPTY_LOCATION = "__sitepulse_unspecified__";
+
+function locationValue(value: string): string {
+  return value || EMPTY_LOCATION;
+}
+
+function locationLabel(value: string): string {
+  return value === EMPTY_LOCATION ? "Not specified" : value;
+}
+
+function uniqueLocations(values: string[]): string[] {
+  return [...new Set(values.map(locationValue))].sort((a, b) =>
+    locationLabel(a).localeCompare(locationLabel(b))
+  );
+}
+
+export default function AddWorkModal({ onAdd, onClose }: Props) {
   const [crews, setCrews] = useState<Crew[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const [programmeActivities, setProgrammeActivities] = useState<ProgrammeActivity[]>([]);
+  const [activeCrewIds, setActiveCrewIds] = useState<string[]>([]);
   const [selectedCrewId, setSelectedCrewId] = useState("");
-  const [selectedActivityId, setSelectedActivityId] = useState("");
+  const [selectedBuilding, setSelectedBuilding] = useState("");
+  const [selectedElevation, setSelectedElevation] = useState("");
+  const [selectedLevel, setSelectedLevel] = useState("");
+  const [selectedProgrammeActivityId, setSelectedProgrammeActivityId] = useState("");
   const [selectedType, setSelectedType] =
     useState<SiteRecordType | null>(null);
   const [title, setTitle] = useState("");
   const [time, setTime] = useState(getCurrentTime());
   const [notes, setNotes] = useState("");
-  const [quantity, setQuantity] = useState("");
 
   useEffect(() => {
-    const savedDay = loadDay() as SiteDay | null;
-    const savedCrews = normaliseCrews(savedDay?.crews);
-
-    setCrews(savedCrews);
-    setActivities(loadActivities());
-
-    if (savedCrews.length === 1) {
-      setSelectedCrewId(savedCrews[0].id);
-    }
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const savedDay = loadDay() as SiteDay | null;
+      const savedCrews = normaliseCrews(savedDay?.crews);
+      setCrews(savedCrews);
+      setProgrammeActivities(loadProgramme());
+      const busyCrewIds = (savedDay?.events ?? [])
+        .filter((event) => event.type === "work" && event.status === "active" && event.crewId)
+        .map((event) => String(event.crewId));
+      setActiveCrewIds(busyCrewIds);
+      const selectableCrews = savedCrews.filter(
+        (crew) => crew.operativeIds.length > 0 && !busyCrewIds.includes(crew.id)
+      );
+      if (selectableCrews.length === 1) setSelectedCrewId(selectableCrews[0].id);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   const availableCrews = useMemo(
-    () => crews.filter((crew) => crew.operativeIds.length > 0),
-    [crews]
+    () => crews.filter(
+      (crew) => crew.operativeIds.length > 0 && !activeCrewIds.includes(crew.id)
+    ),
+    [crews, activeCrewIds]
   );
 
   const selectedCrew = availableCrews.find(
     (crew) => crew.id === selectedCrewId
   );
 
-  const selectedActivity = activities.find(
-    (activity) => activity.id === selectedActivityId
+  const selectedProgrammeActivity = programmeActivities.find(
+    (activity) => activity.programmeActivityId === selectedProgrammeActivityId
+  );
+
+  const buildings = useMemo(
+    () => uniqueLocations(programmeActivities.map((item) => item.building)),
+    [programmeActivities]
+  );
+  const elevations = useMemo(
+    () => uniqueLocations(
+      programmeActivities
+        .filter((item) => locationValue(item.building) === selectedBuilding)
+        .map((item) => item.elevation)
+    ),
+    [programmeActivities, selectedBuilding]
+  );
+  const levels = useMemo(
+    () => uniqueLocations(
+      programmeActivities
+        .filter((item) =>
+          locationValue(item.building) === selectedBuilding &&
+          locationValue(item.elevation) === selectedElevation
+        )
+        .map((item) => item.level)
+    ),
+    [programmeActivities, selectedBuilding, selectedElevation]
+  );
+  const availableProgrammeActivities = useMemo(
+    () => programmeActivities.filter((item) =>
+      locationValue(item.building) === selectedBuilding &&
+      locationValue(item.elevation) === selectedElevation &&
+      locationValue(item.level) === selectedLevel
+    ),
+    [programmeActivities, selectedBuilding, selectedElevation, selectedLevel]
   );
 
   function chooseRecordType(type: SiteRecordType) {
     setSelectedType(type);
     setNotes("");
-    setQuantity("");
-    setSelectedActivityId("");
+    setSelectedBuilding("");
+    setSelectedElevation("");
+    setSelectedLevel("");
+    setSelectedProgrammeActivityId("");
     setTitle(type === "break" ? "Break" : "");
   }
 
-  function chooseActivity(activityId: string) {
-    setSelectedActivityId(activityId);
-    const activity = activities.find((item) => item.id === activityId);
-    setTitle(activity?.description ?? "");
+  function chooseBuilding(building: string) {
+    setSelectedBuilding(building);
+    setSelectedElevation("");
+    setSelectedLevel("");
+    setSelectedProgrammeActivityId("");
+    setTitle("");
+  }
+
+  function chooseElevation(elevation: string) {
+    setSelectedElevation(elevation);
+    setSelectedLevel("");
+    setSelectedProgrammeActivityId("");
+    setTitle("");
+  }
+
+  function chooseLevel(level: string) {
+    setSelectedLevel(level);
+    setSelectedProgrammeActivityId("");
+    setTitle("");
+  }
+
+  function chooseActivity(programmeActivityId: string) {
+    setSelectedProgrammeActivityId(programmeActivityId);
+    const activity = programmeActivities.find(
+      (item) => item.programmeActivityId === programmeActivityId
+    );
+    setTitle(activity?.activity ?? "");
   }
 
   function saveRecord() {
     if (!selectedCrewId || !selectedType || !title.trim() || !time) return;
-    if (selectedType === "work" && !selectedActivityId) return;
+    if (selectedType === "work" && !selectedProgrammeActivityId) return;
 
     onAdd({
       crewId: selectedCrewId,
-      activityId:
-        selectedType === "work" ? selectedActivityId : undefined,
+      programmeActivityId:
+        selectedType === "work" ? selectedProgrammeActivity?.programmeActivityId : undefined,
       time,
+      startTime: selectedType === "work" ? time : undefined,
       title: title.trim(),
       type: selectedType,
-      status: "active",
-      location: selectedActivity?.location || undefined,
-      unit: selectedActivity?.unit || undefined,
-      quantity:
-        quantity.trim() && Number(quantity) > 0
-          ? Number(quantity)
-          : undefined,
+      status: selectedType === "work" ? "active" : "completed",
+      location: [selectedProgrammeActivity?.building, selectedProgrammeActivity?.elevation, selectedProgrammeActivity?.level].filter(Boolean).join(" / ") || undefined,
+      unit: selectedProgrammeActivity?.unit || undefined,
       affectedOperativeIds:
         selectedCrew?.operativeIds.map(String) ?? [],
       notes: notes.trim() || undefined,
@@ -275,36 +358,58 @@ export default function AddActivityModal({ onAdd, onClose }: Props) {
 
       {selectedType === "work" && (
         <>
-          {activities.length === 0 ? (
+          {programmeActivities.length === 0 ? (
             <div className="evidence-placeholder">
-              <strong>No planned activities added</strong>
+              <strong>No programme activities imported</strong>
               <span>
-                Add project activities before recording productive work.
+                Import the project programme before recording productive work.
               </span>
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => window.location.assign("/activities")}
+                onClick={() => window.location.assign("/programme")}
               >
-                Go to Activities
+                Go to Programme
               </button>
             </div>
           ) : (
-            <label className="attendance-field">
-              <span>Planned activity</span>
-              <select
-                value={selectedActivityId}
-                onChange={(event) => chooseActivity(event.target.value)}
-              >
-                <option value="">Select an activity</option>
-                {activities.map((activity) => (
-                  <option key={activity.id} value={activity.id}>
-                    {activity.code} — {activity.description}
-                    {activity.location ? ` — ${activity.location}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div style={{ display: "grid", gap: 14 }}>
+              <label className="attendance-field">
+                <span>Building</span>
+                <select value={selectedBuilding} onChange={(event) => chooseBuilding(event.target.value)}>
+                  <option value="">Select a building</option>
+                  {buildings.map((building) => <option key={building} value={building}>{locationLabel(building)}</option>)}
+                </select>
+              </label>
+
+              <label className="attendance-field">
+                <span>Elevation</span>
+                <select value={selectedElevation} onChange={(event) => chooseElevation(event.target.value)} disabled={!selectedBuilding}>
+                  <option value="">Select an elevation</option>
+                  {elevations.map((elevation) => <option key={elevation} value={elevation}>{locationLabel(elevation)}</option>)}
+                </select>
+              </label>
+
+              <label className="attendance-field">
+                <span>Level</span>
+                <select value={selectedLevel} onChange={(event) => chooseLevel(event.target.value)} disabled={!selectedElevation}>
+                  <option value="">Select a level</option>
+                  {levels.map((level) => <option key={level} value={level}>{locationLabel(level)}</option>)}
+                </select>
+              </label>
+
+              <label className="attendance-field">
+                <span>Activity</span>
+                <select value={selectedProgrammeActivityId} onChange={(event) => chooseActivity(event.target.value)} disabled={!selectedLevel}>
+                  <option value="">Select an activity</option>
+                  {availableProgrammeActivities.map((programmeActivity) => (
+                    <option key={programmeActivity.id} value={programmeActivity.programmeActivityId}>
+                      {programmeActivity.activity}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           )}
         </>
       )}
@@ -323,7 +428,7 @@ export default function AddActivityModal({ onAdd, onClose }: Props) {
           type="text"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          readOnly={selectedType === "work" && Boolean(selectedActivity)}
+          readOnly={selectedType === "work" && Boolean(selectedProgrammeActivity)}
           placeholder={
             selectedType === "work"
               ? "Select a planned activity"
@@ -332,7 +437,7 @@ export default function AddActivityModal({ onAdd, onClose }: Props) {
         />
       </label>
 
-      {selectedActivity && (
+      {selectedProgrammeActivity && (
         <div
           style={{
             display: "grid",
@@ -347,22 +452,16 @@ export default function AddActivityModal({ onAdd, onClose }: Props) {
         >
           <div>
             <span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>
-              Code
-            </span>
-            <strong>{selectedActivity.code}</strong>
-          </div>
-          <div>
-            <span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>
               Location
             </span>
-            <strong>{selectedActivity.location || "—"}</strong>
+            <strong>{[selectedProgrammeActivity.building, selectedProgrammeActivity.elevation, selectedProgrammeActivity.level].filter(Boolean).join(" / ") || "—"}</strong>
           </div>
           <div>
             <span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>
               Planned
             </span>
             <strong>
-              {selectedActivity.plannedQuantity || "—"} {selectedActivity.unit}
+              {selectedProgrammeActivity.plannedQuantity || "—"} {selectedProgrammeActivity.unit}
             </strong>
           </div>
         </div>
@@ -376,23 +475,6 @@ export default function AddActivityModal({ onAdd, onClose }: Props) {
           onChange={(event) => setTime(event.target.value)}
         />
       </label>
-
-      {selectedType === "work" && selectedActivity && (
-        <label className="attendance-field">
-          <span>
-            Quantity completed
-            {selectedActivity.unit ? ` (${selectedActivity.unit})` : ""}
-          </span>
-          <input
-            type="number"
-            min="0"
-            step="any"
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            placeholder="Optional"
-          />
-        </label>
-      )}
 
       <label className="attendance-field">
         <span>Description</span>
@@ -412,7 +494,7 @@ export default function AddActivityModal({ onAdd, onClose }: Props) {
           !selectedCrewId ||
           !title.trim() ||
           !time ||
-          (selectedType === "work" && !selectedActivityId)
+          (selectedType === "work" && !selectedProgrammeActivityId)
         }
       >
         Start for {selectedCrew?.name ?? "Gang"}
@@ -423,10 +505,12 @@ export default function AddActivityModal({ onAdd, onClose }: Props) {
         className="secondary-button site-record-cancel"
         onClick={() => {
           setSelectedType(null);
-          setSelectedActivityId("");
+          setSelectedBuilding("");
+          setSelectedElevation("");
+          setSelectedLevel("");
+          setSelectedProgrammeActivityId("");
           setTitle("");
           setNotes("");
-          setQuantity("");
         }}
       >
         Back

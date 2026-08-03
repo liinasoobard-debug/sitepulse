@@ -2,42 +2,45 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import AddActivityModal from "@/components/AddActivityModal";
-import { loadActivities, loadDay, saveDay } from "@/lib/storage";
+import AddWorkModal from "@/components/AddWorkModal";
+import { getActiveDate, loadProgramme, loadDay, saveDay } from "@/lib/storage";
 import type {
-  Activity,
   AttendanceRecord,
   Crew,
+  ProgrammeActivity,
   SiteDay,
   TimelineEvent,
 } from "@/types/site";
 
-const startingEvents: TimelineEvent[] = [
-  {
-    id: "1",
-    time: "08:15",
-    title: "Installing curtain wall",
-    type: "work",
-  },
-  {
-    id: "2",
-    time: "10:25",
-    title: "Waiting for crane",
-    type: "disruption",
-    reason: "Crane unavailable",
-  },
-  {
-    id: "3",
-    time: "11:10",
-    title: "Installation resumed",
-    type: "work",
-  },
-];
+const startingEvents: TimelineEvent[] = [];
 
 type NewSiteRecord = Omit<TimelineEvent, "id">;
 
 function getTodayDate(): string {
-  return new Date().toISOString().split("T")[0];
+  return getActiveDate();
+}
+
+function getCurrentTime(): string {
+  return new Date().toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function calculateDuration(startTime: string, finishTime: string): number {
+  const [startHours, startMinutes] = startTime.split(":").map(Number);
+  const [finishHours, finishMinutes] = finishTime.split(":").map(Number);
+  const start = startHours * 60 + startMinutes;
+  let finish = finishHours * 60 + finishMinutes;
+  if (finish < start) finish += 24 * 60;
+  return finish - start;
+}
+
+function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
 }
 
 function normaliseAttendance(
@@ -67,18 +70,19 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
 function normaliseEvents(
   records: TimelineEvent[] | undefined
 ): TimelineEvent[] {
-  const sourceEvents =
-    Array.isArray(records) && records.length > 0
-      ? records
-      : startingEvents;
+  const sourceEvents = Array.isArray(records) ? records : startingEvents;
 
-  return sourceEvents.map((record) => ({
+  return sourceEvents.map((record) => {
+    const legacyRecord = record as TimelineEvent & { endTime?: string };
+    return {
     ...record,
     id: String(record.id),
     crewId: record.crewId ? String(record.crewId) : undefined,
-    activityId: record.activityId
-      ? String(record.activityId)
+    programmeActivityId: record.programmeActivityId
+      ? String(record.programmeActivityId)
       : undefined,
+    startTime: record.startTime ?? (record.type === "work" ? record.time : undefined),
+    finishTime: record.finishTime ?? legacyRecord.endTime,
     affectedOperativeIds: Array.isArray(record.affectedOperativeIds)
       ? record.affectedOperativeIds.map(String)
       : undefined,
@@ -86,7 +90,7 @@ function normaliseEvents(
       (record.type as string) === "delay"
         ? "disruption"
         : record.type,
-  }));
+  }});
 }
 
 function getEventLabel(type: TimelineEvent["type"]): string {
@@ -98,7 +102,7 @@ function getEventLabel(type: TimelineEvent["type"]): string {
 
 export default function TimelinePage() {
   const [events, setEvents] = useState<TimelineEvent[]>(startingEvents);
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const [programmeActivities, setProgrammeActivities] = useState<ProgrammeActivity[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [crews, setCrews] = useState<Crew[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -106,25 +110,29 @@ export default function TimelinePage() {
   const [today, setToday] = useState("Today");
 
   useEffect(() => {
-    setToday(
-      new Date().toLocaleDateString("en-GB", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      })
-    );
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setToday(
+        new Date(`${getActiveDate()}T12:00:00`).toLocaleDateString("en-GB", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })
+      );
 
-    setActivities(loadActivities());
+      const loadedProgramme = loadProgramme();
+      setProgrammeActivities(loadedProgramme);
+      const savedDay = loadDay() as SiteDay | null;
 
-    const savedDay = loadDay() as SiteDay | null;
-
-    if (savedDay) {
-      setEvents(normaliseEvents(savedDay.events));
-      setAttendance(normaliseAttendance(savedDay.attendance));
-      setCrews(normaliseCrews(savedDay.crews));
-    }
-
-    setHasLoaded(true);
+      if (savedDay) {
+        setEvents(normaliseEvents(savedDay.events));
+        setAttendance(normaliseAttendance(savedDay.attendance));
+        setCrews(normaliseCrews(savedDay.crews));
+      }
+      setHasLoaded(true);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -149,8 +157,22 @@ export default function TimelinePage() {
   }, [events, attendance, crews, hasLoaded]);
 
   function addSiteRecord(record: NewSiteRecord) {
+    if (
+      record.type === "work" &&
+      record.crewId &&
+      events.some((event) =>
+        event.type === "work" &&
+        event.status === "active" &&
+        event.crewId === record.crewId
+      )
+    ) {
+      window.alert("This gang already has an active activity. Stop it before starting another.");
+      return;
+    }
+
     const newEvent: TimelineEvent = {
       ...record,
+      startTime: record.type === "work" ? record.startTime ?? record.time : record.startTime,
       id:
         typeof crypto !== "undefined" &&
         typeof crypto.randomUUID === "function"
@@ -167,6 +189,26 @@ export default function TimelinePage() {
     setShowModal(false);
   }
 
+  function stopActivity(event: TimelineEvent) {
+    const enteredQuantity = window.prompt("Enter the completed quantity:", "");
+    if (enteredQuantity === null) return;
+
+    const quantity = Number(enteredQuantity.trim());
+    if (enteredQuantity.trim() === "" || !Number.isFinite(quantity) || quantity < 0) {
+      window.alert("Enter a valid completed quantity of zero or more.");
+      return;
+    }
+
+    const finishTime = getCurrentTime();
+    const startTime = event.startTime ?? event.time;
+    const duration = calculateDuration(startTime, finishTime);
+    setEvents((current) => current.map((item) =>
+      item.id === event.id
+        ? { ...item, startTime, finishTime, duration, quantity, status: "completed" }
+        : item
+    ));
+  }
+
   function getCrewName(crewId?: string): string | null {
     if (!crewId) return null;
 
@@ -177,12 +219,12 @@ export default function TimelinePage() {
     return crew?.name ?? "Unknown Gang";
   }
 
-  function getActivity(activityId?: string): Activity | null {
-    if (!activityId) return null;
+  function getActivity(programmeActivityId?: string): ProgrammeActivity | null {
+    if (!programmeActivityId) return null;
 
     return (
-      activities.find(
-        (activity) => String(activity.id) === String(activityId)
+      programmeActivities.find(
+        (activity) => activity.programmeActivityId === programmeActivityId
       ) ?? null
     );
   }
@@ -192,7 +234,7 @@ export default function TimelinePage() {
   ).length;
 
   const sortedEvents = [...events].sort((a, b) =>
-    a.time.localeCompare(b.time)
+    (a.startTime ?? a.time).localeCompare(b.startTime ?? b.time)
   );
 
   return (
@@ -201,7 +243,7 @@ export default function TimelinePage() {
         <header className="timeline-header">
           <div>
             <p className="eyebrow">{today}</p>
-            <h1>Today&apos;s Timeline</h1>
+            <h1>Site Timeline</h1>
           </div>
 
           <div
@@ -212,8 +254,8 @@ export default function TimelinePage() {
               flexWrap: "wrap",
             }}
           >
-            <Link href="/activities" className="secondary-button">
-              Activities
+            <Link href="/programme" className="secondary-button">
+              Programme
             </Link>
 
             <Link href="/crews" className="secondary-button">
@@ -230,7 +272,7 @@ export default function TimelinePage() {
         <div className="timeline-list">
           {sortedEvents.map((event, index) => {
             const crewName = getCrewName(event.crewId);
-            const activity = getActivity(event.activityId);
+            const activity = getActivity(event.programmeActivityId);
 
             return (
               <article key={event.id} className="timeline-row">
@@ -242,10 +284,10 @@ export default function TimelinePage() {
                 </div>
 
                 <div className="timeline-time">
-                  <span>{event.time}</span>
-                  {event.endTime && (
+                  <span>{event.startTime ?? event.time}</span>
+                  {event.finishTime && (
                     <span className="timeline-end-time">
-                      {event.endTime}
+                      {event.finishTime}
                     </span>
                   )}
                 </div>
@@ -253,7 +295,7 @@ export default function TimelinePage() {
                 <div className={`event-card ${event.type}`}>
                   <div className="event-card-top">
                     <div>
-                      {crewName && (
+                      {crewName && !activity && (
                         <span
                           style={{
                             display: "block",
@@ -279,51 +321,41 @@ export default function TimelinePage() {
                   {activity && (
                     <div
                       style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 8,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                        gap: 10,
                         marginTop: 10,
+                        padding: 12,
+                        borderRadius: 12,
+                        background: "#f7f9fa",
                       }}
                     >
-                      <span
-                        style={{
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: "#eef2f5",
-                          fontSize: 12,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {activity.code}
-                      </span>
-
-                      {activity.location && (
-                        <span
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            background: "#eef2f5",
-                            fontSize: 12,
-                          }}
-                        >
-                          {activity.location}
-                        </span>
-                      )}
-
-                      {typeof event.quantity === "number" && (
-                        <span
-                          style={{
-                            padding: "4px 8px",
-                            borderRadius: 999,
-                            background: "#eef8f2",
-                            fontSize: 12,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {event.quantity} {event.unit || activity.unit}
-                        </span>
-                      )}
+                      {[
+                        ["Building", activity.building || "—"],
+                        ["Elevation", activity.elevation || "—"],
+                        ["Level", activity.level || "—"],
+                        ["Activity", activity.activity],
+                        ["Quantity", typeof event.quantity === "number" ? `${event.quantity} ${activity.unit}`.trim() : "—"],
+                        ["Gang", crewName || "—"],
+                        ["Duration", typeof event.duration === "number" ? formatDuration(event.duration) : event.status === "active" ? "In progress" : "—"],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <span style={{ display: "block", marginBottom: 3, color: "#5f6b76", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+                          <strong style={{ fontSize: 13 }}>{value}</strong>
+                        </div>
+                      ))}
                     </div>
+                  )}
+
+                  {event.type === "work" && event.status === "active" && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ marginTop: 12 }}
+                      onClick={() => stopActivity(event)}
+                    >
+                      Stop activity
+                    </button>
                   )}
 
                   {event.reason && (
@@ -385,7 +417,7 @@ export default function TimelinePage() {
         </button>
 
         {showModal && (
-          <AddActivityModal
+          <AddWorkModal
             onAdd={addSiteRecord}
             onClose={() => setShowModal(false)}
           />
