@@ -57,6 +57,15 @@ function getCurrentTime(): string {
   });
 }
 
+function durationMinutes(start: string, finish: string): number {
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [finishHour, finishMinute] = finish.split(":").map(Number);
+  const startValue = startHour * 60 + startMinute;
+  let finishValue = finishHour * 60 + finishMinute;
+  if (finishValue < startValue) finishValue += 24 * 60;
+  return Math.max(0, finishValue - startValue);
+}
+
 function normaliseCrews(records: Crew[] | undefined): Crew[] {
   if (!Array.isArray(records)) return [];
 
@@ -98,6 +107,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     useState<SiteRecordType | null>(null);
   const [title, setTitle] = useState("");
   const [time, setTime] = useState(getCurrentTime());
+  const [finishTime, setFinishTime] = useState(getCurrentTime());
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
@@ -203,7 +213,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     const activity = programmeActivities.find(
       (item) => item.programmeActivityId === programmeActivityId
     );
-    setTitle(activity?.activity ?? "");
+    if (selectedType === "work") setTitle(activity?.activity ?? "");
   }
 
   function saveRecord() {
@@ -213,9 +223,13 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     onAdd({
       crewId: selectedCrewId,
       programmeActivityId:
-        selectedType === "work" ? selectedProgrammeActivity?.programmeActivityId : undefined,
+        selectedType === "work" || selectedType === "disruption"
+          ? selectedProgrammeActivity?.programmeActivityId
+          : undefined,
       time,
-      startTime: selectedType === "work" ? time : undefined,
+      startTime: time,
+      finishTime: selectedType === "work" ? undefined : finishTime,
+      duration: selectedType === "work" ? undefined : durationMinutes(time, finishTime),
       title: title.trim(),
       type: selectedType,
       status: selectedType === "work" ? "active" : "completed",
@@ -356,13 +370,13 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         </button>
       </div>
 
-      {selectedType === "work" && (
+      {(selectedType === "work" || selectedType === "disruption") && (
         <>
           {programmeActivities.length === 0 ? (
             <div className="evidence-placeholder">
               <strong>No programme activities imported</strong>
               <span>
-                Import the project programme before recording productive work.
+                Import the project programme before linking site records to planned work.
               </span>
               <button
                 type="button"
@@ -399,7 +413,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
               </label>
 
               <label className="attendance-field">
-                <span>Activity</span>
+                <span>{selectedType === "work" ? "Activity" : "Affected Activity (optional)"}</span>
                 <select value={selectedProgrammeActivityId} onChange={(event) => chooseActivity(event.target.value)} disabled={!selectedLevel}>
                   <option value="">Select an activity</option>
                   {availableProgrammeActivities.map((programmeActivity) => (
@@ -436,6 +450,13 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           }
         />
       </label>
+
+      {selectedType !== "work" && (
+        <label className="attendance-field">
+          <span>Finish time</span>
+          <input type="time" value={finishTime} onChange={(event) => setFinishTime(event.target.value)} />
+        </label>
+      )}
 
       {selectedProgrammeActivity && (
         <div
@@ -494,6 +515,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           !selectedCrewId ||
           !title.trim() ||
           !time ||
+          (selectedType !== "work" && !finishTime) ||
           (selectedType === "work" && !selectedProgrammeActivityId)
         }
       >

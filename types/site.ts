@@ -56,6 +56,12 @@ export interface ProgrammeActivity {
 
   plannedQuantity: number;
 
+  budgetLabourHours?: number;
+
+  plannedProductionRate?: number;
+
+  plannedCrewSize?: number;
+
   plannedStart?: string;
 
   plannedFinish?: string;
@@ -70,6 +76,16 @@ export interface ProgrammeProgress {
   percentageComplete: number;
   labourHours: number;
   productivity: number;
+  baselineComplete: boolean;
+  plannedProductionRate: number | null;
+  actualProductiveLabourHours: number;
+  actualDisruptionLabourHours: number;
+  actualProductionRate: number | null;
+  overallProductionRate: number | null;
+  earnedLabourHours: number | null;
+  labourProductivityIndex: number | null;
+  overallLabourEfficiencyIndex: number | null;
+  productivityPerformancePercentage: number | null;
 }
 
 export interface TimelineEvent {

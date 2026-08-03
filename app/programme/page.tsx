@@ -15,13 +15,20 @@ import type { ProgrammeActivity, TimelineEvent } from "@/types/site";
 
 type SpreadsheetRow = Record<string, unknown>;
 
-type ImportSummary = {
+type ImportValidationRow = {
+  rowNumber: number;
+  activityId: string;
+  errors: string[];
+  plannedQuantity: number | null;
+  budgetLabourHours: number | null;
+  suppliedProductionRate: number | null;
+  calculatedProductionRate: number | null;
+  activity?: ProgrammeActivity;
+};
+
+type PendingImport = {
   fileName: string;
-  totalRows: number;
-  added: number;
-  updated: number;
-  rejected: number;
-  rejectedRows: string[];
+  rows: ImportValidationRow[];
 };
 
 type ProgrammeForm = {
@@ -31,6 +38,11 @@ type ProgrammeForm = {
   level: string;
   activity: string;
   plannedQuantity: string;
+  budgetLabourHours: string;
+  plannedProductionRate: string;
+  plannedCrewSize: string;
+  plannedStart: string;
+  plannedFinish: string;
   unit: string;
 };
 
@@ -41,6 +53,11 @@ const emptyForm: ProgrammeForm = {
   level: "",
   activity: "",
   plannedQuantity: "",
+  budgetLabourHours: "",
+  plannedProductionRate: "",
+  plannedCrewSize: "",
+  plannedStart: "",
+  plannedFinish: "",
   unit: "",
 };
 
@@ -55,6 +72,9 @@ const headerAliases: Record<string, string[]> = {
   wbs: ["wbs", "wbs code"],
   unit: ["unit", "uom"],
   plannedQuantity: ["planned quantity", "plannedquantity", "quantity", "planned qty"],
+  budgetLabourHours: ["budget labour hours", "budget labor hours", "budgetlabourhours", "budget hours"],
+  plannedProductionRate: ["planned production rate", "plannedproductionrate", "production rate"],
+  plannedCrewSize: ["planned crew size", "plannedcrewsize", "crew size"],
   plannedStart: ["planned start", "plannedstart", "start"],
   plannedFinish: ["planned finish", "plannedfinish", "finish"],
 };
@@ -89,6 +109,17 @@ function formatNumber(value: number): string {
   return value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
 }
 
+function parsePositiveNumber(value: unknown): number | null {
+  const text = asText(value).replace(/,/g, "");
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function variancePercentage(value: number, baseline: number): number {
+  return baseline > 0 ? Math.abs(value - baseline) / baseline * 100 : 0;
+}
+
 export default function ProgrammePage() {
   const [programmeActivities, setProgrammeActivities] = useState<ProgrammeActivity[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
@@ -100,7 +131,7 @@ export default function ProgrammePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,9 +198,15 @@ export default function ProgrammePage() {
     event.preventDefault();
     const programmeActivityId = form.programmeActivityId.trim();
     const activityName = form.activity.trim();
+    const plannedQuantity = Number(form.plannedQuantity);
+    const budgetLabourHours = Number(form.budgetLabourHours);
 
-    if (!programmeActivityId || !activityName) {
-      setError("Programme Activity ID and Activity are required.");
+    if (!programmeActivityId || !activityName || !form.building.trim() || !form.elevation.trim() || !form.level.trim() || !form.unit.trim()) {
+      setError("Activity ID, Building, Elevation, Level, Activity and Unit are required.");
+      return;
+    }
+    if (!(plannedQuantity > 0) || !(budgetLabourHours > 0)) {
+      setError("Planned Quantity and Budget Labour Hours must be greater than zero.");
       return;
     }
 
@@ -182,13 +219,26 @@ export default function ProgrammePage() {
       return;
     }
 
+    const calculatedRate = plannedQuantity / budgetLabourHours;
+    const overrideRate = Number(form.plannedProductionRate);
+    const plannedProductionRate = overrideRate > 0 ? overrideRate : calculatedRate;
+    const variance = variancePercentage(plannedProductionRate, calculatedRate);
+    if (overrideRate > 0 && !window.confirm(
+      `Override the calculated production rate of ${formatNumber(calculatedRate)} with ${formatNumber(overrideRate)} (${formatNumber(variance)}% variance)?`
+    )) return;
+
     const values = {
       programmeActivityId,
       building: form.building.trim(),
       elevation: form.elevation.trim(),
       level: form.level.trim(),
       activity: activityName,
-      plannedQuantity: Number(form.plannedQuantity) || 0,
+      plannedQuantity,
+      budgetLabourHours,
+      plannedProductionRate,
+      plannedCrewSize: Number(form.plannedCrewSize) > 0 ? Number(form.plannedCrewSize) : undefined,
+      plannedStart: form.plannedStart || undefined,
+      plannedFinish: form.plannedFinish || undefined,
       unit: form.unit.trim(),
     };
 
@@ -218,11 +268,16 @@ export default function ProgrammePage() {
       level: item.level,
       activity: item.activity,
       plannedQuantity: item.plannedQuantity ? String(item.plannedQuantity) : "",
+      budgetLabourHours: item.budgetLabourHours ? String(item.budgetLabourHours) : "",
+      plannedProductionRate: item.plannedProductionRate ? String(item.plannedProductionRate) : "",
+      plannedCrewSize: item.plannedCrewSize ? String(item.plannedCrewSize) : "",
+      plannedStart: item.plannedStart ?? "",
+      plannedFinish: item.plannedFinish ?? "",
       unit: item.unit,
     });
     setError("");
     setMessage("");
-    setImportSummary(null);
+    setPendingImport(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -233,6 +288,7 @@ export default function ProgrammePage() {
 
     setError("");
     setMessage("");
+    setPendingImport(null);
 
     try {
       const XLSX = await import("xlsx");
@@ -247,7 +303,13 @@ export default function ProgrammePage() {
       const headers = (worksheetRows[0] ?? []).map(asText);
       const missingColumns = [
         ["programmeActivityId", "Activity ID"],
+        ["building", "Building"],
+        ["elevation", "Elevation"],
+        ["level", "Level"],
         ["activity", "Activity"],
+        ["unit", "Unit"],
+        ["plannedQuantity", "Planned Quantity"],
+        ["budgetLabourHours", "Budget Labour Hours"],
       ].filter(([field]) => !hasColumn(headers, field)).map(([, label]) => label);
 
       if (missingColumns.length > 0) {
@@ -256,81 +318,88 @@ export default function ProgrammePage() {
       }
 
       const rows = XLSX.utils.sheet_to_json<SpreadsheetRow>(sheet, { defval: "", raw: false });
-      const imported: ProgrammeActivity[] = [];
-      const rejectedRows: string[] = [];
       const importedIds = new Set<string>();
-
-      rows.forEach((row, index) => {
+      const existingIds = new Set(programmeActivities.map((item) => item.programmeActivityId.toLowerCase()));
+      const validationRows = rows.map((row, index): ImportValidationRow => {
         const rowNumber = index + 2;
         const programmeActivityId = asText(valueFor(row, "programmeActivityId"));
+        const building = asText(valueFor(row, "building"));
+        const elevation = asText(valueFor(row, "elevation"));
+        const level = asText(valueFor(row, "level"));
         const activity = asText(valueFor(row, "activity"));
-        const quantityValue = asText(valueFor(row, "plannedQuantity")).replace(/,/g, "");
-        const plannedQuantity = quantityValue === "" ? 0 : Number(quantityValue);
+        const unit = asText(valueFor(row, "unit"));
+        const plannedQuantity = parsePositiveNumber(valueFor(row, "plannedQuantity"));
+        const budgetLabourHours = parsePositiveNumber(valueFor(row, "budgetLabourHours"));
+        const suppliedProductionRate = asText(valueFor(row, "plannedProductionRate"))
+          ? parsePositiveNumber(valueFor(row, "plannedProductionRate"))
+          : null;
+        const calculatedProductionRate = plannedQuantity && budgetLabourHours
+          ? plannedQuantity / budgetLabourHours
+          : null;
         const key = programmeActivityId.toLowerCase();
+        const errors: string[] = [];
+        if (!programmeActivityId) errors.push("Activity ID is required.");
+        if (!building) errors.push("Building is required.");
+        if (!elevation) errors.push("Elevation is required.");
+        if (!level) errors.push("Level is required.");
+        if (!activity) errors.push("Activity is required.");
+        if (!unit) errors.push("Unit is required.");
+        if (plannedQuantity === null) errors.push("Planned Quantity must be a number greater than zero.");
+        if (budgetLabourHours === null) errors.push("Budget Labour Hours must be a number greater than zero.");
+        if (asText(valueFor(row, "plannedProductionRate")) && suppliedProductionRate === null) {
+          errors.push("Planned Production Rate must be a number greater than zero.");
+        }
+        if (programmeActivityId && importedIds.has(key)) errors.push("Activity ID is duplicated in this workbook.");
+        if (programmeActivityId && existingIds.has(key)) errors.push("Activity ID already exists in this project.");
+        if (programmeActivityId) importedIds.add(key);
+        if (suppliedProductionRate && calculatedProductionRate && variancePercentage(suppliedProductionRate, calculatedProductionRate) > 2) {
+          errors.push(`Supplied rate differs by more than 2%; expected ${formatNumber(calculatedProductionRate)}.`);
+        }
+        const plannedCrewSizeText = asText(valueFor(row, "plannedCrewSize"));
+        const plannedCrewSize = plannedCrewSizeText ? parsePositiveNumber(plannedCrewSizeText) : null;
+        if (plannedCrewSizeText && plannedCrewSize === null) errors.push("Planned Crew Size must be a number greater than zero.");
 
-        if (!programmeActivityId || !activity) {
-          rejectedRows.push(`Row ${rowNumber}: Activity ID and Activity are required.`);
-          return;
-        }
-        if (!Number.isFinite(plannedQuantity) || plannedQuantity < 0) {
-          rejectedRows.push(`Row ${rowNumber}: Quantity must be a non-negative number.`);
-          return;
-        }
-        if (importedIds.has(key)) {
-          rejectedRows.push(`Row ${rowNumber}: duplicate Activity ID ${programmeActivityId}.`);
-          return;
-        }
-        importedIds.add(key);
-
-        imported.push({
+        const importedActivity: ProgrammeActivity | undefined = errors.length === 0 && plannedQuantity && budgetLabourHours && calculatedProductionRate
+          ? {
           id: createId(),
           programmeActivityId,
-          building: asText(valueFor(row, "building")),
-          elevation: asText(valueFor(row, "elevation")),
-          level: asText(valueFor(row, "level")),
+          building,
+          elevation,
+          level,
           activity,
           description: asText(valueFor(row, "description")),
           trade: asText(valueFor(row, "trade")),
           wbs: asText(valueFor(row, "wbs")),
-          unit: asText(valueFor(row, "unit")),
+          unit,
           plannedQuantity,
+          budgetLabourHours,
+          plannedProductionRate: suppliedProductionRate ?? calculatedProductionRate,
+          plannedCrewSize: plannedCrewSize ?? undefined,
           plannedStart: asText(valueFor(row, "plannedStart")) || undefined,
           plannedFinish: asText(valueFor(row, "plannedFinish")) || undefined,
           createdAt: new Date().toISOString(),
-        });
+        } : undefined;
+        return { rowNumber, activityId: programmeActivityId, errors, plannedQuantity, budgetLabourHours, suppliedProductionRate, calculatedProductionRate, activity: importedActivity };
       });
-
-      if (imported.length === 0) {
-        setImportSummary({ fileName: file.name, totalRows: rows.length, added: 0, updated: 0, rejected: rejectedRows.length, rejectedRows });
-        setError("No valid programme rows were found. Nothing was imported.");
-        return;
+      setPendingImport({ fileName: file.name, rows: validationRows });
+      if (validationRows.some((row) => row.errors.length > 0)) {
+        setError("Import not saved. Resolve every validation error and upload the corrected workbook.");
       }
-
-      const merged = new Map(programmeActivities.map((item) => [item.programmeActivityId.toLowerCase(), item]));
-      const updatedCount = imported.filter((item) => merged.has(item.programmeActivityId.toLowerCase())).length;
-      const addedCount = imported.length - updatedCount;
-
-      if (updatedCount > 0 && !window.confirm(
-        `${updatedCount} imported programme row${updatedCount === 1 ? " matches" : "s match"} existing Activity IDs. Overwrite ${updatedCount === 1 ? "this row" : "these rows"}?`
-      )) {
-        setError("Import cancelled. The existing programme was not changed.");
-        return;
-      }
-
-      imported.forEach((item) => {
-        const key = item.programmeActivityId.toLowerCase();
-        const existing = merged.get(key);
-        merged.set(key, existing ? { ...item, id: existing.id, createdAt: existing.createdAt } : item);
-      });
-      const updated = Array.from(merged.values());
-      saveProgramme(updated);
-      setProgrammeActivities(updated);
-      setImportSummary({ fileName: file.name, totalRows: rows.length, added: addedCount, updated: updatedCount, rejected: rejectedRows.length, rejectedRows });
-      setMessage("Programme import complete.");
     } catch (caught) {
       console.error("Unable to import programme:", caught);
       setError("The Excel file could not be read. Use an .xlsx or .xls workbook with a header row.");
     }
+  }
+
+  function confirmImport() {
+    if (!pendingImport || pendingImport.rows.some((row) => row.errors.length > 0)) return;
+    const imported = pendingImport.rows.flatMap((row) => row.activity ? [row.activity] : []);
+    const updated = [...programmeActivities, ...imported];
+    saveProgramme(updated);
+    setProgrammeActivities(updated);
+    setMessage(`${imported.length} programme activities imported.`);
+    setError("");
+    setPendingImport(null);
   }
 
   async function downloadProgrammeTemplate() {
@@ -344,8 +413,11 @@ export default function ProgrammePage() {
       Description: "Example row — replace or remove before importing",
       Trade: "Facade",
       WBS: "1.2.3",
-      Quantity: 100,
+      "Planned Quantity": 100,
       Unit: "m²",
+      "Budget Labour Hours": 50,
+      "Planned Production Rate": 2,
+      "Planned Crew Size": 4,
       "Planned Start": "2026-08-03",
       "Planned Finish": "2026-08-14",
     }]);
@@ -359,6 +431,18 @@ export default function ProgrammePage() {
     setProgrammeActivities(deleteProgrammeActivity(item.id));
     setMessage("");
   }
+
+  const formQuantity = Number(form.plannedQuantity);
+  const formBudgetHours = Number(form.budgetLabourHours);
+  const calculatedFormRate = formQuantity > 0 && formBudgetHours > 0
+    ? formQuantity / formBudgetHours
+    : null;
+  const overrideFormRate = Number(form.plannedProductionRate) > 0
+    ? Number(form.plannedProductionRate)
+    : null;
+  const formRateVariance = calculatedFormRate && overrideFormRate
+    ? variancePercentage(overrideFormRate, calculatedFormRate)
+    : null;
 
   return (
     <main className="timeline-page">
@@ -402,12 +486,31 @@ export default function ProgrammePage() {
             </label>
             <label className="attendance-field">
               <span>Quantity</span>
-              <input type="number" min="0" step="any" value={form.plannedQuantity} onChange={(event) => updateForm("plannedQuantity", event.target.value)} placeholder="0" />
+              <input type="number" min="0.000001" step="any" required value={form.plannedQuantity} onChange={(event) => updateForm("plannedQuantity", event.target.value)} placeholder="0" />
             </label>
             <label className="attendance-field">
               <span>Unit</span>
               <input value={form.unit} onChange={(event) => updateForm("unit", event.target.value)} placeholder="e.g. m², nr, lm" />
             </label>
+            <label className="attendance-field">
+              <span>Budget Labour Hours *</span>
+              <input type="number" min="0.000001" step="any" required value={form.budgetLabourHours} onChange={(event) => updateForm("budgetLabourHours", event.target.value)} placeholder="e.g. 50" />
+            </label>
+            <label className="attendance-field">
+              <span>Override Rate</span>
+              <input type="number" min="0.000001" step="any" value={form.plannedProductionRate} onChange={(event) => updateForm("plannedProductionRate", event.target.value)} placeholder={calculatedFormRate ? formatNumber(calculatedFormRate) : "Calculated automatically"} />
+            </label>
+            <label className="attendance-field">
+              <span>Planned Crew Size</span>
+              <input type="number" min="1" step="1" value={form.plannedCrewSize} onChange={(event) => updateForm("plannedCrewSize", event.target.value)} />
+            </label>
+            <label className="attendance-field"><span>Planned Start</span><input type="date" value={form.plannedStart} onChange={(event) => updateForm("plannedStart", event.target.value)} /></label>
+            <label className="attendance-field"><span>Planned Finish</span><input type="date" value={form.plannedFinish} onChange={(event) => updateForm("plannedFinish", event.target.value)} /></label>
+          </div>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", padding: 12, borderRadius: 10, background: "#fff" }}>
+            <span><strong>Calculated Rate:</strong> {calculatedFormRate === null ? "—" : formatNumber(calculatedFormRate)}</span>
+            <span><strong>Override Rate:</strong> {overrideFormRate === null ? "—" : formatNumber(overrideFormRate)}</span>
+            <span><strong>Variance:</strong> {formRateVariance === null ? "—" : `${formatNumber(formRateVariance)}%`}</span>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button type="submit" className="add-event-button" style={{ width: "auto", margin: 0 }}>{editingId ? "Save changes" : "Add activity"}</button>
@@ -417,7 +520,7 @@ export default function ProgrammePage() {
 
         <section style={{ padding: 20, marginBottom: 24, border: "1px solid #d7dde3", borderRadius: 18, background: "#f7f9fa" }}>
           <h2 style={{ marginTop: 0 }}>Import programme</h2>
-          <p>Upload the first worksheet from Excel. Activity ID and Activity are required; matching Activity IDs update existing rows.</p>
+          <p>Upload the first worksheet, review every row, then import only when the full workbook is valid.</p>
           <div style={{ display: "flex", gap: 10, margin: "8px 0", flexWrap: "wrap" }}>
             <label className="add-event-button" style={{ display: "inline-flex", width: "auto", margin: 0, cursor: "pointer" }}>
               Import Excel
@@ -425,24 +528,22 @@ export default function ProgrammePage() {
             </label>
             <button type="button" className="secondary-button" onClick={downloadProgrammeTemplate}>Download template</button>
           </div>
-          <p style={{ marginBottom: 0, color: "#5f6b76", fontSize: 13 }}>Supported columns: Activity ID, Building, Elevation, Level, Activity, Description, Trade, WBS, Quantity, Unit, Planned Start, Planned Finish. Unknown columns are ignored.</p>
+          <p style={{ marginBottom: 0, color: "#5f6b76", fontSize: 13 }}>Required: Activity ID, Building, Elevation, Level, Activity, Unit, Planned Quantity and Budget Labour Hours. Planned Production Rate is calculated when omitted.</p>
           {message && <p role="status" style={{ color: "#087443", fontWeight: 700 }}>{message}</p>}
           {error && <p role="alert" style={{ color: "#b42318", fontWeight: 700 }}>{error}</p>}
-          {importSummary && (
-            <div role="status" style={{ marginTop: 14, padding: 14, border: "1px solid #d7dde3", borderRadius: 12, background: "#ffffff" }}>
-              <strong style={{ display: "block", marginBottom: 8 }}>Import summary — {importSummary.fileName}</strong>
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 14 }}>
-                <span>{importSummary.totalRows} rows read</span>
-                <span>{importSummary.added} added</span>
-                <span>{importSummary.updated} updated</span>
-                <span>{importSummary.rejected} rejected</span>
-              </div>
-              {importSummary.rejectedRows.length > 0 && (
-                <ul style={{ margin: "10px 0 0", paddingLeft: 20, color: "#b42318", fontSize: 13 }}>
-                  {importSummary.rejectedRows.slice(0, 5).map((reason) => <li key={reason}>{reason}</li>)}
-                  {importSummary.rejectedRows.length > 5 && <li>{importSummary.rejectedRows.length - 5} more rejected rows</li>}
-                </ul>
-              )}
+          {pendingImport && (
+            <div role="status" style={{ marginTop: 14 }}>
+              <strong style={{ display: "block", marginBottom: 8 }}>Validation — {pendingImport.fileName}</strong>
+              <div style={{ overflowX: "auto" }}><table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse", background: "#fff" }}>
+                <thead><tr>{["Excel row", "Activity ID", "Status", "Error message", "Planned Quantity", "Budget Labour Hours", "Supplied Production Rate", "Calculated Production Rate"].map((heading) => <th key={heading} style={{ padding: 9, textAlign: "left", borderBottom: "2px solid #d7dde3" }}>{heading}</th>)}</tr></thead>
+                <tbody>{pendingImport.rows.map((row) => <tr key={row.rowNumber}>
+                  <td style={{ padding: 9, borderBottom: "1px solid #e4e8ec" }}>{row.rowNumber}</td><td style={{ padding: 9, borderBottom: "1px solid #e4e8ec" }}>{row.activityId || "—"}</td>
+                  <td style={{ padding: 9, borderBottom: "1px solid #e4e8ec", color: row.errors.length ? "#b42318" : "#087443", fontWeight: 700 }}>{row.errors.length ? "Invalid" : "Valid"}</td>
+                  <td style={{ padding: 9, borderBottom: "1px solid #e4e8ec" }}>{row.errors.join(" ") || "—"}</td>
+                  {[row.plannedQuantity, row.budgetLabourHours, row.suppliedProductionRate, row.calculatedProductionRate].map((value, index) => <td key={index} style={{ padding: 9, borderBottom: "1px solid #e4e8ec" }}>{value === null ? "—" : formatNumber(value)}</td>)}
+                </tr>)}</tbody>
+              </table></div>
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}><button type="button" className="add-event-button" style={{ width: "auto", margin: 0 }} disabled={pendingImport.rows.some((row) => row.errors.length > 0)} onClick={confirmImport}>Import all valid rows</button><button type="button" className="secondary-button" onClick={() => { setPendingImport(null); setError(""); }}>Cancel import</button></div>
             </div>
           )}
         </section>
@@ -451,6 +552,7 @@ export default function ProgrammePage() {
           <strong>{programmeActivities.length} programme activit{programmeActivities.length === 1 ? "y" : "ies"}</strong>
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search programme" style={{ width: "100%", maxWidth: 320, minHeight: 42, padding: "9px 12px", border: "1px solid #ccd3da", borderRadius: 10 }} />
         </div>
+        <p style={{ color: "#5f6b76" }}>Planned production rate is the baseline quantity expected per productive labour hour.</p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, padding: 14, marginBottom: 16, border: "1px solid #d7dde3", borderRadius: 12, background: "#f7f9fa" }}>
           <label className="attendance-field">
@@ -476,8 +578,8 @@ export default function ProgrammePage() {
           </section>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
-              <thead><tr>{["Programme Activity ID", "Building", "Elevation", "Level", "Activity", "Planned", "Completed", "Remaining", "% Complete", "Labour hours", "Productivity", "Unit", ""].map((heading) => <th key={heading} style={{ padding: 10, textAlign: "left", borderBottom: "2px solid #d7dde3" }}>{heading}</th>)}</tr></thead>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
+              <thead><tr>{["Activity ID", "Building", "Elevation", "Level", "Activity", "Planned Quantity", "Unit", "Budget Labour Hours", "Planned Production Rate", "Planned Crew Size", "Planned Start", "Planned Finish", "Baseline Status", "Completed", "% Complete", ""].map((heading) => <th key={heading} style={{ padding: 10, textAlign: "left", borderBottom: "2px solid #d7dde3" }}>{heading}</th>)}</tr></thead>
               <tbody>{filteredActivities.map((item) => {
                 const progress = progressByActivityId.get(item.programmeActivityId);
                 return (
@@ -487,13 +589,16 @@ export default function ProgrammePage() {
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.elevation || "—"}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.level || "—"}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}><strong>{item.activity}</strong>{item.description && <small style={{ display: "block", color: "#5f6b76" }}>{item.description}</small>}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(progress?.plannedQuantity ?? 0)}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(progress?.completedQuantity ?? 0)}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(progress?.remainingQuantity ?? 0)}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec", fontWeight: 700 }}>{formatNumber(progress?.percentageComplete ?? 0)}%</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(progress?.labourHours ?? 0)}</td>
-                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(progress?.productivity ?? 0)} {item.unit ? `${item.unit}/hr` : "units/hr"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(item.plannedQuantity)}</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.unit || "—"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.budgetLabourHours ? formatNumber(item.budgetLabourHours) : "—"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/labour hr` : "—"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.plannedCrewSize ?? "—"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.plannedStart ?? "—"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{item.plannedFinish ?? "—"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec", color: progress?.baselineComplete ? "#087443" : "#b42318", fontWeight: 700 }}>{progress?.baselineComplete ? "Complete" : "Productivity baseline incomplete"}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}>{formatNumber(progress?.completedQuantity ?? 0)}</td>
+                  <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec", fontWeight: 700 }}>{formatNumber(progress?.percentageComplete ?? 0)}%</td>
                   <td style={{ padding: 10, borderBottom: "1px solid #e4e8ec" }}><div style={{ display: "flex", gap: 8 }}><button type="button" className="secondary-button" onClick={() => startEditing(item)}>Edit</button><button type="button" className="secondary-button" onClick={() => removeActivity(item)}>Delete</button></div></td>
                 </tr>
               );})}</tbody>

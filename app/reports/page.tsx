@@ -89,11 +89,17 @@ export default function ReportsPage() {
   const [allDays, setAllDays] = useState<SiteDay[]>([]);
   const [programme, setProgramme] = useState<ProgrammeActivity[]>([]);
   const [operatives, setOperatives] = useState<Operative[]>([]);
+  const [productivityPeriod, setProductivityPeriod] = useState<"daily" | "weekly" | "monthly">("weekly");
+  const [productivityDate, setProductivityDate] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) setWeekStart(mondayFor(getActiveDate()));
+      if (!cancelled) {
+        const activeDate = getActiveDate();
+        setWeekStart(mondayFor(activeDate));
+        setProductivityDate(activeDate);
+      }
     });
     return () => { cancelled = true; };
   }, []);
@@ -107,7 +113,7 @@ export default function ReportsPage() {
       const weekEnd = addDays(weekStart, 6);
       setProject(getActiveProject());
       setDays(loadSiteDaysBetween(weekStart, weekEnd, projectId));
-      setAllDays(loadSiteDaysBetween("1000-01-01", weekEnd, projectId));
+      setAllDays(loadSiteDaysBetween("1000-01-01", "9999-12-31", projectId));
       setProgramme(loadProgramme(projectId));
       setOperatives(loadOperatives());
     }
@@ -133,14 +139,34 @@ export default function ReportsPage() {
     const weeklyEvents: DatedEvent[] = days.flatMap((day) => day.events.map((event) => ({ date: day.date, day, event })));
     const allEvents: DatedEvent[] = allDays.flatMap((day) => day.events.map((event) => ({ date: day.date, day, event })));
     const completedWork = weeklyEvents.filter(({ event }) => event.type === "work" && event.status === "completed");
+    const periodDate = productivityDate || weekStart;
+    const monthStart = `${periodDate.slice(0, 7)}-01`;
+    const monthEndValue = new Date(`${monthStart}T12:00:00`);
+    monthEndValue.setMonth(monthEndValue.getMonth() + 1);
+    monthEndValue.setDate(monthEndValue.getDate() - 1);
+    const productivityStart = productivityPeriod === "daily" ? periodDate : productivityPeriod === "monthly" ? monthStart : weekStart;
+    const productivityEnd = productivityPeriod === "daily"
+      ? periodDate
+      : productivityPeriod === "weekly"
+        ? weekEnd
+        : getLocalDate(monthEndValue);
+    const productivityEvents = allEvents.filter(({ date }) => date >= productivityStart && date <= productivityEnd);
+    const productivityCompletedWork = productivityEvents.filter(({ event }) => event.type === "work" && event.status === "completed");
 
     const measured = programme.flatMap((activity) => {
-      const weekly = completedWork.filter(({ event }) => event.programmeActivityId === activity.programmeActivityId);
-      const cumulative = allEvents.filter(({ event }) => event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId);
+      const weekly = productivityCompletedWork.filter(({ event }) => event.programmeActivityId === activity.programmeActivityId);
+      const cumulative = allEvents.filter(({ date, event }) => date <= productivityEnd && event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId);
       if (!weekly.length && !cumulative.length) return [];
       const weeklyQuantity = weekly.reduce((sum, { event }) => sum + (event.quantity ?? 0), 0);
       const cumulativeQuantity = cumulative.reduce((sum, { event }) => sum + (event.quantity ?? 0), 0);
       const hours = weekly.reduce((sum, { event }) => sum + eventLabourHours(event), 0);
+      const disruptionHours = productivityEvents
+        .filter(({ event }) => event.type === "disruption" && event.programmeActivityId === activity.programmeActivityId)
+        .reduce((sum, { event }) => sum + eventLabourHours(event), 0);
+      const plannedRate = (activity.plannedProductionRate ?? 0) > 0 ? activity.plannedProductionRate! : null;
+      const actualRate = hours > 0 ? weeklyQuantity / hours : null;
+      const overallRate = hours + disruptionHours > 0 ? weeklyQuantity / (hours + disruptionHours) : null;
+      const earnedHours = plannedRate ? weeklyQuantity / plannedRate : null;
       return [{
         ...activity,
         weeklyQuantity,
@@ -149,6 +175,15 @@ export default function ReportsPage() {
         percentage: activity.plannedQuantity > 0 ? (cumulativeQuantity / activity.plannedQuantity) * 100 : 0,
         hours,
         productivity: hours > 0 ? weeklyQuantity / hours : 0,
+        baselineComplete: Boolean(activity.plannedQuantity > 0 && (activity.budgetLabourHours ?? 0) > 0 && plannedRate),
+        plannedRate,
+        actualRate,
+        overallRate,
+        disruptionHours,
+        earnedHours,
+        labourProductivityIndex: earnedHours !== null && hours > 0 ? earnedHours / hours : null,
+        overallLabourEfficiencyIndex: earnedHours !== null && hours + disruptionHours > 0 ? earnedHours / (hours + disruptionHours) : null,
+        productivityPerformance: actualRate !== null && plannedRate ? actualRate / plannedRate * 100 : null,
       }];
     }).sort((a, b) => `${a.building}|${a.elevation}|${a.level}|${a.activity}`.localeCompare(`${b.building}|${b.elevation}|${b.level}|${b.activity}`));
 
@@ -196,8 +231,8 @@ export default function ReportsPage() {
       variations.length ? `VO/change works${references.length ? ` under ${references.join(", ")}` : ""} accounted for ${number(variations.reduce((sum, { event }) => sum + eventLabourHours(event), 0))} labour hours.` : "No VO/change work was recorded.",
     ].join(" ");
 
-    return { weekEnd, dates, dayByDate, programmeById, operativeById, weeklyEvents, measured, gangs: [...gangMap.values()], disruptions, variations, disruptionCost, disruptionLostHours, weeklyAttendanceHours, narrative };
-  }, [allDays, days, operatives, programme, weekStart]);
+    return { weekEnd, dates, dayByDate, programmeById, operativeById, weeklyEvents, measured, gangs: [...gangMap.values()], disruptions, variations, disruptionCost, disruptionLostHours, weeklyAttendanceHours, narrative, productivityStart, productivityEnd };
+  }, [allDays, days, operatives, productivityDate, productivityPeriod, programme, weekStart]);
 
   if (!weekStart) return null;
 
@@ -206,13 +241,19 @@ export default function ReportsPage() {
     <section style={{ padding: 18, marginBottom: 30, border: "1px solid #d7dde3", borderRadius: 14, background: "#f7f9fa" }}>
       <label style={{ display: "grid", gap: 6, maxWidth: 260, fontWeight: 800 }}>Week commencing<input type="date" value={weekStart} onChange={(event) => setWeekStart(mondayFor(event.target.value))} style={{ minHeight: 42, padding: "8px 10px" }} /></label>
       <h2 style={{ marginBottom: 4 }}>Week commencing {formatDate(weekStart)}</h2><p style={{ margin: 0 }}>{formatDate(weekStart)} – {formatDate(report.weekEnd)}</p>
+      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <strong>Productivity period:</strong>
+        {(["daily", "weekly", "monthly"] as const).map((period) => <button key={period} type="button" className={productivityPeriod === period ? "primary-button" : "secondary-button"} onClick={() => setProductivityPeriod(period)}>{period[0].toUpperCase() + period.slice(1)}</button>)}
+        {productivityPeriod !== "weekly" && <input type="date" value={productivityDate} onChange={(event) => setProductivityDate(event.target.value)} aria-label="Productivity report date" />}
+        <span>{formatDate(report.productivityStart)}{report.productivityEnd !== report.productivityStart ? ` – ${formatDate(report.productivityEnd)}` : ""}</span>
+      </div>
     </section>
 
     {days.length === 0 && <div style={{ padding: 22, marginBottom: 30, border: "1px dashed #9aa6b2", borderRadius: 14, background: "#fff" }}><strong>Enter or backdate daily records for this week to populate the report.</strong><p style={{ marginBottom: 0 }}>Use the date selector above to review another week, or the global date selector to enter historical daily records.</p></div>}
 
     <Section number={1} title="Daily Log Overview"><Table minWidth={1200}><thead><tr>{["Date", "Operatives", "Gangs", "Measured Work Records", "Productive Labour Hours", "Disruption Labour Hours", "VO / Change Labour Hours", "Break Hours", "Status"].map((heading) => <th key={heading} style={cellStyle}>{heading}</th>)}</tr></thead><tbody>{report.dates.map((date) => { const day = report.dayByDate.get(date); if (!day) return <tr key={date}><td style={cellStyle}>{formatDay(date)}</td><td colSpan={7} style={{ ...cellStyle, color: "#7a858f" }}>No record entered</td><td style={cellStyle}><strong>No Record</strong></td></tr>; const measuredCount = day.events.filter((event) => event.type === "work" && event.status === "completed").length; const status = day.attendance.length > 0 && day.events.length > 0 ? "Complete" : "Partial"; return <tr key={date}><td style={cellStyle}>{formatDay(date)}</td><td style={cellStyle}>{day.attendance.length}</td><td style={cellStyle}>{day.crews?.length ?? 0}</td><td style={cellStyle}>{measuredCount}</td><td style={cellStyle}>{number(labourHours(day.events, "work"))}</td><td style={cellStyle}>{number(labourHours(day.events, "disruption"))}</td><td style={cellStyle}>{number(labourHours(day.events, "variation"))}</td><td style={cellStyle}>{number(labourHours(day.events, "break"))}</td><td style={cellStyle}><strong>{status}</strong></td></tr>; })}</tbody></Table></Section>
 
-    <Section number={2} title="Measured Work Achievement">{report.measured.length === 0 ? <p>No completed measured work recorded this week.</p> : <Table minWidth={1700}><thead><tr>{["Building", "Elevation", "Level", "Activity", "Programme Activity ID", "Unit", "Quantity Completed This Week", "Cumulative Quantity Completed", "Planned Quantity", "Remaining Quantity", "Percentage Complete", "Productive Labour Hours", "Productivity"].map((heading) => <th key={heading} style={cellStyle}>{heading}</th>)}</tr></thead><tbody>{report.measured.map((row) => <tr key={row.programmeActivityId}><td style={cellStyle}>{row.building || "—"}</td><td style={cellStyle}>{row.elevation || "—"}</td><td style={cellStyle}>{row.level || "—"}</td><td style={cellStyle}>{row.activity}</td><td style={cellStyle}>{row.programmeActivityId}</td><td style={cellStyle}>{row.unit || "—"}</td><td style={cellStyle}>{number(row.weeklyQuantity)}</td><td style={cellStyle}>{number(row.cumulativeQuantity)}</td><td style={cellStyle}>{number(row.plannedQuantity)}</td><td style={cellStyle}>{number(row.remaining)}</td><td style={cellStyle}>{number(row.percentage)}%</td><td style={cellStyle}>{number(row.hours)}</td><td style={cellStyle}>{row.hours > 0 ? number(row.productivity) : "—"}</td></tr>)}</tbody></Table>}</Section>
+    <Section number={2} title="Measured Work Achievement">{report.measured.length === 0 ? <p>No completed measured work recorded this week.</p> : <Table minWidth={2600}><thead><tr>{["Building", "Elevation", "Level", "Activity", "Activity ID", "Unit", "Quantity This Week", "Cumulative Quantity", "Planned Quantity", "Remaining", "% Complete", "Planned Production Rate", "Actual Production Rate", "Overall Production Rate", "Productive Labour Hours", "Disruption Labour Hours", "Earned Labour Hours", "Labour Productivity Index", "Overall Labour Efficiency Index", "Productivity Performance %"].map((heading) => <th key={heading} style={cellStyle}>{heading}</th>)}</tr></thead><tbody>{report.measured.map((row) => <tr key={row.programmeActivityId}><td style={cellStyle}>{row.building || "—"}</td><td style={cellStyle}>{row.elevation || "—"}</td><td style={cellStyle}>{row.level || "—"}</td><td style={cellStyle}>{row.activity}</td><td style={cellStyle}>{row.programmeActivityId}</td><td style={cellStyle}>{row.unit || "—"}</td><td style={cellStyle}>{number(row.weeklyQuantity)}</td><td style={cellStyle}>{number(row.cumulativeQuantity)}</td><td style={cellStyle}>{number(row.plannedQuantity)}</td><td style={cellStyle}>{number(row.remaining)}</td><td style={cellStyle}>{number(row.percentage)}%</td>{row.baselineComplete ? <><td style={cellStyle}>{number(row.plannedRate ?? 0)}</td><td style={cellStyle}>{row.actualRate === null ? "—" : number(row.actualRate)}</td><td style={cellStyle}>{row.overallRate === null ? "—" : number(row.overallRate)}</td><td style={cellStyle}>{number(row.hours)}</td><td style={cellStyle}>{number(row.disruptionHours)}</td><td style={cellStyle}>{row.earnedHours === null ? "—" : number(row.earnedHours)}</td><td style={cellStyle}>{row.labourProductivityIndex === null ? "—" : number(row.labourProductivityIndex)}</td><td style={cellStyle}>{row.overallLabourEfficiencyIndex === null ? "—" : number(row.overallLabourEfficiencyIndex)}</td><td style={cellStyle}>{row.productivityPerformance === null ? "—" : `${number(row.productivityPerformance)}%`}</td></> : <td colSpan={9} style={{ ...cellStyle, color: "#b42318", fontWeight: 700 }}>Productivity baseline incomplete</td>}</tr>)}</tbody></Table>}</Section>
 
     <Section number={3} title="Productivity by Gang">{report.gangs.length === 0 ? <p>No gang productivity records available.</p> : <Table minWidth={1200}><thead><tr>{["Gang", "Average Operatives", "Activities Worked", "Unit", "Quantity Completed", "Productive Labour Hours", "Disruption Labour Hours", "VO / Change Labour Hours", "Average Productivity"].map((heading) => <th key={heading} style={cellStyle}>{heading}</th>)}</tr></thead><tbody>{report.gangs.map((row) => <tr key={`${row.gang}-${row.activity}-${row.unit}`}><td style={cellStyle}>{row.gang}</td><td style={cellStyle}>{row.crewCounts.length ? number(row.crewCounts.reduce((sum, count) => sum + count, 0) / row.crewCounts.length) : "—"}</td><td style={cellStyle}>{row.activity}</td><td style={cellStyle}>{row.unit || "—"}</td><td style={cellStyle}>{number(row.quantities)}</td><td style={cellStyle}>{number(row.productive)}</td><td style={cellStyle}>{number(row.disruption)}</td><td style={cellStyle}>{number(row.variation)}</td><td style={cellStyle}>{row.productive > 0 ? number(row.quantities / row.productive) : "—"}</td></tr>)}</tbody></Table>}</Section>
 

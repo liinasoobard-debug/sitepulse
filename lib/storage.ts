@@ -144,6 +144,21 @@ function normaliseProgrammeActivity(
       Number.isFinite(Number(activity.plannedQuantity))
         ? Number(activity.plannedQuantity)
         : 0,
+    budgetLabourHours:
+      Number.isFinite(Number(activity.budgetLabourHours)) &&
+      Number(activity.budgetLabourHours) > 0
+        ? Number(activity.budgetLabourHours)
+        : undefined,
+    plannedProductionRate:
+      Number.isFinite(Number(activity.plannedProductionRate)) &&
+      Number(activity.plannedProductionRate) > 0
+        ? Number(activity.plannedProductionRate)
+        : undefined,
+    plannedCrewSize:
+      Number.isFinite(Number(activity.plannedCrewSize)) &&
+      Number(activity.plannedCrewSize) > 0
+        ? Number(activity.plannedCrewSize)
+        : undefined,
     plannedStart: activity.plannedStart?.trim() || undefined,
     plannedFinish: activity.plannedFinish?.trim() || undefined,
     createdAt:
@@ -426,6 +441,9 @@ export function addProgrammeActivity(
     wbs: activity.wbs?.trim() || "",
     unit: activity.unit.trim(),
     plannedQuantity: Number(activity.plannedQuantity) || 0,
+    budgetLabourHours: Number(activity.budgetLabourHours) || undefined,
+    plannedProductionRate: Number(activity.plannedProductionRate) || undefined,
+    plannedCrewSize: Number(activity.plannedCrewSize) || undefined,
     plannedStart: activity.plannedStart?.trim() || undefined,
     plannedFinish: activity.plannedFinish?.trim() || undefined,
     createdAt: new Date().toISOString(),
