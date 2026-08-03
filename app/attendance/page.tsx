@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import * as XLSX from "xlsx";
 import {
+  deleteOperative,
   loadDay,
   loadOperatives,
   getActiveDate,
@@ -497,6 +498,38 @@ export default function AttendancePage() {
     );
   }
 
+  function removeOperative(operative: Operative) {
+    if (
+      !window.confirm(
+        `Remove ${operative.name} from the operative list? This will also remove their attendance and gang assignment for the selected date.`
+      )
+    ) {
+      return;
+    }
+
+    const operativeId = String(operative.id);
+    const updatedAttendance = attendance.filter(
+      (record) => String(record.operativeId) !== operativeId
+    );
+    const existingDay = loadDay();
+
+    setOperatives(deleteOperative(operativeId));
+    setAttendance(updatedAttendance);
+
+    if (existingDay) {
+      saveDay({
+        ...existingDay,
+        attendance: updatedAttendance,
+        crews: existingDay.crews?.map((crew) => ({
+          ...crew,
+          operativeIds: crew.operativeIds.filter(
+            (id) => String(id) !== operativeId
+          ),
+        })),
+      });
+    }
+  }
+
   const today = new Intl.DateTimeFormat("en-GB", {
     weekday: "long",
     day: "numeric",
@@ -918,6 +951,13 @@ export default function AttendancePage() {
                       <td>{formatCurrency(cost)}</td>
 
                       <td>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
                         {(record?.signIn ||
                           record?.signOut) && (
                           <button
@@ -932,6 +972,15 @@ export default function AttendancePage() {
                             Clear
                           </button>
                         )}
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => removeOperative(operative)}
+                            style={{ color: "#b42318" }}
+                          >
+                            Remove person
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
