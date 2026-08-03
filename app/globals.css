@@ -634,16 +634,16 @@ h1 {
 }
 
 .programme-grid {
-  border: 1px solid #c8d0d8;
+  border: 2px solid #7b8794;
 }
 
 .programme-grid th,
 .programme-grid td {
-  border: 1px solid #c8d0d8 !important;
+  border: 1px solid #98a3ad !important;
 }
 
 .programme-grid thead th {
-  background: #eef2f5;
+  background: #e3e8ec;
 }
 
 .programme-grid tbody tr:hover td {
