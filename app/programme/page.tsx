@@ -534,7 +534,7 @@ export default function ProgrammePage() {
           {pendingImport && (
             <div role="status" style={{ marginTop: 14 }}>
               <strong style={{ display: "block", marginBottom: 8 }}>Validation — {pendingImport.fileName}</strong>
-              <div style={{ overflowX: "auto" }}><table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse", background: "#fff" }}>
+              <div style={{ overflowX: "auto" }}><table className="programme-grid" style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse", background: "#fff" }}>
                 <thead><tr>{["Excel row", "Activity ID", "Status", "Error message", "Planned Quantity", "Budget Labour Hours", "Supplied Production Rate", "Calculated Production Rate"].map((heading) => <th key={heading} style={{ padding: 9, textAlign: "left", borderBottom: "2px solid #d7dde3" }}>{heading}</th>)}</tr></thead>
                 <tbody>{pendingImport.rows.map((row) => <tr key={row.rowNumber}>
                   <td style={{ padding: 9, borderBottom: "1px solid #e4e8ec" }}>{row.rowNumber}</td><td style={{ padding: 9, borderBottom: "1px solid #e4e8ec" }}>{row.activityId || "—"}</td>
@@ -578,7 +578,7 @@ export default function ProgrammePage() {
           </section>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
+            <table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
               <thead><tr>{["Activity ID", "Building", "Elevation", "Level", "Activity", "Planned Quantity", "Unit", "Budget Labour Hours", "Planned Production Rate", "Planned Crew Size", "Planned Start", "Planned Finish", "Baseline Status", "Completed", "% Complete", ""].map((heading) => <th key={heading} style={{ padding: 10, textAlign: "left", borderBottom: "2px solid #d7dde3" }}>{heading}</th>)}</tr></thead>
               <tbody>{filteredActivities.map((item) => {
                 const progress = progressByActivityId.get(item.programmeActivityId);

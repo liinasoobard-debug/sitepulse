@@ -633,6 +633,23 @@ h1 {
   text-align: center;
 }
 
+.programme-grid {
+  border: 1px solid #c8d0d8;
+}
+
+.programme-grid th,
+.programme-grid td {
+  border: 1px solid #c8d0d8 !important;
+}
+
+.programme-grid thead th {
+  background: #eef2f5;
+}
+
+.programme-grid tbody tr:hover td {
+  background: #f7f9fa;
+}
+
 @media (min-width: 900px) {
   .timeline-panel {
     max-width: 1180px;
