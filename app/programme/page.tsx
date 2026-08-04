@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getActiveProjectId } from "@/lib/storage";
 import {
   loadProgrammeImports,
+  loadActualProductivity,
   loadProjectRole,
   loadPublishedProgramme,
   updateProgrammeBaseline,
@@ -57,6 +58,7 @@ const formatNumber = (value?: number) =>
 export default function ProgrammePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activities, setActivities] = useState<ProgrammeActivity[]>([]);
+  const [actualProductivity, setActualProductivity] = useState<Record<string, number>>({});
   const [imports, setImports] = useState<Record<string, unknown>[]>([]);
   const [role, setRole] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -85,14 +87,16 @@ export default function ProgrammePage() {
     setLoading(true);
     try {
       const projectId = getActiveProjectId();
-      const [programme, history, currentRole] = await Promise.all([
+      const [programme, history, currentRole, productivity] = await Promise.all([
         loadPublishedProgramme(projectId),
         loadProgrammeImports(projectId),
         loadProjectRole(projectId),
+        loadActualProductivity(projectId),
       ]);
       setActivities(programme.activities);
       setImports(history as Record<string, unknown>[]);
       setRole(currentRole);
+      setActualProductivity(productivity);
       setError("");
     } catch (loadError) {
       setError(
@@ -419,8 +423,8 @@ export default function ProgrammePage() {
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="programme-grid" style={{ width: "100%", minWidth: 1500, borderCollapse: "collapse" }}>
-            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+          <table className="programme-grid" style={{ width: "100%", minWidth: 1650, borderCollapse: "collapse" }}>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity", "Actual Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
               {filtered.map((item) => (
                 <tr key={item.id}>
@@ -429,6 +433,7 @@ export default function ProgrammePage() {
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
                   <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.plannedCrewSize)}</td>
                   <td>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); }}>Complete baseline</button> : "Productivity target incomplete"}</td>
+                  <td>{actualProductivity[item.programmeActivityId] === undefined ? "—" : `${formatNumber(actualProductivity[item.programmeActivityId])} ${item.unit}/labour hr`}</td>
                 </tr>
               ))}
             </tbody>

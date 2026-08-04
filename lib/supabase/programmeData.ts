@@ -45,6 +45,30 @@ export async function loadProgrammeImports(projectId: string) {
   if (error) throw error;
   return data ?? [];
 }
+
+export async function loadActualProductivity(projectId: string): Promise<Record<string, number>> {
+  const { data, error } = await createClient()
+    .from("timeline_events")
+    .select("external_activity_id,actual_quantity,labour_hours")
+    .eq("project_id", projectId)
+    .eq("event_type", "work")
+    .eq("status", "completed")
+    .is("deleted_at", null);
+  if (error) throw error;
+  const totals = new Map<string, { quantity: number; labourHours: number }>();
+  for (const row of data ?? []) {
+    if (!row.external_activity_id) continue;
+    const current = totals.get(row.external_activity_id) ?? { quantity: 0, labourHours: 0 };
+    current.quantity += Number(row.actual_quantity ?? 0);
+    current.labourHours += Number(row.labour_hours ?? 0);
+    totals.set(row.external_activity_id, current);
+  }
+  return Object.fromEntries(
+    [...totals.entries()].flatMap(([activityId, total]) =>
+      total.labourHours > 0 ? [[activityId, total.quantity / total.labourHours]] : []
+    )
+  );
+}
 export async function loadProjectRole(projectId:string){const {data,error}=await createClient().from("sitepulse_project_members").select("role").eq("project_id",projectId).maybeSingle();if(error)throw error;return data?.role as "planner"|"admin"|"site_team"|undefined;}
 
 export async function updateProgrammeBaseline(activityId: string, unit: string, productivityTarget: number) {
