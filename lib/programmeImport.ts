@@ -187,21 +187,30 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
   });
 
   const resolveActivity = (raw: unknown) => internalToOfficial.get(text(raw));
+  let externalRelationshipReferences = 0;
   const relationships = (sheet(sheets, "taskpred") ?? []).flatMap((row, index): ProgrammeRelationship[] => {
     if (isP6LabelRow(row) || isDeletedRow(row)) return [];
-    const predecessorActivityId = resolveActivity(value(row, aliases.predId));
-    const successorActivityId = resolveActivity(value(row, aliases.succId));
-    if (!predecessorActivityId || !successorActivityId) { issues.push({ sheet: "TASKPRED", rowNumber: index + 2, severity: "error", message: "Relationship references an unknown predecessor or successor activity." }); return []; }
+    const rawPredecessor = text(value(row, aliases.predId));
+    const rawSuccessor = text(value(row, aliases.succId));
+    if (!rawPredecessor || !rawSuccessor) { issues.push({ sheet: "TASKPRED", rowNumber: index + 2, severity: "error", message: "Relationship requires both a predecessor and successor Activity ID." }); return []; }
+    const predecessorActivityId = resolveActivity(rawPredecessor) ?? rawPredecessor;
+    const successorActivityId = resolveActivity(rawSuccessor) ?? rawSuccessor;
+    if (!resolveActivity(rawPredecessor) || !resolveActivity(rawSuccessor)) externalRelationshipReferences += 1;
     return [{ id: id("programme-relationship"), projectId, predecessorActivityId, successorActivityId, relationshipType: text(value(row, aliases.relationType)) || "FS", lag: number(value(row, aliases.lag)), sourceImportId: importId }];
   });
+  if (externalRelationshipReferences) issues.push({ sheet: "TASKPRED", severity: "warning", message: `${externalRelationshipReferences} relationships reference activities outside this filtered workbook. Their official P6 Activity IDs were preserved.` });
+  let externalAssignmentReferences = 0;
   const assignments = (sheet(sheets, "taskrsrc") ?? []).flatMap((row, index): ProgrammeResourceAssignment[] => {
     if (isP6LabelRow(row) || isDeletedRow(row)) return [];
-    const programmeActivityId = resolveActivity(value(row, aliases.internalTaskId)) ?? resolveActivity(value(row, aliases.activityId));
+    const rawActivity = text(value(row, aliases.internalTaskId)) || text(value(row, aliases.activityId));
+    const programmeActivityId = resolveActivity(rawActivity) ?? rawActivity;
     const rawResource = text(value(row, aliases.resourceId));
-    const resourceId = resourceRefs.get(rawResource);
-    if (!programmeActivityId || !resourceId) { issues.push({ sheet: "TASKRSRC", rowNumber: index + 2, severity: "error", message: `Assignment references an unknown ${!programmeActivityId ? "activity" : "resource"}.` }); return []; }
+    const resourceId = resourceRefs.get(rawResource) ?? rawResource;
+    if (!programmeActivityId || !resourceId) { issues.push({ sheet: "TASKRSRC", rowNumber: index + 2, severity: "error", message: `Assignment requires both an Activity ID and Resource ID.` }); return []; }
+    if (!resolveActivity(rawActivity) || !resourceRefs.has(rawResource)) externalAssignmentReferences += 1;
     return [{ id: id("programme-assignment"), projectId, programmeActivityId, resourceId, resourceType: text(value(row, aliases.resourceType)), assignmentStart: date(value(row, aliases.assignmentStart)), assignmentFinish: date(value(row, aliases.assignmentFinish)), budgetedLabourUnits: number(value(row, aliases.budgetedUnits)), actualLabourUnits: number(value(row, aliases.actualUnits)), remainingLabourUnits: number(value(row, aliases.remainingUnits)), atCompletionUnits: number(value(row, aliases.atCompletionUnits)), sourceImportId: importId }];
   });
+  if (externalAssignmentReferences) issues.push({ sheet: "TASKRSRC", severity: "warning", message: `${externalAssignmentReferences} assignments reference activities or resources outside this filtered workbook. Their official P6 IDs were preserved.` });
   return { sourceType: "p6-xlsx", availableColumns, columnLabels, activities, relationships, resources, assignments, issues, dataDate };
 }
 

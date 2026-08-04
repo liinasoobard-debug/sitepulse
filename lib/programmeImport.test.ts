@@ -28,13 +28,23 @@ test("imports TASK, TASKPRED, RSRC and multiple TASKRSRC assignments", () => {
   assert.equal(result.issues.filter((issue) => issue.severity === "error").length, 0);
 });
 
-test("reports duplicate Activity IDs and invalid predecessor references", () => {
+test("reports duplicate Activity IDs and missing relationship identifiers", () => {
   const sheets = fixture();
   sheets.TASK.push({ task_id: "3", task_code: "A1000", task_name: "Duplicate" });
-  sheets.TASKPRED.push({ pred_task_id: "missing", task_id: "2" });
+  sheets.TASKPRED.push({ pred_task_id: "", task_id: "2" });
   const result = parseP6Workbook(sheets, "project", "import", mapping);
   assert.ok(result.issues.some((issue) => issue.message.includes("Duplicate Activity ID")));
-  assert.ok(result.issues.some((issue) => issue.sheet === "TASKPRED" && issue.message.includes("unknown")));
+  assert.ok(result.issues.some((issue) => issue.sheet === "TASKPRED" && issue.severity === "error"));
+});
+
+test("preserves relationship and assignment IDs outside a filtered workbook", () => {
+  const sheets = fixture();
+  sheets.TASKPRED.push({ pred_task_id: "EXTERNAL-10", task_id: "A1000", pred_type: "PR_FS" });
+  sheets.TASKRSRC.push({ task_id: "EXTERNAL-10", rsrc_id: "EXTERNAL-RSRC" });
+  const result = parseP6Workbook(sheets, "project", "import", mapping);
+  assert.ok(result.relationships.some((item) => item.predecessorActivityId === "EXTERNAL-10"));
+  assert.ok(result.assignments.some((item) => item.programmeActivityId === "EXTERNAL-10" && item.resourceId === "EXTERNAL-RSRC"));
+  assert.equal(result.issues.filter((issue) => issue.severity === "error").length, 0);
 });
 
 test("classifies changed dates, new rows and activities missing from an update", () => {
