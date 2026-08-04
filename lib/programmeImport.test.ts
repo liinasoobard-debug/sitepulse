@@ -72,3 +72,14 @@ test("filtered weekly exports can resolve references against the existing progra
   assert.equal(result.relationships.length, 1);
   assert.equal(result.issues.filter((issue) => issue.severity === "error").length, 0);
 });
+
+test("uses P6 row-two descriptions while mapping machine-key hierarchy columns", () => {
+  const sheets = fixture();
+  sheets.TASK[0] = { task_code: "Activity ID", task_name: "Activity Name", actv_code_elevation_id: "ALUMET - ELEVATION", actv_code_floors_id: "HBX-ALS-FLOORS" };
+  sheets.TASK[1].actv_code_elevation_id = "EAST";
+  sheets.TASK[1].actv_code_floors_id = "L20";
+  const result = parseP6Workbook(sheets, "project", "import", { ...mapping, elevation: "actv_code_elevation_id", level: "actv_code_floors_id" });
+  assert.equal(result.columnLabels.actv_code_elevation_id, "ALUMET - ELEVATION");
+  assert.equal(result.activities[0].elevation, "EAST");
+  assert.equal(result.activities[0].level, "L20");
+});

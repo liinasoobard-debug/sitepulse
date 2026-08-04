@@ -23,6 +23,7 @@ export interface ImportIssue {
 export interface ParsedP6Workbook {
   sourceType: "p6-xlsx";
   availableColumns: string[];
+  columnLabels: Record<string, string>;
   activities: ProgrammeActivity[];
   relationships: ProgrammeRelationship[];
   resources: ProgrammeResource[];
@@ -132,9 +133,11 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
   const taskRows = sheet(sheets, "task");
   const issues: ImportIssue[] = [];
   if (!taskRows) {
-    return { sourceType: "p6-xlsx", availableColumns: [], activities: [], relationships: [], resources: [], assignments: [], issues: [{ sheet: "TASK", severity: "error", message: "Required TASK sheet is missing." }] };
+    return { sourceType: "p6-xlsx", availableColumns: [], columnLabels: {}, activities: [], relationships: [], resources: [], assignments: [], issues: [{ sheet: "TASK", severity: "error", message: "Required TASK sheet is missing." }] };
   }
   const availableColumns = [...new Set(taskRows.flatMap((row) => Object.keys(row)))];
+  const p6LabelRow = taskRows.find(isP6LabelRow);
+  const columnLabels = Object.fromEntries(availableColumns.map((column) => [column, text(p6LabelRow?.[column]) || column]));
   const seen = new Set<string>();
   const internalToOfficial = new Map<string, string>();
   knownActivityIds.forEach((activityId) => internalToOfficial.set(activityId, activityId));
@@ -198,7 +201,7 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     if (!programmeActivityId || !resourceId) { issues.push({ sheet: "TASKRSRC", rowNumber: index + 2, severity: "error", message: `Assignment references an unknown ${!programmeActivityId ? "activity" : "resource"}.` }); return []; }
     return [{ id: id("programme-assignment"), projectId, programmeActivityId, resourceId, resourceType: text(value(row, aliases.resourceType)), assignmentStart: date(value(row, aliases.assignmentStart)), assignmentFinish: date(value(row, aliases.assignmentFinish)), budgetedLabourUnits: number(value(row, aliases.budgetedUnits)), actualLabourUnits: number(value(row, aliases.actualUnits)), remainingLabourUnits: number(value(row, aliases.remainingUnits)), atCompletionUnits: number(value(row, aliases.atCompletionUnits)), sourceImportId: importId }];
   });
-  return { sourceType: "p6-xlsx", availableColumns, activities, relationships, resources, assignments, issues, dataDate };
+  return { sourceType: "p6-xlsx", availableColumns, columnLabels, activities, relationships, resources, assignments, issues, dataDate };
 }
 
 const comparedFields: (keyof ProgrammeActivity)[] = ["activityName", "wbsCode", "wbsPath", "building", "elevation", "level", "gridline", "workActivity", "activityStatus", "originalDuration", "remainingDuration", "plannedStart", "plannedFinish", "actualStart", "actualFinish", "physicalPercentComplete", "calendar", "budgetLabourHours", "plannedQuantity", "plannedCrewSize", "plannedProductionRate"];
