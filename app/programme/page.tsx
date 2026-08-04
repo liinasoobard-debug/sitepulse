@@ -144,16 +144,26 @@ export default function ProgrammePage() {
         body: form,
       });
       const body = await response.json();
-      const summary = body.summary ?? {};
+      const projectId = getActiveProjectId();
+      const history = await loadProgrammeImports(projectId);
+      const storedImport = history.find((item) => String(item.id) === String(body.importId));
+      const summary = body.summary && typeof body.summary === "object" ? body.summary : {};
+      const activityCount = Number(summary.activities ?? body.activityCount ?? storedImport?.activity_count ?? 0);
+      const relationshipCount = Number(summary.relationships ?? body.relationshipCount ?? storedImport?.relationship_count ?? 0);
+      const resourceCount = Number(summary.resources ?? body.resourceCount ?? storedImport?.resource_count ?? 0);
+      const assignmentCount = Number(summary.assignments ?? body.assignmentCount ?? storedImport?.assignment_count ?? 0);
+      const storedValidation = storedImport?.validation_summary && typeof storedImport.validation_summary === "object"
+        ? storedImport.validation_summary as { issues?: ImportIssue[] }
+        : undefined;
       const result: ImportPreview = {
         importId: String(body.importId ?? ""),
         status: body.status === "draft" ? "draft" : "failed",
         filename: selectedFile.name,
-        activities: Number(summary.activities ?? 0),
-        relationships: Number(summary.relationships ?? 0),
-        resources: Number(summary.resources ?? 0),
-        assignments: Number(summary.assignments ?? 0),
-        issues: Array.isArray(summary.issues) ? summary.issues : [],
+        activities: activityCount,
+        relationships: relationshipCount,
+        resources: resourceCount,
+        assignments: assignmentCount,
+        issues: Array.isArray(summary.issues) ? summary.issues : Array.isArray(storedValidation?.issues) ? storedValidation.issues : [],
       };
       setPreview(result);
       if (!response.ok) {
@@ -162,6 +172,11 @@ export default function ProgrammePage() {
             result.issues.find((issue) => issue.severity === "error")?.message ||
             "Workbook validation failed."
         );
+        return;
+      }
+      if (result.activities < 1) {
+        setPreview({ ...result, status: "failed" });
+        setError("The workbook returned no programme activities. Publishing has been blocked; select the workbook and review it again.");
         return;
       }
       setMessage("Workbook parsed successfully. Review the import before publishing.");
