@@ -9,6 +9,7 @@ const SHARED_KEY_PREFIXES = [
   "sitepulse-projects",
   "sitepulse-operatives",
   "sitepulse-programme-project-",
+  "sitepulse-programme-import-project-",
   "sitepulse-day-project-",
 ];
 const CLIENT_ID_KEY = "sitepulse-sync-client-id";

@@ -102,7 +102,6 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
   const [selectedBuilding, setSelectedBuilding] = useState("");
   const [selectedElevation, setSelectedElevation] = useState("");
   const [selectedLevel, setSelectedLevel] = useState("");
-  const [selectedGridline, setSelectedGridline] = useState("");
   const [selectedProgrammeActivityId, setSelectedProgrammeActivityId] = useState("");
   const [selectedType, setSelectedType] =
     useState<SiteRecordType | null>(null);
@@ -173,31 +172,16 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     () => programmeActivities.filter((item) =>
       locationValue(item.building) === selectedBuilding &&
       locationValue(item.elevation) === selectedElevation &&
-      locationValue(item.level) === selectedLevel &&
-      locationValue(item.gridline ?? "") === selectedGridline
-    ),
-    [programmeActivities, selectedBuilding, selectedElevation, selectedLevel, selectedGridline]
-  );
-  const gridlines = useMemo(
-    () => uniqueLocations(
-      programmeActivities
-        .filter((item) =>
-          locationValue(item.building) === selectedBuilding &&
-          locationValue(item.elevation) === selectedElevation &&
-          locationValue(item.level) === selectedLevel
-        )
-        .map((item) => item.gridline ?? "")
+      locationValue(item.level) === selectedLevel
     ),
     [programmeActivities, selectedBuilding, selectedElevation, selectedLevel]
   );
-
   function chooseRecordType(type: SiteRecordType) {
     setSelectedType(type);
     setNotes("");
     setSelectedBuilding("");
     setSelectedElevation("");
     setSelectedLevel("");
-    setSelectedGridline("");
     setSelectedProgrammeActivityId("");
     setTitle(type === "break" ? "Break" : "");
   }
@@ -206,7 +190,6 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     setSelectedBuilding(building);
     setSelectedElevation("");
     setSelectedLevel("");
-    setSelectedGridline("");
     setSelectedProgrammeActivityId("");
     setTitle("");
   }
@@ -214,20 +197,12 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
   function chooseElevation(elevation: string) {
     setSelectedElevation(elevation);
     setSelectedLevel("");
-    setSelectedGridline("");
     setSelectedProgrammeActivityId("");
     setTitle("");
   }
 
   function chooseLevel(level: string) {
     setSelectedLevel(level);
-    setSelectedGridline("");
-    setSelectedProgrammeActivityId("");
-    setTitle("");
-  }
-
-  function chooseGridline(gridline: string) {
-    setSelectedGridline(gridline);
     setSelectedProgrammeActivityId("");
     setTitle("");
   }
@@ -437,16 +412,8 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
               </label>
 
               <label className="attendance-field">
-                <span>Gridlines</span>
-                <select value={selectedGridline} onChange={(event) => chooseGridline(event.target.value)} disabled={!selectedLevel}>
-                  <option value="">Select gridlines</option>
-                  {gridlines.map((gridline) => <option key={gridline} value={gridline}>{locationLabel(gridline)}</option>)}
-                </select>
-              </label>
-
-              <label className="attendance-field">
                 <span>{selectedType === "work" ? "Activity" : "Affected Activity (optional)"}</span>
-                <select value={selectedProgrammeActivityId} onChange={(event) => chooseActivity(event.target.value)} disabled={!selectedGridline}>
+                <select value={selectedProgrammeActivityId} onChange={(event) => chooseActivity(event.target.value)} disabled={!selectedLevel}>
                   <option value="">Select an activity</option>
                   {availableProgrammeActivities.map((programmeActivity) => (
                     <option key={programmeActivity.id} value={programmeActivity.programmeActivityId}>
@@ -562,7 +529,6 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           setSelectedBuilding("");
           setSelectedElevation("");
           setSelectedLevel("");
-          setSelectedGridline("");
           setSelectedProgrammeActivityId("");
           setTitle("");
           setNotes("");

@@ -35,24 +35,28 @@ export interface Crew {
 
 export interface ProgrammeActivity {
   id: string; // internal UUID
-
+  projectId?: string;
   programmeActivityId: string; // P6 / Asta Activity ID
-
+  activityName?: string;
+  wbsCode?: string;
+  wbsPath?: string;
   building: string;
-
   elevation: string;
-
   level: string;
 
   gridline?: string;
 
   activity: string;
+  workActivity?: string;
 
   description?: string;
 
   trade?: string;
 
   wbs?: string;
+  activityStatus?: string;
+  originalDuration?: number;
+  remainingDuration?: number;
 
   unit: string;
 
@@ -67,8 +71,93 @@ export interface ProgrammeActivity {
   plannedStart?: string;
 
   plannedFinish?: string;
+  actualStart?: string;
+  actualFinish?: string;
+  physicalPercentComplete?: number;
+  primaryConstraint?: string;
+  secondaryConstraint?: string;
+  calendar?: string;
+  resourceNames?: string[];
+  dataDate?: string;
+  sourceType?: "p6-xlsx" | "manual";
+  sourceImportId?: string;
+  missingFromLatestUpdate?: boolean;
+  productivityBaselineComplete?: boolean;
 
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ProgrammeRelationship {
+  id: string;
+  projectId: string;
+  predecessorActivityId: string;
+  successorActivityId: string;
+  relationshipType: string;
+  lag?: number;
+  sourceImportId: string;
+}
+
+export interface ProgrammeResource {
+  id: string;
+  projectId: string;
+  resourceId: string;
+  resourceName: string;
+  resourceType?: string;
+  parentResourceId?: string;
+  unitOfMeasure?: string;
+  calendar?: string;
+  sourceImportId: string;
+}
+
+export interface ProgrammeResourceAssignment {
+  id: string;
+  projectId: string;
+  programmeActivityId: string;
+  resourceId: string;
+  resourceType?: string;
+  assignmentStart?: string;
+  assignmentFinish?: string;
+  budgetedLabourUnits?: number;
+  actualLabourUnits?: number;
+  remainingLabourUnits?: number;
+  atCompletionUnits?: number;
+  sourceImportId: string;
+}
+
+export interface ProgrammeImportChange {
+  programmeActivityId: string;
+  classification: "new" | "updated" | "unchanged" | "invalid" | "missing";
+  before?: Partial<ProgrammeActivity>;
+  after?: Partial<ProgrammeActivity>;
+  changedFields?: string[];
+}
+
+export interface ProgrammeImportSnapshot {
+  id: string;
+  projectId: string;
+  importedAt: string;
+  importedBy?: string;
+  sourceFilename: string;
+  sourceType: "p6-xlsx";
+  dataDate?: string;
+  activityCount: number;
+  relationshipCount: number;
+  resourceCount: number;
+  assignmentCount: number;
+  newCount: number;
+  updatedCount: number;
+  unchangedCount: number;
+  invalidCount: number;
+  missingCount: number;
+  changes: ProgrammeImportChange[];
+}
+
+export interface ProgrammeImportData {
+  relationships: ProgrammeRelationship[];
+  resources: ProgrammeResource[];
+  assignments: ProgrammeResourceAssignment[];
+  snapshots: ProgrammeImportSnapshot[];
 }
 
 export interface ProgrammeProgress {

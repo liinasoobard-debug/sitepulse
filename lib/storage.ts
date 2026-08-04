@@ -1,6 +1,7 @@
 import type {
   Operative,
   ProgrammeActivity,
+  ProgrammeImportData,
   Project,
   SiteDay,
 } from "@/types/site";
@@ -20,6 +21,8 @@ const PROJECT_ACTIVITIES_KEY_PREFIX =
   "sitepulse-activities-project";
 const PROJECT_PROGRAMME_KEY_PREFIX =
   "sitepulse-programme-project";
+const PROJECT_PROGRAMME_IMPORT_KEY_PREFIX =
+  "sitepulse-programme-import-project";
 
 function createId(prefix: string): string {
   if (
@@ -98,6 +101,10 @@ function getProjectProgrammeStorageKey(projectId: string): string {
   return `${PROJECT_PROGRAMME_KEY_PREFIX}-${projectId}`;
 }
 
+function getProjectProgrammeImportStorageKey(projectId: string): string {
+  return `${PROJECT_PROGRAMME_IMPORT_KEY_PREFIX}-${projectId}`;
+}
+
 function normaliseProject(project: Project): Project {
   return {
     id: String(project.id),
@@ -125,6 +132,7 @@ function normaliseProgrammeActivity(
 ): ProgrammeActivity {
   return {
     id: String(activity.id || createId("programme-activity")),
+    projectId: activity.projectId,
     programmeActivityId:
       activity.programmeActivityId?.trim() ||
       activity.code?.trim() ||
@@ -137,9 +145,16 @@ function normaliseProgrammeActivity(
       activity.activity?.trim() ||
       activity.description?.trim() ||
       "Unnamed programme activity",
+    activityName: activity.activityName?.trim() || activity.activity?.trim() || activity.description?.trim() || "Unnamed programme activity",
+    workActivity: activity.workActivity?.trim() || activity.activity?.trim() || "",
     description: activity.description?.trim() || "",
     trade: activity.trade?.trim() || "",
     wbs: activity.wbs?.trim() || "",
+    wbsCode: activity.wbsCode?.trim() || activity.wbs?.trim() || "",
+    wbsPath: activity.wbsPath?.trim() || activity.wbs?.trim() || "",
+    activityStatus: activity.activityStatus?.trim() || "",
+    originalDuration: Number.isFinite(Number(activity.originalDuration)) ? Number(activity.originalDuration) : undefined,
+    remainingDuration: Number.isFinite(Number(activity.remainingDuration)) ? Number(activity.remainingDuration) : undefined,
     unit: activity.unit?.trim() || "",
     plannedQuantity:
       Number.isFinite(Number(activity.plannedQuantity))
@@ -162,9 +177,46 @@ function normaliseProgrammeActivity(
         : undefined,
     plannedStart: activity.plannedStart?.trim() || undefined,
     plannedFinish: activity.plannedFinish?.trim() || undefined,
+    actualStart: activity.actualStart?.trim() || undefined,
+    actualFinish: activity.actualFinish?.trim() || undefined,
+    physicalPercentComplete: Number.isFinite(Number(activity.physicalPercentComplete)) ? Number(activity.physicalPercentComplete) : undefined,
+    primaryConstraint: activity.primaryConstraint?.trim() || "",
+    secondaryConstraint: activity.secondaryConstraint?.trim() || "",
+    calendar: activity.calendar?.trim() || "",
+    resourceNames: Array.isArray(activity.resourceNames) ? activity.resourceNames.map(String) : [],
+    dataDate: activity.dataDate?.trim() || undefined,
+    sourceType: activity.sourceType || "manual",
+    sourceImportId: activity.sourceImportId,
+    missingFromLatestUpdate: Boolean(activity.missingFromLatestUpdate),
+    productivityBaselineComplete: activity.productivityBaselineComplete ?? Boolean(Number(activity.plannedQuantity) > 0 && Number(activity.budgetLabourHours) > 0 && activity.unit?.trim()),
     createdAt:
       activity.createdAt || new Date().toISOString(),
+    updatedAt: activity.updatedAt || activity.createdAt || new Date().toISOString(),
   };
+}
+
+export function loadProgrammeImportData(projectId?: string): ProgrammeImportData {
+  const empty: ProgrammeImportData = { relationships: [], resources: [], assignments: [], snapshots: [] };
+  if (typeof window === "undefined") return empty;
+  try {
+    const resolvedProjectId = projectId || getActiveProjectId();
+    const raw = localStorage.getItem(getProjectProgrammeImportStorageKey(resolvedProjectId));
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<ProgrammeImportData>;
+    return { relationships: parsed.relationships ?? [], resources: parsed.resources ?? [], assignments: parsed.assignments ?? [], snapshots: parsed.snapshots ?? [] };
+  } catch (error) {
+    console.error("Unable to load programme import data:", error);
+    return empty;
+  }
+}
+
+export function saveProgrammeImportData(data: ProgrammeImportData, projectId?: string): void {
+  if (typeof window === "undefined") return;
+  const resolvedProjectId = projectId || getActiveProjectId();
+  if (!resolvedProjectId) return;
+  const key = getProjectProgrammeImportStorageKey(resolvedProjectId);
+  localStorage.setItem(key, JSON.stringify(data));
+  queueSharedWrite(key, data);
 }
 
 function migrateLegacyDay(projectId: string): void {
