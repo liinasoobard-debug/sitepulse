@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import AddWorkModal from "@/components/AddWorkModal";
 import { getActiveDate, loadProgramme, loadDay, saveDay } from "@/lib/storage";
@@ -94,7 +95,7 @@ function normaliseEvents(
 }
 
 function getEventLabel(type: TimelineEvent["type"]): string {
-  if (type === "work") return "Productive";
+  if (type === "work") return "Measured Work";
   if (type === "disruption") return "Disruption";
   if (type === "variation") return "Variation";
   return "Break";
@@ -331,11 +332,14 @@ export default function TimelinePage() {
                       }}
                     >
                       {[
+                        ["Programme", event.programmeVersion || "—"],
                         ["Building", activity.building || "—"],
-                        ["Elevation", activity.elevation || "—"],
-                        ["Level", activity.level || "—"],
+                        ["Work area", activity.elevation || "—"],
+                        ["Level / floor", activity.level || "—"],
                         ["Activity", activity.activity],
+                        ["Activity ID", event.programmeActivityId || "—"],
                         ["Quantity", typeof event.quantity === "number" ? `${event.quantity} ${activity.unit}`.trim() : "—"],
+                        ["Operatives", event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? "—"],
                         ["Gang", crewName || "—"],
                         ["Duration", typeof event.duration === "number" ? formatDuration(event.duration) : event.status === "active" ? "In progress" : "—"],
                       ].map(([label, value]) => (
@@ -364,6 +368,12 @@ export default function TimelinePage() {
 
                   {event.notes && (
                     <p className="event-notes">{event.notes}</p>
+                  )}
+
+                  {event.photoIds && event.photoIds.length > 0 && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      {event.photoIds.map((photo, photoIndex) => <Image unoptimized width={88} height={88} key={`${event.id}-photo-${photoIndex}`} src={photo} alt={`Site record photo ${photoIndex + 1}`} style={{ objectFit: "cover", borderRadius: 8 }} />)}
+                    </div>
                   )}
 
                   {event.type === "disruption" &&

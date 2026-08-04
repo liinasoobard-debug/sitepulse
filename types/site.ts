@@ -185,10 +185,20 @@ export interface TimelineEvent {
   crewId?: string;
 
   programmeActivityId?: string;
+  programmeImportId?: string;
+  programmeVersion?: string;
+  activityDescription?: string;
 
   location?: string;
 
   unit?: string;
+  plannedStart?: string;
+  plannedFinish?: string;
+  plannedDuration?: number;
+  plannedQuantity?: number;
+  productivityTarget?: number;
+  resourceNames?: string[];
+  numberOfOperatives?: number;
 
   time: string;
 

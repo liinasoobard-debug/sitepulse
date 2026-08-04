@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { loadProgramme, loadDay } from "@/lib/storage";
+import { loadProgramme, loadProgrammeImportData, loadDay } from "@/lib/storage";
+import { activitiesForVersion, LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, resourcesForActivity, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
   ProgrammeActivity,
+  ProgrammeImportData,
   SiteDay,
   SiteRecordType,
   TimelineEvent,
@@ -25,8 +27,8 @@ const recordChoices: Array<{
 }> = [
   {
     type: "work",
-    title: "Productive Work",
-    description: "Normal planned or measured work",
+    title: "Measured Work",
+    description: "Measured work linked to an imported programme activity",
     icon: "🔨",
   },
   {
@@ -78,27 +80,15 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
   }));
 }
 
-const EMPTY_LOCATION = "__sitepulse_unspecified__";
-
-function locationValue(value: string): string {
-  return value || EMPTY_LOCATION;
-}
-
-function locationLabel(value: string): string {
-  return value === EMPTY_LOCATION ? "Not specified" : value;
-}
-
-function uniqueLocations(values: string[]): string[] {
-  return [...new Set(values.map(locationValue))].sort((a, b) =>
-    locationLabel(a).localeCompare(locationLabel(b))
-  );
-}
-
 export default function AddWorkModal({ onAdd, onClose }: Props) {
   const [crews, setCrews] = useState<Crew[]>([]);
   const [programmeActivities, setProgrammeActivities] = useState<ProgrammeActivity[]>([]);
+  const [programmeImportData, setProgrammeImportData] = useState<ProgrammeImportData>({ relationships: [], resources: [], assignments: [], snapshots: [] });
+  const [programmeLoading, setProgrammeLoading] = useState(true);
+  const [programmeError, setProgrammeError] = useState("");
   const [activeCrewIds, setActiveCrewIds] = useState<string[]>([]);
   const [selectedCrewId, setSelectedCrewId] = useState("");
+  const [selectedProgrammeVersion, setSelectedProgrammeVersion] = useState("");
   const [selectedBuilding, setSelectedBuilding] = useState("");
   const [selectedElevation, setSelectedElevation] = useState("");
   const [selectedLevel, setSelectedLevel] = useState("");
@@ -108,16 +98,23 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
   const [title, setTitle] = useState("");
   const [time, setTime] = useState(getCurrentTime());
   const [finishTime, setFinishTime] = useState(getCurrentTime());
+  const [actualQuantity, setActualQuantity] = useState("");
+  const [numberOfOperatives, setNumberOfOperatives] = useState("");
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [validationMessage, setValidationMessage] = useState("");
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      const savedDay = loadDay() as SiteDay | null;
-      const savedCrews = normaliseCrews(savedDay?.crews);
-      setCrews(savedCrews);
-      setProgrammeActivities(loadProgramme());
+      try {
+        const savedDay = loadDay() as SiteDay | null;
+        const savedCrews = normaliseCrews(savedDay?.crews);
+        setCrews(savedCrews);
+        setProgrammeActivities(loadProgramme());
+        setProgrammeImportData(loadProgrammeImportData());
+        setProgrammeError("");
       const busyCrewIds = (savedDay?.events ?? [])
         .filter((event) => event.type === "work" && event.status === "active" && event.crewId)
         .map((event) => String(event.crewId));
@@ -125,7 +122,13 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
       const selectableCrews = savedCrews.filter(
         (crew) => crew.operativeIds.length > 0 && !busyCrewIds.includes(crew.id)
       );
-      if (selectableCrews.length === 1) setSelectedCrewId(selectableCrews[0].id);
+        if (selectableCrews.length === 1) setSelectedCrewId(selectableCrews[0].id);
+      } catch (error) {
+        console.error("Unable to load programme activities:", error);
+        setProgrammeError("Programme activities could not be loaded. Try reloading the page.");
+      } finally {
+        setProgrammeLoading(false);
+      }
     });
     return () => { cancelled = true; };
   }, []);
@@ -145,45 +148,68 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     (activity) => activity.programmeActivityId === selectedProgrammeActivityId
   );
 
+  const programmeVersions = programmeImportData.snapshots;
+  const versionActivities = useMemo(
+    () => activitiesForVersion(programmeActivities, programmeImportData, selectedProgrammeVersion),
+    [programmeActivities, programmeImportData, selectedProgrammeVersion]
+  );
+
   const buildings = useMemo(
-    () => uniqueLocations(programmeActivities.map((item) => item.building)),
-    [programmeActivities]
+    () => uniqueLocations(versionActivities.map((item) => item.building)),
+    [versionActivities]
   );
   const elevations = useMemo(
     () => uniqueLocations(
-      programmeActivities
+      versionActivities
         .filter((item) => locationValue(item.building) === selectedBuilding)
         .map((item) => item.elevation)
     ),
-    [programmeActivities, selectedBuilding]
+    [versionActivities, selectedBuilding]
   );
   const levels = useMemo(
     () => uniqueLocations(
-      programmeActivities
+      versionActivities
         .filter((item) =>
           locationValue(item.building) === selectedBuilding &&
           locationValue(item.elevation) === selectedElevation
         )
         .map((item) => item.level)
     ),
-    [programmeActivities, selectedBuilding, selectedElevation]
+    [versionActivities, selectedBuilding, selectedElevation]
   );
   const availableProgrammeActivities = useMemo(
-    () => programmeActivities.filter((item) =>
+    () => versionActivities.filter((item) =>
       locationValue(item.building) === selectedBuilding &&
       locationValue(item.elevation) === selectedElevation &&
       locationValue(item.level) === selectedLevel
     ),
-    [programmeActivities, selectedBuilding, selectedElevation, selectedLevel]
+    [versionActivities, selectedBuilding, selectedElevation, selectedLevel]
   );
+  const selectedResources = selectedProgrammeActivity ? resourcesForActivity(selectedProgrammeActivity, programmeImportData) : [];
+  const baselineValidation = selectedType === "work" ? measuredWorkValidation(selectedProgrammeActivity) : null;
   function chooseRecordType(type: SiteRecordType) {
     setSelectedType(type);
+    setSelectedProgrammeVersion(programmeVersions[0]?.id ?? LEGACY_PROGRAMME_VERSION);
     setNotes("");
     setSelectedBuilding("");
     setSelectedElevation("");
     setSelectedLevel("");
     setSelectedProgrammeActivityId("");
     setTitle(type === "break" ? "Break" : "");
+    setActualQuantity("");
+    setNumberOfOperatives(selectedCrew ? String(selectedCrew.operativeIds.length) : "");
+    setPhotos([]);
+    setValidationMessage("");
+  }
+
+  function chooseProgrammeVersion(version: string) {
+    setSelectedProgrammeVersion(version);
+    setSelectedBuilding("");
+    setSelectedElevation("");
+    setSelectedLevel("");
+    setSelectedProgrammeActivityId("");
+    setTitle("");
+    setValidationMessage("");
   }
 
   function chooseBuilding(building: string) {
@@ -192,6 +218,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     setSelectedLevel("");
     setSelectedProgrammeActivityId("");
     setTitle("");
+    setValidationMessage("");
   }
 
   function chooseElevation(elevation: string) {
@@ -199,12 +226,14 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     setSelectedLevel("");
     setSelectedProgrammeActivityId("");
     setTitle("");
+    setValidationMessage("");
   }
 
   function chooseLevel(level: string) {
     setSelectedLevel(level);
     setSelectedProgrammeActivityId("");
     setTitle("");
+    setValidationMessage("");
   }
 
   function chooseActivity(programmeActivityId: string) {
@@ -213,11 +242,41 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
       (item) => item.programmeActivityId === programmeActivityId
     );
     if (selectedType === "work") setTitle(activity?.activity ?? "");
+    setValidationMessage("");
+  }
+
+  async function addPhotos(files: FileList | null) {
+    if (!files) return;
+    const selected = [...files];
+    try {
+      const encoded = await Promise.all(selected.map((file) => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      })));
+      setPhotos((current) => [...current, ...encoded]);
+    } catch (error) {
+      console.error("Unable to attach photos:", error);
+      setValidationMessage("One or more photos could not be attached.");
+    }
   }
 
   function saveRecord() {
     if (!selectedCrewId || !selectedType || !title.trim() || !time) return;
     if (selectedType === "work" && !selectedProgrammeActivityId) return;
+    if (selectedType === "work") {
+      if (baselineValidation) { setValidationMessage(baselineValidation); return; }
+      const quantity = Number(actualQuantity);
+      const operativeCount = Number(numberOfOperatives);
+      if (!actualQuantity.trim() || !Number.isFinite(quantity) || quantity < 0) { setValidationMessage("Enter a valid actual quantity completed."); return; }
+      if (!Number.isInteger(operativeCount) || operativeCount < 1 || operativeCount > (selectedCrew?.operativeIds.length ?? 0)) { setValidationMessage(`Enter between 1 and ${selectedCrew?.operativeIds.length ?? 0} operatives for this gang.`); return; }
+      if (!finishTime) { setValidationMessage("Enter a finish time."); return; }
+    }
+
+    const selectedSnapshot = programmeVersions.find((snapshot) => snapshot.id === selectedProgrammeVersion);
+    const operativeCount = selectedType === "work" ? Number(numberOfOperatives) : selectedCrew?.operativeIds.length ?? 0;
+    const selectedOperatives = selectedCrew?.operativeIds.slice(0, operativeCount).map(String) ?? [];
 
     onAdd({
       crewId: selectedCrewId,
@@ -225,18 +284,29 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         selectedType === "work" || selectedType === "disruption"
           ? selectedProgrammeActivity?.programmeActivityId
           : undefined,
+      programmeImportId: selectedProgrammeActivity?.sourceImportId,
+      programmeVersion: selectedSnapshot?.sourceFilename || "Current programme",
+      activityDescription: selectedProgrammeActivity?.description || selectedProgrammeActivity?.activityName,
       time,
       startTime: time,
-      finishTime: selectedType === "work" ? undefined : finishTime,
-      duration: selectedType === "work" ? undefined : durationMinutes(time, finishTime),
+      finishTime,
+      duration: durationMinutes(time, finishTime),
       title: title.trim(),
       type: selectedType,
-      status: selectedType === "work" ? "active" : "completed",
+      status: "completed",
       location: [selectedProgrammeActivity?.building, selectedProgrammeActivity?.elevation, selectedProgrammeActivity?.level, selectedProgrammeActivity?.gridline].filter(Boolean).join(" / ") || undefined,
       unit: selectedProgrammeActivity?.unit || undefined,
-      affectedOperativeIds:
-        selectedCrew?.operativeIds.map(String) ?? [],
+      plannedStart: selectedProgrammeActivity?.plannedStart,
+      plannedFinish: selectedProgrammeActivity?.plannedFinish,
+      plannedDuration: selectedProgrammeActivity?.originalDuration,
+      plannedQuantity: selectedProgrammeActivity?.plannedQuantity,
+      productivityTarget: selectedProgrammeActivity?.plannedProductionRate,
+      resourceNames: selectedResources,
+      numberOfOperatives: operativeCount,
+      quantity: selectedType === "work" ? Number(actualQuantity) : undefined,
+      affectedOperativeIds: selectedOperatives,
       notes: notes.trim() || undefined,
+      photoIds: photos,
     });
   }
 
@@ -371,9 +441,13 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
 
       {(selectedType === "work" || selectedType === "disruption") && (
         <>
-          {programmeActivities.length === 0 ? (
+          {programmeLoading ? (
+            <div className="evidence-placeholder"><strong>Loading programme activities…</strong></div>
+          ) : programmeError ? (
+            <div className="evidence-placeholder"><strong>Programme activities could not be loaded</strong><span>{programmeError}</span></div>
+          ) : programmeActivities.length === 0 ? (
             <div className="evidence-placeholder">
-              <strong>No programme activities imported</strong>
+              <strong>No programme has been imported for this project.</strong>
               <span>
                 Import the project programme before linking site records to planned work.
               </span>
@@ -388,15 +462,23 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               <label className="attendance-field">
+                <span>Programme / programme version</span>
+                <select value={selectedProgrammeVersion} onChange={(event) => chooseProgrammeVersion(event.target.value)}>
+                  <option value="">Select a programme version</option>
+                  {programmeVersions.length === 0 && <option value={LEGACY_PROGRAMME_VERSION}>Current imported programme</option>}
+                  {programmeVersions.map((snapshot, index) => <option key={snapshot.id} value={snapshot.id}>{index === 0 ? "Latest — " : ""}{snapshot.sourceFilename} · {new Date(snapshot.importedAt).toLocaleDateString("en-GB")}</option>)}
+                </select>
+              </label>
+              <label className="attendance-field">
                 <span>Building</span>
-                <select value={selectedBuilding} onChange={(event) => chooseBuilding(event.target.value)}>
+                <select value={selectedBuilding} onChange={(event) => chooseBuilding(event.target.value)} disabled={!selectedProgrammeVersion}>
                   <option value="">Select a building</option>
                   {buildings.map((building) => <option key={building} value={building}>{locationLabel(building)}</option>)}
                 </select>
               </label>
 
               <label className="attendance-field">
-                <span>Elevation</span>
+                <span>Work area or elevation</span>
                 <select value={selectedElevation} onChange={(event) => chooseElevation(event.target.value)} disabled={!selectedBuilding}>
                   <option value="">Select an elevation</option>
                   {elevations.map((elevation) => <option key={elevation} value={elevation}>{locationLabel(elevation)}</option>)}
@@ -404,7 +486,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
               </label>
 
               <label className="attendance-field">
-                <span>Level</span>
+                <span>Level / floor</span>
                 <select value={selectedLevel} onChange={(event) => chooseLevel(event.target.value)} disabled={!selectedElevation}>
                   <option value="">Select a level</option>
                   {levels.map((level) => <option key={level} value={level}>{locationLabel(level)}</option>)}
@@ -412,16 +494,17 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
               </label>
 
               <label className="attendance-field">
-                <span>{selectedType === "work" ? "Activity" : "Affected Activity (optional)"}</span>
+                <span>{selectedType === "work" ? "Programme activity" : "Affected programme activity (optional)"}</span>
                 <select value={selectedProgrammeActivityId} onChange={(event) => chooseActivity(event.target.value)} disabled={!selectedLevel}>
                   <option value="">Select an activity</option>
                   {availableProgrammeActivities.map((programmeActivity) => (
                     <option key={programmeActivity.id} value={programmeActivity.programmeActivityId}>
-                      {programmeActivity.activity}
+                      {programmeActivity.activity}{!programmeActivity.unit || !programmeActivity.plannedProductionRate ? " — baseline incomplete" : ""}
                     </option>
                   ))}
                 </select>
               </label>
+              {selectedLevel && availableProgrammeActivities.length === 0 && <div className="evidence-placeholder"><strong>No activities match the selected location.</strong></div>}
             </div>
           )}
         </>
@@ -450,13 +533,6 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         />
       </label>
 
-      {selectedType !== "work" && (
-        <label className="attendance-field">
-          <span>Finish time</span>
-          <input type="time" value={finishTime} onChange={(event) => setFinishTime(event.target.value)} />
-        </label>
-      )}
-
       {selectedProgrammeActivity && (
         <div
           style={{
@@ -470,22 +546,28 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
             background: "#f7f9fa",
           }}
         >
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Activity ID</span><strong>{selectedProgrammeActivity.programmeActivityId}</strong></div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Description</span><strong>{selectedProgrammeActivity.description || selectedProgrammeActivity.activityName || selectedProgrammeActivity.activity}</strong></div>
           <div>
             <span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>
               Location
             </span>
             <strong>{[selectedProgrammeActivity.building, selectedProgrammeActivity.elevation, selectedProgrammeActivity.level].filter(Boolean).join(" / ") || "—"}</strong>
           </div>
-          <div>
-            <span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>
-              Planned
-            </span>
-            <strong>
-              {selectedProgrammeActivity.plannedQuantity || "—"} {selectedProgrammeActivity.unit}
-            </strong>
-          </div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned dates</span><strong>{selectedProgrammeActivity.plannedStart || "—"} → {selectedProgrammeActivity.plannedFinish || "—"}</strong></div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned duration</span><strong>{selectedProgrammeActivity.originalDuration ?? "—"}</strong></div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned quantity</span><strong>{selectedProgrammeActivity.plannedQuantity || "—"} {selectedProgrammeActivity.unit}</strong></div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Productivity target</span><strong>{selectedProgrammeActivity.plannedProductionRate ? `${selectedProgrammeActivity.plannedProductionRate} ${selectedProgrammeActivity.unit}/hr` : "—"}</strong></div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Resource / gang</span><strong>{selectedResources.join(", ") || selectedCrew?.name || "—"}</strong></div>
         </div>
       )}
+
+      {baselineValidation && <p role="alert" style={{ color: "#b42318", fontWeight: 700 }}>{baselineValidation}</p>}
+
+      {selectedType === "work" && <>
+        <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>
+        <label className="attendance-field"><span>Number of operatives</span><input type="number" min="1" max={selectedCrew?.operativeIds.length} step="1" value={numberOfOperatives} onChange={(event) => setNumberOfOperatives(event.target.value)} /></label>
+      </>}
 
       <label className="attendance-field">
         <span>Start time</span>
@@ -495,6 +577,8 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           onChange={(event) => setTime(event.target.value)}
         />
       </label>
+
+      <label className="attendance-field"><span>Finish time</span><input type="time" value={finishTime} onChange={(event) => setFinishTime(event.target.value)} /></label>
 
       <label className="attendance-field">
         <span>Description</span>
@@ -506,6 +590,9 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         />
       </label>
 
+      <label className="attendance-field"><span>Photos</span><input type="file" accept="image/*" multiple onChange={(event) => void addPhotos(event.target.files)} /><small>{photos.length ? `${photos.length} photo${photos.length === 1 ? "" : "s"} attached` : "Optional"}</small></label>
+      {validationMessage && <p role="alert" style={{ color: "#b42318", fontWeight: 700 }}>{validationMessage}</p>}
+
       <button
         type="button"
         className="add-event-button"
@@ -514,11 +601,11 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           !selectedCrewId ||
           !title.trim() ||
           !time ||
-          (selectedType !== "work" && !finishTime) ||
-          (selectedType === "work" && !selectedProgrammeActivityId)
+          !finishTime ||
+          (selectedType === "work" && (!selectedProgrammeActivityId || Boolean(baselineValidation) || !actualQuantity || !numberOfOperatives))
         }
       >
-        Start for {selectedCrew?.name ?? "Gang"}
+        Save for {selectedCrew?.name ?? "Gang"}
       </button>
 
       <button
@@ -526,6 +613,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         className="secondary-button site-record-cancel"
         onClick={() => {
           setSelectedType(null);
+          setSelectedProgrammeVersion("");
           setSelectedBuilding("");
           setSelectedElevation("");
           setSelectedLevel("");

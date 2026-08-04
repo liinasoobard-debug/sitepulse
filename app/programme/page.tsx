@@ -34,7 +34,11 @@ function mergeProgramme(existing: ProgrammeActivity[], incoming: ProgrammeActivi
     const update = incomingById.get(activity.programmeActivityId.toLowerCase());
     if (!update) return { ...activity, missingFromLatestUpdate: true, updatedAt: now };
     incomingById.delete(activity.programmeActivityId.toLowerCase());
-    return { ...activity, ...update, id: activity.id, projectId: activity.projectId ?? update.projectId, createdAt: activity.createdAt, updatedAt: now, missingFromLatestUpdate: false };
+    const plannedQuantity = update.plannedQuantity > 0 ? update.plannedQuantity : activity.plannedQuantity;
+    const unit = update.unit || activity.unit;
+    const budgetLabourHours = update.budgetLabourHours ?? activity.budgetLabourHours;
+    const plannedProductionRate = update.plannedProductionRate ?? activity.plannedProductionRate;
+    return { ...activity, ...update, id: activity.id, projectId: activity.projectId ?? update.projectId, createdAt: activity.createdAt, plannedQuantity, unit, budgetLabourHours, plannedProductionRate, productivityBaselineComplete: Boolean(plannedQuantity > 0 && budgetLabourHours && unit), updatedAt: now, missingFromLatestUpdate: false };
   });
   return [...merged, ...incomingById.values()];
 }
@@ -48,6 +52,8 @@ export default function ProgrammePage() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ building: "", elevation: "", level: "", status: "", missing: "", baseline: "" });
   const [showHistory, setShowHistory] = useState(false);
+  const [baselineActivityId, setBaselineActivityId] = useState("");
+  const [baselineForm, setBaselineForm] = useState({ quantity: "", unit: "", budgetHours: "", rate: "" });
 
   useEffect(() => {
     const refresh = () => { setActivities(loadProgramme()); setImportData(loadProgrammeImportData()); setPending(null); };
@@ -102,6 +108,21 @@ export default function ProgrammePage() {
     setMessage(`${pending.mode === "initial" ? "Initial programme imported" : "Weekly programme updated"}: ${snapshot.newCount} new, ${snapshot.updatedCount} updated, ${snapshot.unchangedCount} unchanged, ${snapshot.missingCount} missing.`);
   }
 
+  function editBaseline(activity: ProgrammeActivity) {
+    setBaselineActivityId(activity.id);
+    setBaselineForm({ quantity: activity.plannedQuantity ? String(activity.plannedQuantity) : "", unit: activity.unit || "", budgetHours: activity.budgetLabourHours ? String(activity.budgetLabourHours) : "", rate: activity.plannedProductionRate ? String(activity.plannedProductionRate) : "" });
+  }
+
+  function saveBaseline() {
+    const quantity = Number(baselineForm.quantity);
+    const budgetHours = Number(baselineForm.budgetHours);
+    const enteredRate = Number(baselineForm.rate);
+    const rate = enteredRate > 0 ? enteredRate : quantity > 0 && budgetHours > 0 ? quantity / budgetHours : 0;
+    if (!baselineForm.unit.trim() || !(rate > 0)) { setError("A unit of measure and productivity target are required for measured work."); return; }
+    const updated = activities.map((activity) => activity.id === baselineActivityId ? { ...activity, unit: baselineForm.unit.trim(), plannedQuantity: quantity > 0 ? quantity : activity.plannedQuantity, budgetLabourHours: budgetHours > 0 ? budgetHours : activity.budgetLabourHours, plannedProductionRate: rate, productivityBaselineComplete: Boolean(quantity > 0 && budgetHours > 0), updatedAt: new Date().toISOString() } : activity);
+    saveProgramme(updated); setActivities(updated); setBaselineActivityId(""); setError(""); setMessage("Productivity baseline saved. The activity is now available for measured work.");
+  }
+
   const options = useMemo(() => ({
     buildings: [...new Set(activities.map((item) => item.building).filter(Boolean))].sort(),
     elevations: [...new Set(activities.map((item) => item.elevation).filter(Boolean))].sort(),
@@ -144,6 +165,7 @@ export default function ProgrammePage() {
       <label className="attendance-field"><span>Missing from update</span><select value={filters.missing} onChange={(event) => setFilters((current) => ({ ...current, missing: event.target.value }))}><option value="">All</option><option value="true">Missing</option><option value="false">Present</option></select></label>
       <label className="attendance-field"><span>Productivity baseline</span><select value={filters.baseline} onChange={(event) => setFilters((current) => ({ ...current, baseline: event.target.value }))}><option value="">All</option><option value="false">Incomplete</option><option value="true">Complete</option></select></label>
     </div>
-    {activities.length === 0 ? <section style={{ padding: 28, border: "1px dashed #b9c2ca", borderRadius: 18, background: "#f7f9fa", textAlign: "center" }}><h2 style={{ marginTop: 0 }}>No programme imported</h2><p>Import the initial P6 workbook to make planned work available throughout SitePulse.</p></section> : <div style={{ overflowX: "auto" }}><table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse", minWidth: 1500 }}><thead><tr>{["Hierarchy / Activity", "WBS", "Status", "Original Duration", "Remaining Duration", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "Physical %", "Calendar", "Productivity Baseline"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{filtered.map((item) => <tr key={item.id} style={{ opacity: item.missingFromLatestUpdate ? 0.65 : 1 }}><td><strong>{[item.building, item.elevation, item.level, item.workActivity || item.activity].filter(Boolean).join(" → ") || item.activity}</strong><small style={{ display: "block", color: "#66717c", marginTop: 4 }}>{item.programmeActivityId}{item.missingFromLatestUpdate ? " · Missing from latest update" : ""}</small></td><td>{item.wbsPath || item.wbsCode || "—"}</td><td>{item.activityStatus || "—"}</td><td>{formatNumber(item.originalDuration)}</td><td>{formatNumber(item.remainingDuration)}</td><td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}</td><td>{item.calendar || "—"}</td><td style={{ color: item.productivityBaselineComplete ? "#087443" : "#b54708", fontWeight: 700 }}>{item.productivityBaselineComplete ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : "Productivity baseline incomplete"}</td></tr>)}</tbody></table></div>}
+    {baselineActivityId && <section style={{ padding: 18, marginBottom: 16, border: "1px solid #d7dde3", borderRadius: 14, background: "#f7f9fa" }}><h3 style={{ marginTop: 0 }}>Complete productivity baseline</h3><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}><label className="attendance-field"><span>Planned quantity</span><input type="number" min="0" step="any" value={baselineForm.quantity} onChange={(event) => setBaselineForm((current) => ({ ...current, quantity: event.target.value }))} /></label><label className="attendance-field"><span>Unit of measure *</span><input value={baselineForm.unit} onChange={(event) => setBaselineForm((current) => ({ ...current, unit: event.target.value }))} /></label><label className="attendance-field"><span>Budget labour hours</span><input type="number" min="0" step="any" value={baselineForm.budgetHours} onChange={(event) => setBaselineForm((current) => ({ ...current, budgetHours: event.target.value }))} /></label><label className="attendance-field"><span>Productivity target *</span><input type="number" min="0" step="any" value={baselineForm.rate} onChange={(event) => setBaselineForm((current) => ({ ...current, rate: event.target.value }))} /></label></div><div style={{ display: "flex", gap: 10, marginTop: 12 }}><button type="button" className="add-event-button" style={{ width: "auto", margin: 0 }} onClick={saveBaseline}>Save baseline</button><button type="button" className="secondary-button" onClick={() => setBaselineActivityId("")}>Cancel</button></div></section>}
+    {activities.length === 0 ? <section style={{ padding: 28, border: "1px dashed #b9c2ca", borderRadius: 18, background: "#f7f9fa", textAlign: "center" }}><h2 style={{ marginTop: 0 }}>No programme imported</h2><p>Import the initial P6 workbook to make planned work available throughout SitePulse.</p></section> : <div style={{ overflowX: "auto" }}><table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse", minWidth: 1500 }}><thead><tr>{["Hierarchy / Activity", "WBS", "Status", "Original Duration", "Remaining Duration", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "Physical %", "Calendar", "Productivity Baseline"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{filtered.map((item) => <tr key={item.id} style={{ opacity: item.missingFromLatestUpdate ? 0.65 : 1 }}><td><strong>{[item.building, item.elevation, item.level, item.workActivity || item.activity].filter(Boolean).join(" → ") || item.activity}</strong><small style={{ display: "block", color: "#66717c", marginTop: 4 }}>{item.programmeActivityId}{item.missingFromLatestUpdate ? " · Missing from latest update" : ""}</small></td><td>{item.wbsPath || item.wbsCode || "—"}</td><td>{item.activityStatus || "—"}</td><td>{formatNumber(item.originalDuration)}</td><td>{formatNumber(item.remainingDuration)}</td><td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}</td><td>{item.calendar || "—"}</td><td style={{ color: item.productivityBaselineComplete ? "#087443" : "#b54708", fontWeight: 700 }}>{item.productivityBaselineComplete ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : "Productivity baseline incomplete"}<button type="button" className="secondary-button" style={{ display: "block", marginTop: 6 }} onClick={() => editBaseline(item)}>Edit baseline</button></td></tr>)}</tbody></table></div>}
   </section></main>;
 }
