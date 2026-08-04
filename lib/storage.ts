@@ -17,12 +17,6 @@ export const ACTIVE_DATE_STORAGE_KEY = "sitepulse-active-date";
 
 const PROJECT_DAY_KEY_PREFIX = "sitepulse-day-project";
 const LEGACY_DAY_MIGRATION_KEY = "sitepulse-legacy-day-migrated";
-const PROJECT_ACTIVITIES_KEY_PREFIX =
-  "sitepulse-activities-project";
-const PROJECT_PROGRAMME_KEY_PREFIX =
-  "sitepulse-programme-project";
-const PROJECT_PROGRAMME_IMPORT_KEY_PREFIX =
-  "sitepulse-programme-import-project";
 
 function createId(prefix: string): string {
   if (
@@ -89,20 +83,6 @@ export function setActiveDate(date: string): void {
 
 function emptySiteDay(date: string): SiteDay {
   return { date, attendance: [], crews: [], events: [] };
-}
-
-function getProjectActivitiesStorageKey(
-  projectId: string
-): string {
-  return `${PROJECT_ACTIVITIES_KEY_PREFIX}-${projectId}`;
-}
-
-function getProjectProgrammeStorageKey(projectId: string): string {
-  return `${PROJECT_PROGRAMME_KEY_PREFIX}-${projectId}`;
-}
-
-function getProjectProgrammeImportStorageKey(projectId: string): string {
-  return `${PROJECT_PROGRAMME_IMPORT_KEY_PREFIX}-${projectId}`;
 }
 
 function normaliseProject(project: Project): Project {
@@ -196,27 +176,12 @@ function normaliseProgrammeActivity(
 }
 
 export function loadProgrammeImportData(projectId?: string): ProgrammeImportData {
-  const empty: ProgrammeImportData = { relationships: [], resources: [], assignments: [], snapshots: [] };
-  if (typeof window === "undefined") return empty;
-  try {
-    const resolvedProjectId = projectId || getActiveProjectId();
-    const raw = localStorage.getItem(getProjectProgrammeImportStorageKey(resolvedProjectId));
-    if (!raw) return empty;
-    const parsed = JSON.parse(raw) as Partial<ProgrammeImportData>;
-    return { relationships: parsed.relationships ?? [], resources: parsed.resources ?? [], assignments: parsed.assignments ?? [], snapshots: parsed.snapshots ?? [] };
-  } catch (error) {
-    console.error("Unable to load programme import data:", error);
-    return empty;
-  }
+  void projectId;
+  return { relationships: [], resources: [], assignments: [], snapshots: [] };
 }
 
 export function saveProgrammeImportData(data: ProgrammeImportData, projectId?: string): void {
-  if (typeof window === "undefined") return;
-  const resolvedProjectId = projectId || getActiveProjectId();
-  if (!resolvedProjectId) return;
-  const key = getProjectProgrammeImportStorageKey(resolvedProjectId);
-  localStorage.setItem(key, JSON.stringify(data));
-  queueSharedWrite(key, data);
+  void data; void projectId;
 }
 
 function migrateLegacyDay(projectId: string): void {
@@ -428,52 +393,14 @@ export function archiveProject(
 export function loadProgramme(
   projectId?: string
 ): ProgrammeActivity[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const resolvedProjectId =
-      projectId || getActiveProjectId();
-    if (!resolvedProjectId) return [];
-
-    const programmeKey = getProjectProgrammeStorageKey(resolvedProjectId);
-    const storedActivities =
-      localStorage.getItem(programmeKey) ??
-      localStorage.getItem(getProjectActivitiesStorageKey(resolvedProjectId));
-
-    if (!storedActivities) return [];
-
-    const parsedActivities = JSON.parse(storedActivities);
-    if (!Array.isArray(parsedActivities)) return [];
-
-    const programme = parsedActivities.map((activity) =>
-      normaliseProgrammeActivity(activity as Partial<ProgrammeActivity> & LegacyProgrammeRow)
-    );
-    localStorage.setItem(programmeKey, JSON.stringify(programme));
-    return programme;
-  } catch (error) {
-    console.error("Unable to load programme activities:", error);
-    return [];
-  }
+  void projectId; return [];
 }
 
 export function saveProgramme(
   programmeActivities: ProgrammeActivity[],
   projectId?: string
 ): void {
-  if (typeof window === "undefined") return;
-
-  try {
-    const resolvedProjectId =
-      projectId || getActiveProjectId();
-    if (!resolvedProjectId) return;
-
-    const key = getProjectProgrammeStorageKey(resolvedProjectId);
-    const normalisedProgramme = programmeActivities.map(normaliseProgrammeActivity);
-    localStorage.setItem(key, JSON.stringify(normalisedProgramme));
-    queueSharedWrite(key, normalisedProgramme);
-  } catch (error) {
-    console.error("Unable to save programme activities:", error);
-  }
+  void programmeActivities; void projectId;
 }
 
 export function addProgrammeActivity(
@@ -571,7 +498,7 @@ export function loadSiteDay(
     const data = localStorage.getItem(
       getDatedProjectDayStorageKey(resolvedProjectId, date)
     );
-    return data ? { ...(JSON.parse(data) as SiteDay), date } : null;
+    return data ? { ...(JSON.parse(data) as SiteDay), date, events: [] } : null;
   } catch (error) {
     console.error(`Unable to load the site day for ${date}:`, error);
     return null;
@@ -677,7 +604,7 @@ export function saveDay(
     if (!resolvedProjectId) return;
 
     const date = isIsoDate(data.date) ? data.date : getActiveDate();
-    const normalisedDay = { ...emptySiteDay(date), ...data, date };
+    const normalisedDay = { ...emptySiteDay(date), ...data, date, events: [] };
     const key = getDatedProjectDayStorageKey(resolvedProjectId, date);
     localStorage.setItem(key, JSON.stringify(normalisedDay));
     queueSharedWrite(key, normalisedDay);

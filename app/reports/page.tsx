@@ -7,9 +7,10 @@ import {
   getActiveProjectId,
   getLocalDate,
   loadOperatives,
-  loadProgramme,
   loadSiteDaysBetween,
 } from "@/lib/storage";
+import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
+import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
 import { crewName, elapsedHours, eventLabourHours } from "@/lib/reporting";
 import type { Operative, ProgrammeActivity, Project, SiteDay, TimelineEvent } from "@/types/site";
 
@@ -107,18 +108,17 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!weekStart) return;
     let cancelled = false;
-    function refresh() {
+    async function refresh() {
       if (cancelled) return;
       const projectId = getActiveProjectId();
       const weekEnd = addDays(weekStart, 6);
       setProject(getActiveProject());
-      setDays(loadSiteDaysBetween(weekStart, weekEnd, projectId));
-      setAllDays(loadSiteDaysBetween("1000-01-01", "9999-12-31", projectId));
-      setProgramme(loadProgramme(projectId));
+      const localWeek=loadSiteDaysBetween(weekStart,weekEnd,projectId),localAll=loadSiteDaysBetween("1000-01-01","9999-12-31",projectId);
+      try { const [published,allEvents]=await Promise.all([loadPublishedProgramme(projectId),loadTimelineEventsBetween(projectId,"1000-01-01","9999-12-31")]);if(cancelled)return;setProgramme(published.activities);const byDate=new Map<string,TimelineEvent[]>();allEvents.forEach(({date,event})=>byDate.set(date,[...(byDate.get(date)??[]),event]));const withEvents=(source:SiteDay[],start:string,end:string)=>{const days=new Map(source.map(day=>[day.date,day]));byDate.forEach((_events,date)=>{if(date>=start&&date<=end&&!days.has(date))days.set(date,{date,attendance:[],crews:[],events:[]});});return [...days.values()].map(day=>({...day,events:byDate.get(day.date)??[]})).sort((a,b)=>a.date.localeCompare(b.date));};setDays(withEvents(localWeek,weekStart,weekEnd));setAllDays(withEvents(localAll,"1000-01-01","9999-12-31")); } catch(error) { console.error("Unable to load Supabase report data",error); }
       setOperatives(loadOperatives());
     }
-    refresh();
-    const storageRefresh = () => refresh();
+    void refresh();
+    const storageRefresh = () => void refresh();
     window.addEventListener("sitepulse-day-changed", storageRefresh);
     window.addEventListener("sitepulse-project-changed", storageRefresh);
     window.addEventListener("storage", storageRefresh);

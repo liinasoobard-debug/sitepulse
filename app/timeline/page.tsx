@@ -4,7 +4,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import AddWorkModal from "@/components/AddWorkModal";
-import { getActiveDate, loadProgramme, loadDay, saveDay } from "@/lib/storage";
+import { getActiveDate, getActiveProjectId, loadDay, saveDay } from "@/lib/storage";
+import { loadProjectRole, loadPublishedProgramme } from "@/lib/supabase/programmeData";
+import { createTimelineEvent, loadTimelineEvents, uploadTimelinePhotos } from "@/lib/supabase/timelineData";
 import type {
   AttendanceRecord,
   Crew,
@@ -68,36 +70,14 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
   }));
 }
 
-function normaliseEvents(
-  records: TimelineEvent[] | undefined
-): TimelineEvent[] {
-  const sourceEvents = Array.isArray(records) ? records : startingEvents;
-
-  return sourceEvents.map((record) => {
-    const legacyRecord = record as TimelineEvent & { endTime?: string };
-    return {
-    ...record,
-    id: String(record.id),
-    crewId: record.crewId ? String(record.crewId) : undefined,
-    programmeActivityId: record.programmeActivityId
-      ? String(record.programmeActivityId)
-      : undefined,
-    startTime: record.startTime ?? (record.type === "work" ? record.time : undefined),
-    finishTime: record.finishTime ?? legacyRecord.endTime,
-    affectedOperativeIds: Array.isArray(record.affectedOperativeIds)
-      ? record.affectedOperativeIds.map(String)
-      : undefined,
-    type:
-      (record.type as string) === "delay"
-        ? "disruption"
-        : record.type,
-  }});
-}
-
 function getEventLabel(type: TimelineEvent["type"]): string {
   if (type === "work") return "Measured Work";
   if (type === "disruption") return "Disruption";
   if (type === "variation") return "Variation";
+  if (type === "non_measured_work") return "Non-measured Work";
+  if (type === "waiting") return "Waiting";
+  if (type === "delay") return "Delay";
+  if (type === "plant") return "Plant Activity";
   return "Break";
 }
 
@@ -107,12 +87,15 @@ export default function TimelinePage() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [crews, setCrews] = useState<Crew[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [programmeLoading, setProgrammeLoading] = useState(true);
+  const [programmeError, setProgrammeError] = useState("");
+  const [canEditProgramme, setCanEditProgramme] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [today, setToday] = useState("Today");
 
   useEffect(() => {
     let cancelled = false;
-    queueMicrotask(() => {
+    queueMicrotask(async () => {
       if (cancelled) return;
       setToday(
         new Date(`${getActiveDate()}T12:00:00`).toLocaleDateString("en-GB", {
@@ -122,15 +105,18 @@ export default function TimelinePage() {
         })
       );
 
-      const loadedProgramme = loadProgramme();
-      setProgrammeActivities(loadedProgramme);
       const savedDay = loadDay() as SiteDay | null;
 
       if (savedDay) {
-        setEvents(normaliseEvents(savedDay.events));
         setAttendance(normaliseAttendance(savedDay.attendance));
         setCrews(normaliseCrews(savedDay.crews));
       }
+      try {
+        const projectId=getActiveProjectId();
+        const [programme,timeline,role]=await Promise.all([loadPublishedProgramme(projectId),loadTimelineEvents(projectId,getActiveDate()),loadProjectRole(projectId)]);
+        if(cancelled)return;setProgrammeActivities(programme.activities);setEvents(timeline);setCanEditProgramme(role==="planner"||role==="admin");setProgrammeError("");
+      } catch(error) { if(!cancelled)setProgrammeError(error instanceof Error?error.message:"Unable to load programme."); }
+      finally { if(!cancelled)setProgrammeLoading(false); }
       setHasLoaded(true);
     });
     return () => { cancelled = true; };
@@ -151,13 +137,13 @@ export default function TimelinePage() {
       date: getTodayDate(),
       attendance,
       crews,
-      events,
+      events: [],
     };
 
     saveDay(updatedDay);
-  }, [events, attendance, crews, hasLoaded]);
+  }, [attendance, crews, hasLoaded]);
 
-  function addSiteRecord(record: NewSiteRecord) {
+  async function addSiteRecord(record: NewSiteRecord, photos: File[]) {
     if (
       record.type === "work" &&
       record.crewId &&
@@ -171,15 +157,10 @@ export default function TimelinePage() {
       return;
     }
 
-    const newEvent: TimelineEvent = {
-      ...record,
-      startTime: record.type === "work" ? record.startTime ?? record.time : record.startTime,
-      id:
-        typeof crypto !== "undefined" &&
-        typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `event-${Date.now()}`,
-    };
+    const activity=programmeActivities.find(item=>item.programmeActivityId===record.programmeActivityId);
+    let newEvent:TimelineEvent;
+    try { newEvent=await createTimelineEvent(getActiveProjectId(),getActiveDate(),record,activity?.id); if(photos.length)await uploadTimelinePhotos(getActiveProjectId(),newEvent.id,photos); }
+    catch(error){window.alert(error instanceof Error?error.message:"Unable to save timeline event.");return;}
 
     setEvents((current) =>
       [...current, newEvent].sort((a, b) =>
@@ -430,6 +411,10 @@ export default function TimelinePage() {
           <AddWorkModal
             onAdd={addSiteRecord}
             onClose={() => setShowModal(false)}
+            programmeActivities={programmeActivities}
+            programmeLoading={programmeLoading}
+            programmeError={programmeError}
+            canEditProgramme={canEditProgramme}
           />
         )}
       </section>

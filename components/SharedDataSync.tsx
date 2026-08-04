@@ -31,7 +31,8 @@ export default function SharedDataSync({ children }: { children: React.ReactNode
     async function startSync() {
       const { data, error } = await supabase
         .from(SHARED_STATE_TABLE)
-        .select("record_key,payload,client_id,updated_at");
+        .select("record_key,payload,client_id,updated_at")
+        .or("record_key.eq.sitepulse-projects,record_key.eq.sitepulse-operatives,record_key.like.sitepulse-day-project-%");
 
       if (!active) return;
       if (error) {

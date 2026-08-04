@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+export async function POST(request:Request){const supabase=await createClient();const {data:{user}}=await supabase.auth.getUser();if(!user)return NextResponse.json({error:"Authentication required."},{status:401});const {importId}=await request.json() as {importId?:string};if(!importId)return NextResponse.json({error:"Import ID required."},{status:400});const {error}=await supabase.rpc("publish_programme_import",{target_import:importId});if(error)return NextResponse.json({error:error.message},{status:403});return NextResponse.json({status:"published"});}

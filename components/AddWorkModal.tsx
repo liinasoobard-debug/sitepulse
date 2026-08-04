@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { loadProgramme, loadProgrammeImportData, loadDay, saveProgramme } from "@/lib/storage";
-import { activitiesForVersion, LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, resourcesForActivity, uniqueLocations } from "@/lib/programmeSelection";
+import { loadDay } from "@/lib/storage";
+import { updateProgrammeBaseline } from "@/lib/supabase/programmeData";
+import { LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
   ProgrammeActivity,
-  ProgrammeImportData,
   SiteDay,
   SiteRecordType,
   TimelineEvent,
@@ -15,8 +15,12 @@ import type {
 type NewSiteRecord = Omit<TimelineEvent, "id">;
 
 type Props = {
-  onAdd: (record: NewSiteRecord) => void;
+  onAdd: (record: NewSiteRecord, photos: File[]) => void | Promise<void>;
   onClose: () => void;
+  programmeActivities: ProgrammeActivity[];
+  programmeLoading?: boolean;
+  programmeError?: string;
+  canEditProgramme?: boolean;
 };
 
 const recordChoices: Array<{
@@ -37,6 +41,10 @@ const recordChoices: Array<{
     description: "Waiting, restricted access or interrupted work",
     icon: "⏳",
   },
+  { type: "non_measured_work", title: "Non-measured Work", description: "Productive work not linked to a measured programme quantity", icon: "🛠️" },
+  { type: "waiting", title: "Waiting", description: "Gang waiting for access, information or materials", icon: "⏱️" },
+  { type: "delay", title: "Delay", description: "Unplanned delay affecting production", icon: "⚠️" },
+  { type: "plant", title: "Plant Activity", description: "Record plant or equipment activity", icon: "🏗️" },
   {
     type: "variation",
     title: "Variation / Additional Work",
@@ -80,12 +88,8 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
   }));
 }
 
-export default function AddWorkModal({ onAdd, onClose }: Props) {
+export default function AddWorkModal({ onAdd, onClose, programmeActivities, programmeLoading = false, programmeError = "", canEditProgramme = false }: Props) {
   const [crews, setCrews] = useState<Crew[]>([]);
-  const [programmeActivities, setProgrammeActivities] = useState<ProgrammeActivity[]>([]);
-  const [programmeImportData, setProgrammeImportData] = useState<ProgrammeImportData>({ relationships: [], resources: [], assignments: [], snapshots: [] });
-  const [programmeLoading, setProgrammeLoading] = useState(true);
-  const [programmeError, setProgrammeError] = useState("");
   const [activeCrewIds, setActiveCrewIds] = useState<string[]>([]);
   const [selectedCrewId, setSelectedCrewId] = useState("");
   const [selectedProgrammeVersion, setSelectedProgrammeVersion] = useState("");
@@ -100,7 +104,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
   const [finishTime, setFinishTime] = useState(getCurrentTime());
   const [actualQuantity, setActualQuantity] = useState("");
   const [numberOfOperatives, setNumberOfOperatives] = useState("");
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [validationMessage, setValidationMessage] = useState("");
   const [baselineUnit, setBaselineUnit] = useState("");
   const [baselineRate, setBaselineRate] = useState("");
@@ -114,9 +118,6 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         const savedDay = loadDay() as SiteDay | null;
         const savedCrews = normaliseCrews(savedDay?.crews);
         setCrews(savedCrews);
-        setProgrammeActivities(loadProgramme());
-        setProgrammeImportData(loadProgrammeImportData());
-        setProgrammeError("");
       const busyCrewIds = (savedDay?.events ?? [])
         .filter((event) => event.type === "work" && event.status === "active" && event.crewId)
         .map((event) => String(event.crewId));
@@ -125,12 +126,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         (crew) => crew.operativeIds.length > 0 && !busyCrewIds.includes(crew.id)
       );
         if (selectableCrews.length === 1) setSelectedCrewId(selectableCrews[0].id);
-      } catch (error) {
-        console.error("Unable to load programme activities:", error);
-        setProgrammeError("Programme activities could not be loaded. Try reloading the page.");
-      } finally {
-        setProgrammeLoading(false);
-      }
+      } catch (error) { console.error("Unable to load site day:", error); }
     });
     return () => { cancelled = true; };
   }, []);
@@ -150,11 +146,8 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     (activity) => activity.programmeActivityId === selectedProgrammeActivityId
   );
 
-  const programmeVersions = programmeImportData.snapshots;
-  const versionActivities = useMemo(
-    () => activitiesForVersion(programmeActivities, programmeImportData, selectedProgrammeVersion),
-    [programmeActivities, programmeImportData, selectedProgrammeVersion]
-  );
+  const programmeVersions: Array<{id:string;sourceFilename:string;importedAt:string}> = [];
+  const versionActivities = programmeActivities;
 
   const buildings = useMemo(
     () => uniqueLocations(versionActivities.map((item) => item.building)),
@@ -187,9 +180,9 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     ),
     [versionActivities, selectedBuilding, selectedElevation, selectedLevel]
   );
-  const selectedResources = selectedProgrammeActivity ? resourcesForActivity(selectedProgrammeActivity, programmeImportData) : [];
+  const selectedResources = selectedProgrammeActivity?.resourceNames ?? [];
   const importedBaselineValidation = selectedType === "work" ? measuredWorkValidation(selectedProgrammeActivity) : null;
-  const effectiveActivity = selectedProgrammeActivity ? { ...selectedProgrammeActivity, unit: baselineUnit || selectedProgrammeActivity.unit, plannedProductionRate: Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity.plannedProductionRate } : undefined;
+  const effectiveActivity = selectedProgrammeActivity ? { ...selectedProgrammeActivity, unit: canEditProgramme ? baselineUnit || selectedProgrammeActivity.unit : selectedProgrammeActivity.unit, plannedProductionRate: canEditProgramme && Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity.plannedProductionRate } : undefined;
   const baselineValidation = selectedType === "work" ? measuredWorkValidation(effectiveActivity) : null;
   function chooseRecordType(type: SiteRecordType) {
     setSelectedType(type);
@@ -255,22 +248,10 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
 
   async function addPhotos(files: FileList | null) {
     if (!files) return;
-    const selected = [...files];
-    try {
-      const encoded = await Promise.all(selected.map((file) => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      })));
-      setPhotos((current) => [...current, ...encoded]);
-    } catch (error) {
-      console.error("Unable to attach photos:", error);
-      setValidationMessage("One or more photos could not be attached.");
-    }
+    setPhotos((current) => [...current, ...files]);
   }
 
-  function saveRecord() {
+  async function saveRecord() {
     if (!selectedCrewId || !selectedType || !title.trim() || !time) return;
     if (selectedType === "work" && !selectedProgrammeActivityId) return;
     if (selectedType === "work") {
@@ -287,13 +268,11 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     const selectedOperatives = selectedCrew?.operativeIds.slice(0, operativeCount).map(String) ?? [];
     const effectiveUnit = baselineUnit || selectedProgrammeActivity?.unit || "";
     const effectiveRate = Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity?.plannedProductionRate;
-    if (selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedProductionRate)) {
-      const updatedProgramme = programmeActivities.map((activity) => activity.id === selectedProgrammeActivity.id ? { ...activity, unit: effectiveUnit, plannedProductionRate: effectiveRate, updatedAt: new Date().toISOString() } : activity);
-      saveProgramme(updatedProgramme);
-      setProgrammeActivities(updatedProgramme);
+    if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedProductionRate)) {
+      try { await updateProgrammeBaseline(selectedProgrammeActivity.id,effectiveUnit,Number(effectiveRate)); } catch(error) { setValidationMessage(error instanceof Error?error.message:"Only a Planner/Admin can update planned data."); return; }
     }
 
-    onAdd({
+    await onAdd({
       crewId: selectedCrewId,
       programmeActivityId:
         selectedType === "work" || selectedType === "disruption"
@@ -321,8 +300,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
       quantity: selectedType === "work" ? Number(actualQuantity) : undefined,
       affectedOperativeIds: selectedOperatives,
       notes: notes.trim() || undefined,
-      photoIds: photos,
-    });
+    }, photos);
   }
 
   if (availableCrews.length === 0) {
@@ -577,7 +555,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         </div>
       )}
 
-      {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>Complete the missing baseline to record measured work. These values will also be saved against the programme activity.</p><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned productivity target *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per labour hour" /></label></div>}
+      {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>{canEditProgramme ? "Complete the missing baseline to record measured work. These values will also be saved against the programme activity." : importedBaselineValidation}</p>{canEditProgramme && <><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned productivity target *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per labour hour" /></label></>}</div>}
 
       {selectedType === "work" && <>
         <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>

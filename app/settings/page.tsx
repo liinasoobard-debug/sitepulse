@@ -5,7 +5,6 @@ import {
   getActiveProject,
   loadAllSiteDays,
   loadOperatives,
-  loadProgramme,
   loadProjects,
   restoreProjectData,
 } from "@/lib/storage";
@@ -92,9 +91,9 @@ export default function SettingsPage() {
         ...(exportedBy.trim() ? { ExportedBy: exportedBy.trim() } : {}),
         ProjectId: activeProject.id,
         Project: activeProject,
-        ProgrammeActivities: loadProgramme(activeProject.id),
+        ProgrammeActivities: [],
         Operatives: loadOperatives().filter((operative) => referencedIds.has(String(operative.id))),
-        SiteDays: siteDays,
+        SiteDays: siteDays.map((day) => ({ ...day, events: [] })),
         ReportData: { Mode: "derived", GeneratedFrom: ["ProgrammeActivities", "SiteDays"] },
       };
       const filename = `SitePulse_${safeCode(activeProject)}_${exportTimestamp()}.json`;

@@ -8,8 +8,6 @@ export const SHARED_SYNC_EVENT = "sitepulse-shared-data-changed";
 const SHARED_KEY_PREFIXES = [
   "sitepulse-projects",
   "sitepulse-operatives",
-  "sitepulse-programme-project-",
-  "sitepulse-programme-import-project-",
   "sitepulse-day-project-",
 ];
 const CLIENT_ID_KEY = "sitepulse-sync-client-id";
@@ -44,7 +42,13 @@ export function getLocalSharedRecords(): Map<string, unknown> {
     const value = localStorage.getItem(key);
     if (value === null) continue;
     try {
-      records.set(key, JSON.parse(value));
+      const payload = JSON.parse(value);
+      records.set(
+        key,
+        key.startsWith("sitepulse-day-project-") && payload && typeof payload === "object"
+          ? { ...payload, events: [] }
+          : payload
+      );
     } catch {
       // Ignore malformed legacy browser data rather than uploading it.
     }
@@ -53,7 +57,13 @@ export function getLocalSharedRecords(): Map<string, unknown> {
 }
 
 export function applyRemoteRecord(record: SharedStateRow): void {
-  localStorage.setItem(record.record_key, JSON.stringify(record.payload));
+  const payload =
+    record.record_key.startsWith("sitepulse-day-project-") &&
+    record.payload &&
+    typeof record.payload === "object"
+      ? { ...record.payload, events: [] }
+      : record.payload;
+  localStorage.setItem(record.record_key, JSON.stringify(payload));
   window.dispatchEvent(
     new CustomEvent(SHARED_SYNC_EVENT, {
       detail: { recordKey: record.record_key },

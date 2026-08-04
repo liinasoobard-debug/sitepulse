@@ -23,6 +23,10 @@ export interface AttendanceRecord {
 
 export type SiteRecordType =
   | "work"
+  | "non_measured_work"
+  | "waiting"
+  | "delay"
+  | "plant"
   | "disruption"
   | "variation"
   | "break";
