@@ -1,28 +1,425 @@
 "use client";
+
 import Link from "next/link";
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getActiveProjectId } from "@/lib/storage";
-import { loadProgrammeImports, loadProjectRole, loadPublishedProgramme, updateProgrammeBaseline } from "@/lib/supabase/programmeData";
+import {
+  loadProgrammeImports,
+  loadProjectRole,
+  loadPublishedProgramme,
+  updateProgrammeBaseline,
+} from "@/lib/supabase/programmeData";
 import type { ProgrammeActivity } from "@/types/site";
 
-const activityTypeKeywords:Record<string,string[]>={design:["design","drawing","engineering"],install:["install","installation","erection"],calculations:["calculation","calculations","calc"],"shop-issue":["shop issue","shop drawing","issued for fabrication"],procurement:["procurement","purchase","order material"],"bylor-handover":["bylor handover","handover to bylor"],constraint:["constraint","hold point"],"alumet-handover":["alumet handover","handover to alumet"],remedials:["remedial","rectification","snag"]};
-const fmt=(value?:number)=>value===undefined?"—":value.toLocaleString("en-GB",{maximumFractionDigits:2});
-export default function ProgrammePage(){
- const [activities,setActivities]=useState<ProgrammeActivity[]>([]),[imports,setImports]=useState<Record<string,unknown>[]>([]),[role,setRole]=useState<string>(),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[message,setMessage]=useState(""),[error,setError]=useState(""),[buildingDefault,setBuildingDefault]=useState(""),[search,setSearch]=useState("");
- const [filters,setFilters]=useState({building:"",elevation:"",level:"",gridline:"",status:"",completion:"",activityType:""}); const [edit,setEdit]=useState<ProgrammeActivity|null>(null),[unit,setUnit]=useState(""),[rate,setRate]=useState("");
- const canManage=role==="planner"||role==="admin";
- const refresh=useCallback(async()=>{setLoading(true);try{const projectId=getActiveProjectId();const [programme,history,currentRole]=await Promise.all([loadPublishedProgramme(projectId),loadProgrammeImports(projectId),loadProjectRole(projectId)]);setActivities(programme.activities);setImports(history as Record<string,unknown>[]);setRole(currentRole);setError("");}catch(e){setError(e instanceof Error?e.message:"Unable to load programme from Supabase.");}finally{setLoading(false);}},[]);
- useEffect(()=>{queueMicrotask(()=>void refresh());const changed=()=>void refresh();window.addEventListener("sitepulse-project-changed",changed);return()=>window.removeEventListener("sitepulse-project-changed",changed);},[refresh]);
- async function upload(event:ChangeEvent<HTMLInputElement>){const file=event.target.files?.[0];event.target.value="";if(!file)return;setBusy(true);setError("");setMessage("");try{const form=new FormData();form.set("file",file);form.set("projectId",getActiveProjectId());form.set("building",buildingDefault);const response=await fetch("/api/programme/import",{method:"POST",body:form});const body=await response.json();if(!response.ok)throw new Error(body.error||body.summary?.issues?.[0]?.message||"Programme validation failed.");setMessage(`Draft created: ${body.summary.activities} activities, ${body.summary.relationships} relationships. Review and publish when ready.`);await refresh();}catch(e){setError(e instanceof Error?e.message:"Import failed.");}finally{setBusy(false);}}
- async function publish(id:string){if(!confirm("Publish this programme version to all site users?"))return;setBusy(true);try{const response=await fetch("/api/programme/publish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({importId:id})});const body=await response.json();if(!response.ok)throw new Error(body.error||"Publish failed.");setMessage("Programme published successfully.");await refresh();}catch(e){setError(e instanceof Error?e.message:"Publish failed.");}finally{setBusy(false);}}
- async function saveBaseline(){if(!edit||!unit.trim()||!(Number(rate)>0)){setError("Unit and productivity target are required.");return;}try{await updateProgrammeBaseline(edit.id,unit.trim(),Number(rate));setEdit(null);setMessage("Productivity baseline updated.");await refresh();}catch(e){setError(e instanceof Error?e.message:"Unable to update baseline.");}}
- const options=useMemo(()=>({buildings:[...new Set(activities.map(x=>x.building).filter(Boolean))].sort(),elevations:[...new Set(activities.map(x=>x.elevation).filter(Boolean))].sort(),levels:[...new Set(activities.map(x=>x.level).filter(Boolean))].sort(),gridlines:[...new Set(activities.map(x=>x.gridline).filter((x):x is string=>Boolean(x)))].sort(),statuses:[...new Set(activities.map(x=>x.activityStatus).filter((x):x is string=>Boolean(x)))].sort()}),[activities]);
- const filtered=useMemo(()=>activities.filter(x=>{const q=search.toLowerCase(),name=`${x.activityName} ${x.programmeActivityId}`.toLowerCase(),typeName=`${x.activityName} ${x.workActivity}`.toLowerCase();return(!q||name.includes(q))&&(!filters.building||x.building===filters.building)&&(!filters.elevation||x.elevation===filters.elevation)&&(!filters.level||x.level===filters.level)&&(!filters.gridline||x.gridline===filters.gridline)&&(!filters.status||x.activityStatus===filters.status)&&(!filters.completion||(filters.completion==="completed")===(x.activityStatus?.toLowerCase()==="completed"))&&(!filters.activityType||(activityTypeKeywords[filters.activityType]||[]).some(k=>typeName.includes(k)));}),[activities,filters,search]);
- return <main className="timeline-page"><section className="timeline-panel"><header className="timeline-header"><div><p className="eyebrow">Project Setup</p><h1>Programme</h1><p>Published programme data is shared securely through Supabase.</p></div><div style={{display:"flex",gap:10}}><Link href="/crews" className="secondary-button">Gangs</Link><Link href="/timeline" className="secondary-button">Timeline</Link></div></header>
- <section style={{padding:20,border:"1px solid #d7dde3",borderRadius:18,marginBottom:20,background:"#f7f9fa"}}><h2>Manual P6 Excel upload</h2><p>Planner/Admin only. The workbook is parsed server-side and stored as a draft before publication.</p>{(role==="planner"||role==="admin")?<><label className="attendance-field" style={{maxWidth:320}}><span>Single building value (optional)</span><input value={buildingDefault} onChange={e=>setBuildingDefault(e.target.value)} placeholder="e.g. HBX"/></label><label className="add-event-button" style={{display:"inline-flex",width:"auto",cursor:"pointer"}}>{busy?"Processing…":"Upload P6 Workbook"}<input type="file" accept=".xlsx" disabled={busy} onChange={upload} style={{position:"absolute",width:1,height:1,opacity:0}}/></label></>:<p style={{fontWeight:700}}>Published programme access is read-only for Site Team users.</p>}{message&&<p role="status" style={{color:"#087443",fontWeight:700}}>{message}</p>}{error&&<p role="alert" style={{color:"#b42318",fontWeight:700}}>{error}</p>}
- <h3>Import history</h3><div style={{overflowX:"auto"}}><table className="programme-grid" style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th>Version</th><th>Filename</th><th>Status</th><th>Imported</th><th>Activities</th><th></th></tr></thead><tbody>{imports.map(row=><tr key={String(row.id)}><td>{String(row.import_version)}</td><td>{String(row.source_filename)}</td><td>{String(row.status)}</td><td>{new Date(String(row.imported_at)).toLocaleString("en-GB")}</td><td>{String(row.activity_count)}</td><td>{row.status==="draft"&&(role==="planner"||role==="admin")&&<button className="secondary-button" disabled={busy} onClick={()=>void publish(String(row.id))}>Publish</button>}</td></tr>)}</tbody></table></div></section>
- {edit&&<section style={{padding:16,border:"1px solid #d7dde3",borderRadius:12,marginBottom:16}}><h3>Complete baseline — {edit.activityName}</h3><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><label className="attendance-field"><span>Unit</span><input value={unit} onChange={e=>setUnit(e.target.value)}/></label><label className="attendance-field"><span>Productivity target</span><input type="number" value={rate} onChange={e=>setRate(e.target.value)}/></label></div><button className="add-event-button" style={{width:"auto"}} onClick={()=>void saveBaseline()}>Save</button></section>}
- <div style={{display:"flex",justifyContent:"space-between",gap:10}}><strong>{loading?"Loading programme…":`${activities.length} published activities`}</strong><input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search activity"/></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(145px,1fr))",gap:10,padding:12}}>{(["building","elevation","level","gridline","status"] as const).map(field=><label className="attendance-field" key={field}><span>{field}</span><select value={filters[field]} onChange={e=>setFilters(f=>({...f,[field]:e.target.value}))}><option value="">All</option>{options[field==="status"?"statuses":`${field}s` as keyof typeof options].map(v=><option key={v}>{v}</option>)}</select></label>)}<label className="attendance-field"><span>Completion</span><select value={filters.completion} onChange={e=>setFilters(f=>({...f,completion:e.target.value}))}><option value="">All</option><option value="non-completed">Non-completed</option><option value="completed">Completed</option></select></label><label className="attendance-field"><span>Activity type</span><select value={filters.activityType} onChange={e=>setFilters(f=>({...f,activityType:e.target.value}))}><option value="">All</option>{Object.keys(activityTypeKeywords).map(k=><option value={k} key={k}>{k.replaceAll("-"," ")}</option>)}</select></label></div>
- <div style={{overflowX:"auto"}}><table className="programme-grid" style={{width:"100%",minWidth:1300,borderCollapse:"collapse"}}><thead><tr>{["Building","Area","Gridline","Level","Activity","Start","Finish","% Complete","Quantity","No. of Men","Planned Productivity"].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{filtered.map(x=><tr key={x.id}><td>{x.building||"—"}</td><td>{x.elevation||"—"}</td><td>{x.gridline||"—"}</td><td>{x.level||"—"}</td><td><strong>{x.activityName}</strong><small style={{display:"block"}}>{x.programmeActivityId}</small></td><td>{x.plannedStart||"—"}</td><td>{x.plannedFinish||"—"}</td><td>{fmt(x.physicalPercentComplete)}%</td><td>{x.plannedQuantity?`${fmt(x.plannedQuantity)} ${x.unit}`:"—"}</td><td>{fmt(x.plannedCrewSize)}</td><td>{x.plannedProductionRate?`${fmt(x.plannedProductionRate)} ${x.unit}/hr`:canManage?<button className="secondary-button" onClick={()=>{setEdit(x);setUnit(x.unit);setRate("");}}>Complete baseline</button>:"Productivity target incomplete"}</td></tr>)}</tbody></table></div>
- </section></main>;
+type ImportIssue = {
+  sheet: string;
+  rowNumber?: number;
+  activityId?: string;
+  severity: "error" | "warning";
+  message: string;
+};
+
+type ImportPreview = {
+  importId: string;
+  status: "draft" | "failed";
+  filename: string;
+  activities: number;
+  relationships: number;
+  resources: number;
+  assignments: number;
+  issues: ImportIssue[];
+};
+
+const activityTypeKeywords: Record<string, string[]> = {
+  design: ["design", "drawing", "engineering"],
+  install: ["install", "installation", "erection"],
+  calculations: ["calculation", "calculations", "calc"],
+  "shop-issue": ["shop issue", "shop drawing", "issued for fabrication"],
+  procurement: ["procurement", "purchase", "order material"],
+  "bylor-handover": ["bylor handover", "handover to bylor"],
+  constraint: ["constraint", "hold point"],
+  "alumet-handover": ["alumet handover", "handover to alumet"],
+  remedials: ["remedial", "rectification", "snag"],
+};
+
+const touchButtonStyle = {
+  minHeight: 54,
+  minWidth: 190,
+  padding: "14px 20px",
+  justifyContent: "center",
+} as const;
+
+const formatNumber = (value?: number) =>
+  value === undefined
+    ? "—"
+    : value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
+
+export default function ProgrammePage() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activities, setActivities] = useState<ProgrammeActivity[]>([]);
+  const [imports, setImports] = useState<Record<string, unknown>[]>([]);
+  const [role, setRole] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [buildingDefault, setBuildingDefault] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({
+    building: "",
+    elevation: "",
+    level: "",
+    gridline: "",
+    status: "",
+    completion: "",
+    activityType: "",
+  });
+  const [edit, setEdit] = useState<ProgrammeActivity | null>(null);
+  const [unit, setUnit] = useState("");
+  const [rate, setRate] = useState("");
+  const canManage = role === "planner" || role === "admin";
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const projectId = getActiveProjectId();
+      const [programme, history, currentRole] = await Promise.all([
+        loadPublishedProgramme(projectId),
+        loadProgrammeImports(projectId),
+        loadProjectRole(projectId),
+      ]);
+      setActivities(programme.activities);
+      setImports(history as Record<string, unknown>[]);
+      setRole(currentRole);
+      setError("");
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load programme from Supabase."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => void refresh());
+    const changed = () => void refresh();
+    window.addEventListener("sitepulse-project-changed", changed);
+    return () => window.removeEventListener("sitepulse-project-changed", changed);
+  }, [refresh]);
+
+  function selectWorkbook(file: File | undefined) {
+    if (!file) return;
+    setSelectedFile(file);
+    setPreview(null);
+    setMessage("");
+    setError("");
+  }
+
+  function cancelImport() {
+    setSelectedFile(null);
+    setPreview(null);
+    setMessage("");
+    setError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function reviewImport() {
+    if (!selectedFile || !canManage) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    setPreview(null);
+    try {
+      const form = new FormData();
+      form.set("file", selectedFile, selectedFile.name);
+      form.set("projectId", getActiveProjectId());
+      form.set("building", buildingDefault);
+      const response = await fetch("/api/programme/import", {
+        method: "POST",
+        body: form,
+      });
+      const body = await response.json();
+      const summary = body.summary ?? {};
+      const result: ImportPreview = {
+        importId: String(body.importId ?? ""),
+        status: body.status === "draft" ? "draft" : "failed",
+        filename: selectedFile.name,
+        activities: Number(summary.activities ?? 0),
+        relationships: Number(summary.relationships ?? 0),
+        resources: Number(summary.resources ?? 0),
+        assignments: Number(summary.assignments ?? 0),
+        issues: Array.isArray(summary.issues) ? summary.issues : [],
+      };
+      setPreview(result);
+      if (!response.ok) {
+        setError(
+          body.error ||
+            result.issues.find((issue) => issue.severity === "error")?.message ||
+            "Workbook validation failed."
+        );
+        return;
+      }
+      setMessage("Workbook parsed successfully. Review the import before publishing.");
+      await refresh();
+    } catch (reviewError) {
+      setError(
+        reviewError instanceof Error ? reviewError.message : "Import review failed."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function publish(importId: string) {
+    if (!canManage || !importId) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/programme/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ importId }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Publish failed.");
+      setMessage("Programme update published successfully.");
+      setSelectedFile(null);
+      setPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      await refresh();
+    } catch (publishError) {
+      setError(
+        publishError instanceof Error ? publishError.message : "Publish failed."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveBaseline() {
+    if (!edit || !unit.trim() || !(Number(rate) > 0)) {
+      setError("Unit and productivity target are required.");
+      return;
+    }
+    try {
+      await updateProgrammeBaseline(edit.id, unit.trim(), Number(rate));
+      setEdit(null);
+      setMessage("Productivity baseline updated.");
+      await refresh();
+    } catch (baselineError) {
+      setError(
+        baselineError instanceof Error
+          ? baselineError.message
+          : "Unable to update baseline."
+      );
+    }
+  }
+
+  const options = useMemo(
+    () => ({
+      buildings: [...new Set(activities.map((item) => item.building).filter(Boolean))].sort(),
+      elevations: [...new Set(activities.map((item) => item.elevation).filter(Boolean))].sort(),
+      levels: [...new Set(activities.map((item) => item.level).filter(Boolean))].sort(),
+      gridlines: [...new Set(activities.map((item) => item.gridline).filter((value): value is string => Boolean(value)))].sort(),
+      statuses: [...new Set(activities.map((item) => item.activityStatus).filter((value): value is string => Boolean(value)))].sort(),
+    }),
+    [activities]
+  );
+
+  const filtered = useMemo(
+    () =>
+      activities.filter((item) => {
+        const query = search.toLowerCase();
+        const name = `${item.activityName} ${item.programmeActivityId}`.toLowerCase();
+        const typeName = `${item.activityName} ${item.workActivity}`.toLowerCase();
+        return (
+          (!query || name.includes(query)) &&
+          (!filters.building || item.building === filters.building) &&
+          (!filters.elevation || item.elevation === filters.elevation) &&
+          (!filters.level || item.level === filters.level) &&
+          (!filters.gridline || item.gridline === filters.gridline) &&
+          (!filters.status || item.activityStatus === filters.status) &&
+          (!filters.completion ||
+            (filters.completion === "completed") ===
+              (item.activityStatus?.toLowerCase() === "completed")) &&
+          (!filters.activityType ||
+            (activityTypeKeywords[filters.activityType] || []).some((keyword) =>
+              typeName.includes(keyword)
+            ))
+        );
+      }),
+    [activities, filters, search]
+  );
+
+  return (
+    <main className="timeline-page">
+      <section className="timeline-panel">
+        <header className="timeline-header">
+          <div>
+            <p className="eyebrow">Project Setup</p>
+            <h1>Programme</h1>
+            <p>Published programme data is shared securely through Supabase.</p>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Link href="/crews" className="secondary-button">Gangs</Link>
+            <Link href="/timeline" className="secondary-button">Timeline</Link>
+          </div>
+        </header>
+
+        <section style={{ padding: 20, border: "1px solid #d7dde3", borderRadius: 18, marginBottom: 20, background: "#f7f9fa" }}>
+          <h2>Import P6 Workbook</h2>
+          <p>Select an Excel export containing TASK, TASKPRED, RSRC and TASKRSRC sheets. The workbook is validated before publication.</p>
+
+          {canManage ? (
+            <div style={{ display: "grid", gap: 16 }}>
+              <label className="attendance-field" style={{ maxWidth: 360 }}>
+                <span>Single building value (optional)</span>
+                <input value={buildingDefault} onChange={(event) => setBuildingDefault(event.target.value)} placeholder="e.g. HBX" />
+              </label>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                <label className="add-event-button" style={{ ...touchButtonStyle, display: "inline-flex", position: "relative", cursor: busy ? "not-allowed" : "pointer" }}>
+                  Select P6 Workbook
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    disabled={busy}
+                    onChange={(event) => selectWorkbook(event.target.files?.[0])}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
+                    aria-label="Select P6 Workbook"
+                  />
+                </label>
+                <button type="button" className="secondary-button" style={touchButtonStyle} disabled={!selectedFile || busy} onClick={() => void reviewImport()}>
+                  {busy && selectedFile && !preview ? "Reviewing…" : "Review Import"}
+                </button>
+                <button type="button" className="add-event-button" style={{ ...touchButtonStyle, width: "auto" }} disabled={!canManage || busy || preview?.status !== "draft" || !preview.importId} onClick={() => preview && void publish(preview.importId)}>
+                  Publish Programme Update
+                </button>
+                <button type="button" className="secondary-button" style={touchButtonStyle} disabled={busy || (!selectedFile && !preview)} onClick={cancelImport}>
+                  Cancel
+                </button>
+              </div>
+              <p style={{ margin: 0, fontWeight: 700 }}>
+                {selectedFile ? `Selected workbook: ${selectedFile.name}` : "No workbook selected."}
+              </p>
+            </div>
+          ) : (
+            <p style={{ fontWeight: 700 }}>Published programme access is read-only for Site Team users. Planner or Admin access is required to import.</p>
+          )}
+
+          {preview && (
+            <section style={{ marginTop: 20, padding: 18, border: "1px solid #cbd5df", borderRadius: 14, background: "white" }} aria-live="polite">
+              <h3 style={{ marginTop: 0 }}>Import Preview — {preview.filename}</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                {[
+                  ["Activities", preview.activities],
+                  ["Relationships", preview.relationships],
+                  ["Resources", preview.resources],
+                  ["Assignments", preview.assignments],
+                ].map(([label, count]) => (
+                  <div key={String(label)} style={{ padding: 14, borderRadius: 10, background: "#eef2f5" }}>
+                    <strong style={{ display: "block", fontSize: 24 }}>{count}</strong>
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+              <h4>Validation</h4>
+              {preview.issues.length === 0 ? (
+                <p style={{ color: "#087443", fontWeight: 700 }}>Validation completed successfully. The draft is ready to publish.</p>
+              ) : (
+                <>
+                  <p style={{ fontWeight: 700 }}>
+                    {preview.issues.length} validation issue{preview.issues.length === 1 ? "" : "s"} found.
+                    {preview.issues.length > 100 ? " Showing the first 100." : ""}
+                  </p>
+                  <ul style={{ display: "grid", gap: 8, paddingLeft: 22 }}>
+                    {preview.issues.slice(0, 100).map((issue, index) => (
+                      <li key={`${issue.sheet}-${issue.rowNumber ?? 0}-${index}`} style={{ color: issue.severity === "error" ? "#b42318" : "#8a5700" }}>
+                        <strong>{issue.severity.toUpperCase()} — {issue.sheet}{issue.rowNumber ? ` row ${issue.rowNumber}` : ""}{issue.activityId ? ` (${issue.activityId})` : ""}:</strong> {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+          )}
+
+          {message && <p role="status" style={{ color: "#087443", fontWeight: 700 }}>{message}</p>}
+          {error && <p role="alert" style={{ color: "#b42318", fontWeight: 700 }}>{error}</p>}
+
+          <h3>Import history</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr><th>Version</th><th>Filename</th><th>Status</th><th>Imported</th><th>Activities</th><th></th></tr></thead>
+              <tbody>
+                {imports.map((row) => (
+                  <tr key={String(row.id)}>
+                    <td>{String(row.import_version)}</td>
+                    <td>{String(row.source_filename)}</td>
+                    <td>{String(row.status)}</td>
+                    <td>{new Date(String(row.imported_at)).toLocaleString("en-GB")}</td>
+                    <td>{String(row.activity_count)}</td>
+                    <td>{row.status === "draft" && canManage && <button className="secondary-button" disabled={busy} onClick={() => void publish(String(row.id))}>Publish Programme Update</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {edit && (
+          <section style={{ padding: 16, border: "1px solid #d7dde3", borderRadius: 12, marginBottom: 16 }}>
+            <h3>Complete baseline — {edit.activityName}</h3>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <label className="attendance-field"><span>Unit</span><input value={unit} onChange={(event) => setUnit(event.target.value)} /></label>
+              <label className="attendance-field"><span>Productivity target</span><input type="number" value={rate} onChange={(event) => setRate(event.target.value)} /></label>
+            </div>
+            <button className="add-event-button" style={{ width: "auto" }} onClick={() => void saveBaseline()}>Save</button>
+          </section>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+          <strong>{loading ? "Loading programme…" : `${activities.length} published activities`}</strong>
+          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search activity" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 10, padding: 12 }}>
+          {(["building", "elevation", "level", "gridline", "status"] as const).map((field) => (
+            <label className="attendance-field" key={field}>
+              <span>{field}</span>
+              <select value={filters[field]} onChange={(event) => setFilters((current) => ({ ...current, [field]: event.target.value }))}>
+                <option value="">All</option>
+                {options[field === "status" ? "statuses" : `${field}s` as keyof typeof options].map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </label>
+          ))}
+          <label className="attendance-field"><span>Completion</span><select value={filters.completion} onChange={(event) => setFilters((current) => ({ ...current, completion: event.target.value }))}><option value="">All</option><option value="non-completed">Non-completed</option><option value="completed">Completed</option></select></label>
+          <label className="attendance-field"><span>Activity type</span><select value={filters.activityType} onChange={(event) => setFilters((current) => ({ ...current, activityType: event.target.value }))}><option value="">All</option>{Object.keys(activityTypeKeywords).map((key) => <option value={key} key={key}>{key.replaceAll("-", " ")}</option>)}</select></label>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table className="programme-grid" style={{ width: "100%", minWidth: 1300, borderCollapse: "collapse" }}>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Start", "Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+            <tbody>
+              {filtered.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td>
+                  <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small></td>
+                  <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
+                  <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.plannedCrewSize)}</td>
+                  <td>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); }}>Complete baseline</button> : "Productivity target incomplete"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  );
 }

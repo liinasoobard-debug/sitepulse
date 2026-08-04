@@ -27,7 +27,17 @@ export async function POST(request: Request) {
     const parsed=parseP6Workbook(sheets,projectId,importId,mapping,knownIds); const errors=parsed.issues.filter(i=>i.severity==="error");
     const incomingIds=new Set(parsed.activities.map(activity=>activity.programmeActivityId)); const missingPrevious=previousActivities.filter(activity=>!incomingIds.has(String(activity.external_activity_id)));
     await supabase.from("programme_imports").insert({id:importId,project_id:projectId,import_version:(last?.import_version??0)+1,source_filename:file.name,source_type:"manual_excel",data_date:parsed.dataDate||null,imported_by:user.id,status:errors.length?"failed":"draft",validation_summary:{issues:parsed.issues,missing_count:missingPrevious.length},mapping_config:mapping,activity_count:parsed.activities.length+missingPrevious.length,relationship_count:parsed.relationships.length,resource_count:parsed.resources.length,assignment_count:parsed.assignments.length});
-    if(errors.length)return NextResponse.json({importId,status:"failed",summary:{activities:parsed.activities.length,issues:parsed.issues}},{status:422});
+    if(errors.length)return NextResponse.json({
+      importId,
+      status:"failed",
+      summary:{
+        activities:parsed.activities.length,
+        relationships:parsed.relationships.length,
+        resources:parsed.resources.length,
+        assignments:parsed.assignments.length,
+        issues:parsed.issues,
+      },
+    },{status:422});
     const activityRows=parsed.activities.map(a=>({id:a.id,project_id:projectId,programme_import_id:importId,external_activity_id:a.programmeActivityId,activity_name:a.activityName||a.activity,activity_status:a.activityStatus||null,wbs_code:a.wbsCode||null,wbs_name:a.wbsPath||null,building:a.building||null,area:a.elevation||null,level:a.level||null,gridline:a.gridline||null,location:[a.building,a.elevation,a.level,a.gridline].filter(Boolean).join(" / ")||null,trade:a.trade||null,planned_start:a.plannedStart||null,planned_finish:a.plannedFinish||null,actual_start:a.actualStart||null,actual_finish:a.actualFinish||null,original_duration:a.originalDuration??null,remaining_duration:a.remainingDuration??null,percent_complete:a.physicalPercentComplete??null,planned_quantity:a.plannedQuantity||null,unit:a.unit||null,productivity_target:a.plannedProductionRate??null,planned_crew_size:a.plannedCrewSize??null,calendar_name:a.calendar||null,is_missing_from_latest:false,raw_data:{}}));
     const missingRows=missingPrevious.map(previous=>{const {id:_id,programme_import_id:_old,created_at:_created,updated_at:_updated,...fields}=previous;void _id;void _old;void _created;void _updated;return {...fields,id:crypto.randomUUID(),programme_import_id:importId,is_missing_from_latest:true,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};});
     await insertBatches(supabase,"programme_activities",[...activityRows,...missingRows]);
