@@ -9,7 +9,7 @@ import type {
 export type WorkbookRow = Record<string, unknown>;
 export type WorkbookSheets = Record<string, WorkbookRow[]>;
 
-export type HierarchyField = "building" | "elevation" | "level" | "workActivity";
+export type HierarchyField = "building" | "elevation" | "level" | "gridline" | "workActivity";
 export type HierarchyMapping = Record<HierarchyField, string>;
 
 export interface ImportIssue {
@@ -44,7 +44,7 @@ const aliases = {
   plannedFinish: ["finish", "end date", "end_date", "planned finish", "planned_finish", "target end date", "target_end_date", "early end date", "early_end_date"],
   actualStart: ["actual start", "actual_start", "act start date", "act_start_date"],
   actualFinish: ["actual finish", "actual_finish", "act end date", "act_end_date"],
-  percent: ["physical % complete", "physical percent complete", "physical_percent_complete", "phys complete pct", "phys_complete_pct"],
+  percent: ["physical % complete", "physical percent complete", "physical_percent_complete", "phys complete pct", "phys_complete_pct", "activity % complete", "complete pct", "complete_pct"],
   primaryConstraint: ["primary constraint", "primary_constraint", "cstr type", "cstr_type"],
   secondaryConstraint: ["secondary constraint", "secondary_constraint", "cstr type2", "cstr_type2"],
   calendar: ["calendar", "calendar name", "calendar_name", "clndr id", "clndr_id"],
@@ -122,7 +122,7 @@ function mappedHierarchy(row: WorkbookRow, mapping: HierarchyMapping, field: Hie
   const column = mapping[field];
   if (column === "__wbs__") {
     const segments = wbsPath.split(/[>\\/|]/).map((part) => part.trim()).filter(Boolean);
-    return field === "workActivity" ? segments.at(-1) ?? "" : segments[{ building: 0, elevation: 1, level: 2, workActivity: 3 }[field]] ?? "";
+    return field === "workActivity" ? segments.at(-1) ?? "" : segments[{ building: 0, elevation: 1, level: 2, gridline: 3, workActivity: 4 }[field]] ?? "";
   }
   return column ? text(row[column]) : "";
 }
@@ -166,7 +166,7 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     if (suppliedRate && calculatedRate && Math.abs(suppliedRate - calculatedRate) / calculatedRate > 0.02) issues.push({ sheet: "TASK", rowNumber, activityId, severity: "warning", message: "Supplied production rate differs from quantity / budget labour hours by more than 2%." });
     dataDate ??= date(value(row, aliases.dataDate));
     const now = new Date().toISOString();
-    return [{ id: id("programme-activity"), projectId, programmeActivityId: activityId, activityName, activity: activityName || "Unnamed programme activity", workActivity: mappedHierarchy(row, mapping, "workActivity", wbsPath) || activityName, building: mappedHierarchy(row, mapping, "building", wbsPath), elevation: mappedHierarchy(row, mapping, "elevation", wbsPath), level: mappedHierarchy(row, mapping, "level", wbsPath), wbsCode, wbsPath, wbs: wbsCode, unit: text(value(row, aliases.unit)), plannedQuantity, budgetLabourHours, plannedProductionRate: calculatedRate ?? suppliedRate, activityStatus: text(value(row, aliases.status)), originalDuration: number(value(row, aliases.originalDuration)), remainingDuration: number(value(row, aliases.remainingDuration)), plannedStart: date(value(row, aliases.plannedStart)), plannedFinish: date(value(row, aliases.plannedFinish)), actualStart: date(value(row, aliases.actualStart)), actualFinish: date(value(row, aliases.actualFinish)), physicalPercentComplete: number(value(row, aliases.percent)), primaryConstraint: text(value(row, aliases.primaryConstraint)), secondaryConstraint: text(value(row, aliases.secondaryConstraint)), calendar: text(value(row, aliases.calendar)), resourceNames: text(value(row, aliases.resourceNames)).split(/[;,]/).map((item) => item.trim()).filter(Boolean), dataDate, sourceType: "p6-xlsx", sourceImportId: importId, missingFromLatestUpdate: false, productivityBaselineComplete: plannedQuantity > 0 && Boolean(budgetLabourHours && budgetLabourHours > 0) && Boolean(text(value(row, aliases.unit))), createdAt: now, updatedAt: now }];
+    return [{ id: id("programme-activity"), projectId, programmeActivityId: activityId, activityName, activity: activityName || "Unnamed programme activity", workActivity: mappedHierarchy(row, mapping, "workActivity", wbsPath) || activityName, building: mappedHierarchy(row, mapping, "building", wbsPath), elevation: mappedHierarchy(row, mapping, "elevation", wbsPath), level: mappedHierarchy(row, mapping, "level", wbsPath), gridline: mappedHierarchy(row, mapping, "gridline", wbsPath), wbsCode, wbsPath, wbs: wbsCode, unit: text(value(row, aliases.unit)), plannedQuantity, budgetLabourHours, plannedProductionRate: calculatedRate ?? suppliedRate, activityStatus: text(value(row, aliases.status)), originalDuration: number(value(row, aliases.originalDuration)), remainingDuration: number(value(row, aliases.remainingDuration)), plannedStart: date(value(row, aliases.plannedStart)), plannedFinish: date(value(row, aliases.plannedFinish)), actualStart: date(value(row, aliases.actualStart)), actualFinish: date(value(row, aliases.actualFinish)), physicalPercentComplete: number(value(row, aliases.percent)), primaryConstraint: text(value(row, aliases.primaryConstraint)), secondaryConstraint: text(value(row, aliases.secondaryConstraint)), calendar: text(value(row, aliases.calendar)), resourceNames: text(value(row, aliases.resourceNames)).split(/[;,]/).map((item) => item.trim()).filter(Boolean), dataDate, sourceType: "p6-xlsx", sourceImportId: importId, missingFromLatestUpdate: false, productivityBaselineComplete: plannedQuantity > 0 && Boolean(budgetLabourHours && budgetLabourHours > 0) && Boolean(text(value(row, aliases.unit))), createdAt: now, updatedAt: now }];
   });
 
   const resourceRows = sheet(sheets, "rsrc") ?? [];

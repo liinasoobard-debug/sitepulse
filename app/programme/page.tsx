@@ -6,8 +6,8 @@ import { classifyProgramme, parseP6Workbook, type HierarchyField, type Hierarchy
 import { getActiveProjectId, loadProgramme, loadProgrammeImportData, saveProgramme, saveProgrammeImportData } from "@/lib/storage";
 import type { ProgrammeActivity, ProgrammeImportChange, ProgrammeImportData, ProgrammeImportSnapshot } from "@/types/site";
 
-const emptyMapping: HierarchyMapping = { building: "", elevation: "", level: "", workActivity: "" };
-const hierarchyLabels: Record<HierarchyField, string> = { building: "Building", elevation: "Elevation", level: "Level", workActivity: "Work Activity" };
+const emptyMapping: HierarchyMapping = { building: "", elevation: "", level: "", gridline: "", workActivity: "" };
+const hierarchyLabels: Record<HierarchyField, string> = { building: "Building", elevation: "Elevation", level: "Level", gridline: "Gridline", workActivity: "Work Activity" };
 
 type PendingImport = {
   fileName: string;
@@ -80,7 +80,7 @@ export default function ProgrammePage() {
       const normalisedColumns = firstPass.availableColumns.map((column) => ({ column, key: column.trim().toLowerCase().replace(/[\s_-]+/g, " ") }));
       (Object.keys(mapping) as HierarchyField[]).forEach((field) => {
         const label = hierarchyLabels[field].toLowerCase();
-        mapping[field] = normalisedColumns.find((candidate) => candidate.key === label)?.column ?? "";
+        mapping[field] = normalisedColumns.find((candidate) => candidate.key === label || candidate.key.includes(label) || field === "level" && candidate.key.includes("floor"))?.column ?? "";
       });
       const parsed = parseP6Workbook(sheets, projectId, importId, mapping);
       setPending({ fileName: file.name, importId, sheets, parsed, mapping, changes: classifyProgramme(activities, parsed.activities), mode: activities.length ? "update" : "initial" });

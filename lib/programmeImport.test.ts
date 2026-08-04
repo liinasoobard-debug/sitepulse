@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyProgramme, parseP6Workbook, type WorkbookSheets } from "./programmeImport.ts";
 
-const mapping = { building: "Building", elevation: "Elevation", level: "Level", workActivity: "Activity Name" };
+const mapping = { building: "Building", elevation: "Elevation", level: "Level", gridline: "Gridline", workActivity: "Activity Name" };
 
 function fixture(): WorkbookSheets {
   return {
