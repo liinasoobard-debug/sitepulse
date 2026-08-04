@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 const hierarchyLabels: Record<HierarchyField,string>={building:"Building",elevation:"Elevation",level:"Floor",gridline:"Gridline",workActivity:"Activity Name"};
-async function insertBatches(supabase: Awaited<ReturnType<typeof createClient>>, table: string, rows: Record<string,unknown>[]) { for(let i=0;i<rows.length;i+=400){const {error}=await supabase.from(table).insert(rows.slice(i,i+400));if(error)throw error;} }
+async function insertBatches(supabase: Awaited<ReturnType<typeof createClient>>, table: string, rows: Record<string,unknown>[]) { for(let i=0;i<rows.length;i+=400){const {error}=await supabase.from(table).insert(rows.slice(i,i+400));if(error)throw new Error(`${table}: ${error.message}`);} }
 
 export async function POST(request: Request) {
   const supabase = await createClient(); const {data:{user}}=await supabase.auth.getUser();
@@ -26,7 +26,8 @@ export async function POST(request: Request) {
     const mapping={...empty}; (Object.keys(mapping) as HierarchyField[]).forEach(field=>{if(mapping[field])return;const label=hierarchyLabels[field].toLowerCase();mapping[field]=candidates.find(c=>c.key.includes(label)||field==="level"&&c.key.includes("floor")||field==="workActivity"&&c.key.includes("activity name"))?.column??"";});
     const parsed=parseP6Workbook(sheets,projectId,importId,mapping,knownIds); const errors=parsed.issues.filter(i=>i.severity==="error");
     const incomingIds=new Set(parsed.activities.map(activity=>activity.programmeActivityId)); const missingPrevious=previousActivities.filter(activity=>!incomingIds.has(String(activity.external_activity_id)));
-    await supabase.from("programme_imports").insert({id:importId,project_id:projectId,import_version:(last?.import_version??0)+1,source_filename:file.name,source_type:"manual_excel",data_date:parsed.dataDate||null,imported_by:user.id,status:errors.length?"failed":"draft",validation_summary:{issues:parsed.issues,missing_count:missingPrevious.length},mapping_config:mapping,activity_count:parsed.activities.length+missingPrevious.length,relationship_count:parsed.relationships.length,resource_count:parsed.resources.length,assignment_count:parsed.assignments.length});
+    const {error:importError}=await supabase.from("programme_imports").insert({id:importId,project_id:projectId,import_version:(last?.import_version??0)+1,source_filename:file.name,source_type:"manual_excel",data_date:parsed.dataDate||null,imported_by:user.id,status:errors.length?"failed":"draft",validation_summary:{issues:parsed.issues,missing_count:missingPrevious.length},mapping_config:mapping,activity_count:parsed.activities.length+missingPrevious.length,relationship_count:parsed.relationships.length,resource_count:parsed.resources.length,assignment_count:parsed.assignments.length});
+    if(importError)throw new Error(`programme_imports: ${importError.message}`);
     if(errors.length)return NextResponse.json({
       importId,
       status:"failed",

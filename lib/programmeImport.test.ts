@@ -47,6 +47,15 @@ test("preserves relationship and assignment IDs outside a filtered workbook", ()
   assert.equal(result.issues.filter((issue) => issue.severity === "error").length, 0);
 });
 
+test("consolidates duplicate resources by official P6 Resource ID", () => {
+  const sheets = fixture();
+  sheets.RSRC.push({ rsrc_id: "12", rsrc_short_name: "LAB-01", rsrc_name: "Duplicate facade gang" });
+  const result = parseP6Workbook(sheets, "project", "import", mapping);
+  assert.equal(result.resources.filter((item) => item.resourceId === "LAB-01").length, 1);
+  assert.ok(result.issues.some((issue) => issue.sheet === "RSRC" && issue.severity === "warning" && issue.message.includes("duplicate resource")));
+  assert.equal(result.issues.filter((issue) => issue.severity === "error").length, 0);
+});
+
 test("classifies changed dates, new rows and activities missing from an update", () => {
   const first = parseP6Workbook(fixture(), "project", "first", mapping).activities;
   const nextSheets = fixture();

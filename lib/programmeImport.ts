@@ -177,14 +177,19 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
 
   const resourceRows = sheet(sheets, "rsrc") ?? [];
   const resourceRefs = new Map<string, string>();
+  const seenResourceIds = new Set<string>();
+  let duplicateResourceRows = 0;
   const resources = resourceRows.flatMap((row, index): ProgrammeResource[] => {
     if (isP6LabelRow(row) || isDeletedRow(row)) return [];
     const resourceId = text(value(row, aliases.resourceId));
     if (!resourceId) { issues.push({ sheet: "RSRC", rowNumber: index + 2, severity: "error", message: "Resource ID is required." }); return []; }
     const official = text(row.rsrc_short_name) || resourceId;
     resourceRefs.set(resourceId, official); resourceRefs.set(official, official);
+    if (seenResourceIds.has(official.toLowerCase())) { duplicateResourceRows += 1; return []; }
+    seenResourceIds.add(official.toLowerCase());
     return [{ id: id("programme-resource"), projectId, resourceId: official, resourceName: text(value(row, aliases.resourceName)) || official, resourceType: text(value(row, aliases.resourceType)), parentResourceId: text(value(row, aliases.parentResource)), unitOfMeasure: text(value(row, aliases.unit)), calendar: text(value(row, aliases.calendar)), sourceImportId: importId }];
   });
+  if (duplicateResourceRows) issues.push({ sheet: "RSRC", severity: "warning", message: `${duplicateResourceRows} duplicate resource row${duplicateResourceRows === 1 ? " was" : "s were"} consolidated by official Resource ID.` });
 
   const resolveActivity = (raw: unknown) => internalToOfficial.get(text(raw));
   let externalRelationshipReferences = 0;
