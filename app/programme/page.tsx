@@ -419,14 +419,14 @@ export default function ProgrammePage() {
         </div>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="programme-grid" style={{ width: "100%", minWidth: 1300, borderCollapse: "collapse" }}>
-            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Start", "Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+          <table className="programme-grid" style={{ width: "100%", minWidth: 1500, borderCollapse: "collapse" }}>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
               {filtered.map((item) => (
                 <tr key={item.id}>
                   <td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td>
                   <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small></td>
-                  <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
+                  <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
                   <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.plannedCrewSize)}</td>
                   <td>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); }}>Complete baseline</button> : "Productivity target incomplete"}</td>
                 </tr>
