@@ -17,6 +17,7 @@ type PendingImport = {
   mapping: HierarchyMapping;
   changes: ProgrammeImportChange[];
   mode: "initial" | "update";
+  partialUpdate: boolean;
 };
 
 function createId(): string {
@@ -27,18 +28,19 @@ function formatNumber(value?: number): string {
   return value === undefined ? "—" : value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
 }
 
-function mergeProgramme(existing: ProgrammeActivity[], incoming: ProgrammeActivity[]): ProgrammeActivity[] {
+function mergeProgramme(existing: ProgrammeActivity[], incoming: ProgrammeActivity[], partialUpdate = false): ProgrammeActivity[] {
   const incomingById = new Map(incoming.map((activity) => [activity.programmeActivityId.toLowerCase(), activity]));
   const now = new Date().toISOString();
   const merged = existing.map((activity) => {
     const update = incomingById.get(activity.programmeActivityId.toLowerCase());
-    if (!update) return { ...activity, missingFromLatestUpdate: true, updatedAt: now };
+    if (!update) return partialUpdate ? activity : { ...activity, missingFromLatestUpdate: true, updatedAt: now };
     incomingById.delete(activity.programmeActivityId.toLowerCase());
     const plannedQuantity = update.plannedQuantity > 0 ? update.plannedQuantity : activity.plannedQuantity;
     const unit = update.unit || activity.unit;
     const budgetLabourHours = update.budgetLabourHours ?? activity.budgetLabourHours;
     const plannedProductionRate = update.plannedProductionRate ?? activity.plannedProductionRate;
-    return { ...activity, ...update, id: activity.id, projectId: activity.projectId ?? update.projectId, createdAt: activity.createdAt, plannedQuantity, unit, budgetLabourHours, plannedProductionRate, productivityBaselineComplete: Boolean(plannedQuantity > 0 && budgetLabourHours && unit), updatedAt: now, missingFromLatestUpdate: false };
+    const plannedCrewSize = update.plannedCrewSize ?? activity.plannedCrewSize;
+    return { ...activity, ...update, id: activity.id, projectId: activity.projectId ?? update.projectId, createdAt: activity.createdAt, plannedQuantity, unit, budgetLabourHours, plannedProductionRate, plannedCrewSize, productivityBaselineComplete: Boolean(plannedQuantity > 0 && budgetLabourHours && unit), updatedAt: now, missingFromLatestUpdate: false };
   });
   return [...merged, ...incomingById.values()];
 }
@@ -75,15 +77,19 @@ export default function ProgrammePage() {
       workbook.SheetNames.forEach((name) => { const worksheet = workbook.Sheets[name]; if (worksheet) sheets[name] = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: "", raw: true }); });
       const projectId = getActiveProjectId();
       const importId = createId();
-      const firstPass = parseP6Workbook(sheets, projectId, importId, emptyMapping);
+      const knownActivityIds = activities.map((activity) => activity.programmeActivityId);
+      const firstPass = parseP6Workbook(sheets, projectId, importId, emptyMapping, knownActivityIds);
       const mapping = { ...emptyMapping };
       const normalisedColumns = firstPass.availableColumns.map((column) => ({ column, key: column.trim().toLowerCase().replace(/[\s_-]+/g, " ") }));
       (Object.keys(mapping) as HierarchyField[]).forEach((field) => {
         const label = hierarchyLabels[field].toLowerCase();
         mapping[field] = normalisedColumns.find((candidate) => candidate.key === label || candidate.key.includes(label) || field === "level" && candidate.key.includes("floor"))?.column ?? "";
       });
-      const parsed = parseP6Workbook(sheets, projectId, importId, mapping);
-      setPending({ fileName: file.name, importId, sheets, parsed, mapping, changes: classifyProgramme(activities, parsed.activities), mode: activities.length ? "update" : "initial" });
+      const parsed = parseP6Workbook(sheets, projectId, importId, mapping, knownActivityIds);
+      const statuses = new Set(parsed.activities.map((activity) => activity.activityStatus?.trim().toLowerCase()).filter(Boolean));
+      const partialUpdate = activities.length > 0 && parsed.activities.length < activities.length && !statuses.has("completed");
+      const changes = classifyProgramme(activities, parsed.activities).filter((change) => !partialUpdate || change.classification !== "missing");
+      setPending({ fileName: file.name, importId, sheets, parsed, mapping, changes, mode: activities.length ? "update" : "initial", partialUpdate });
     } catch (caught) {
       console.error("Unable to parse P6 workbook:", caught);
       setError("The workbook is malformed or could not be read.");
@@ -93,13 +99,14 @@ export default function ProgrammePage() {
   function updateMapping(field: HierarchyField, column: string) {
     if (!pending) return;
     const mapping = { ...pending.mapping, [field]: column };
-    const parsed = parseP6Workbook(pending.sheets, getActiveProjectId(), pending.importId, mapping);
-    setPending({ ...pending, mapping, parsed, changes: classifyProgramme(activities, parsed.activities) });
+    const parsed = parseP6Workbook(pending.sheets, getActiveProjectId(), pending.importId, mapping, activities.map((activity) => activity.programmeActivityId));
+    const changes = classifyProgramme(activities, parsed.activities).filter((change) => !pending.partialUpdate || change.classification !== "missing");
+    setPending({ ...pending, mapping, parsed, changes });
   }
 
   function applyImport() {
     if (!pending || pending.parsed.issues.some((issue) => issue.severity === "error")) return;
-    const updated = mergeProgramme(activities, pending.parsed.activities);
+    const updated = mergeProgramme(activities, pending.parsed.activities, pending.partialUpdate);
     const counts = (classification: ProgrammeImportChange["classification"]) => pending.changes.filter((change) => change.classification === classification).length;
     const snapshot: ProgrammeImportSnapshot = { id: pending.importId, projectId: getActiveProjectId(), importedAt: new Date().toISOString(), sourceFilename: pending.fileName, sourceType: "p6-xlsx", dataDate: pending.parsed.dataDate, activityCount: pending.parsed.activities.length, relationshipCount: pending.parsed.relationships.length, resourceCount: pending.parsed.resources.length, assignmentCount: pending.parsed.assignments.length, newCount: counts("new"), updatedCount: counts("updated"), unchangedCount: counts("unchanged"), invalidCount: pending.parsed.issues.filter((issue) => issue.severity === "error").length, missingCount: counts("missing"), changes: pending.changes };
     const nextData = { relationships: pending.parsed.relationships, resources: pending.parsed.resources, assignments: pending.parsed.assignments, snapshots: [snapshot, ...importData.snapshots] };
@@ -154,6 +161,7 @@ export default function ProgrammePage() {
     {pending && <section style={{ padding: 20, marginBottom: 24, border: "1px solid #d7dde3", borderRadius: 18 }}>
       <h2 style={{ marginTop: 0 }}>Validation Preview — {pending.fileName}</h2>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>{summary.map(([kind, count]) => <span key={kind} style={{ padding: "7px 10px", borderRadius: 999, background: "#eef2f4" }}><strong>{count}</strong> {kind}</span>)}<span style={{ padding: "7px 10px", borderRadius: 999, background: pending.parsed.issues.some((issue) => issue.severity === "error") ? "#fee4e2" : "#dcfae6" }}><strong>{pending.parsed.issues.length}</strong> issues</span></div>
+      {pending.partialUpdate && <p role="status" style={{ padding: 12, borderRadius: 10, background: "#fff4cc", color: "#684d00", fontWeight: 700 }}>Partial programme update detected: this workbook contains non-completed TASK rows only. Existing activities omitted by the P6 filter will be preserved and will not be marked missing.</p>}
       <h3>Hierarchy Mapping</h3><p>Choose explicit TASK columns, leave unmapped, or use the WBS path segments as a fallback. Review the results before applying.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>{(Object.keys(hierarchyLabels) as HierarchyField[]).map((field) => <label className="attendance-field" key={field}><span>{hierarchyLabels[field]}</span><select value={pending.mapping[field]} onChange={(event) => updateMapping(field, event.target.value)}><option value="">Leave unmapped</option><option value="__wbs__">WBS path fallback</option>{pending.parsed.availableColumns.map((column) => <option value={column} key={column}>{column}</option>)}</select></label>)}</div>
       <h3>Row-level issues</h3>{pending.parsed.issues.length ? <div style={{ overflowX: "auto" }}><table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th>Sheet / row</th><th>Activity ID</th><th>Severity</th><th>Message</th></tr></thead><tbody>{pending.parsed.issues.map((issue, index) => <tr key={`${issue.sheet}-${issue.rowNumber}-${index}`}><td>{issue.sheet}{issue.rowNumber ? ` / ${issue.rowNumber}` : ""}</td><td>{issue.activityId || "—"}</td><td style={{ color: issue.severity === "error" ? "#b42318" : "#9a6700", fontWeight: 700 }}>{issue.severity}</td><td>{issue.message}</td></tr>)}</tbody></table></div> : <p style={{ color: "#087443", fontWeight: 700 }}>Workbook structure and references are valid.</p>}
@@ -169,6 +177,6 @@ export default function ProgrammePage() {
       <label className="attendance-field"><span>Productivity baseline</span><select value={filters.baseline} onChange={(event) => setFilters((current) => ({ ...current, baseline: event.target.value }))}><option value="">All</option><option value="false">Incomplete</option><option value="true">Complete</option></select></label>
     </div>
     {baselineActivityId && <section style={{ padding: 18, marginBottom: 16, border: "1px solid #d7dde3", borderRadius: 14, background: "#f7f9fa" }}><h3 style={{ marginTop: 0 }}>Complete productivity baseline</h3><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}><label className="attendance-field"><span>Planned quantity</span><input type="number" min="0" step="any" value={baselineForm.quantity} onChange={(event) => setBaselineForm((current) => ({ ...current, quantity: event.target.value }))} /></label><label className="attendance-field"><span>Unit of measure *</span><input value={baselineForm.unit} onChange={(event) => setBaselineForm((current) => ({ ...current, unit: event.target.value }))} /></label><label className="attendance-field"><span>Budget labour hours</span><input type="number" min="0" step="any" value={baselineForm.budgetHours} onChange={(event) => setBaselineForm((current) => ({ ...current, budgetHours: event.target.value }))} /></label><label className="attendance-field"><span>Productivity target *</span><input type="number" min="0" step="any" value={baselineForm.rate} onChange={(event) => setBaselineForm((current) => ({ ...current, rate: event.target.value }))} /></label></div><div style={{ display: "flex", gap: 10, marginTop: 12 }}><button type="button" className="add-event-button" style={{ width: "auto", margin: 0 }} onClick={saveBaseline}>Save baseline</button><button type="button" className="secondary-button" onClick={() => setBaselineActivityId("")}>Cancel</button></div></section>}
-    {activities.length === 0 ? <section style={{ padding: 28, border: "1px dashed #b9c2ca", borderRadius: 18, background: "#f7f9fa", textAlign: "center" }}><h2 style={{ marginTop: 0 }}>No programme imported</h2><p>Import the initial P6 workbook to make planned work available throughout SitePulse.</p></section> : <div style={{ overflowX: "auto" }}><table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse", minWidth: 1500 }}><thead><tr>{["Hierarchy / Activity", "WBS", "Status", "Original Duration", "Remaining Duration", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "Physical %", "Calendar", "Productivity Baseline"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{filtered.map((item) => <tr key={item.id} style={{ opacity: item.missingFromLatestUpdate ? 0.65 : 1 }}><td><strong>{[item.building, item.elevation, item.level, item.workActivity || item.activity].filter(Boolean).join(" → ") || item.activity}</strong><small style={{ display: "block", color: "#66717c", marginTop: 4 }}>{item.programmeActivityId}{item.missingFromLatestUpdate ? " · Missing from latest update" : ""}</small></td><td>{item.wbsPath || item.wbsCode || "—"}</td><td>{item.activityStatus || "—"}</td><td>{formatNumber(item.originalDuration)}</td><td>{formatNumber(item.remainingDuration)}</td><td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}</td><td>{item.calendar || "—"}</td><td style={{ color: item.productivityBaselineComplete ? "#087443" : "#b54708", fontWeight: 700 }}>{item.productivityBaselineComplete ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : "Productivity baseline incomplete"}<button type="button" className="secondary-button" style={{ display: "block", marginTop: 6 }} onClick={() => editBaseline(item)}>Edit baseline</button></td></tr>)}</tbody></table></div>}
+    {activities.length === 0 ? <section style={{ padding: 28, border: "1px dashed #b9c2ca", borderRadius: 18, background: "#f7f9fa", textAlign: "center" }}><h2 style={{ marginTop: 0 }}>No programme imported</h2><p>Import the initial P6 workbook to make planned work available throughout SitePulse.</p></section> : <div style={{ overflowX: "auto" }}><table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse", minWidth: 1350 }}><thead><tr>{["Building", "Elevation", "Gridline", "Floor", "Activity Name", "Start", "Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{filtered.map((item) => <tr key={item.id} style={{ opacity: item.missingFromLatestUpdate ? 0.65 : 1 }}><td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td><td><strong>{item.activityName || item.activity}</strong><small style={{ display: "block", color: "#66717c", marginTop: 4 }}>{item.programmeActivityId}{item.missingFromLatestUpdate ? " · Missing from latest update" : ""}</small></td><td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}{item.physicalPercentComplete === undefined ? "" : "%"}</td><td>{item.plannedQuantity > 0 ? `${formatNumber(item.plannedQuantity)} ${item.unit}`.trim() : "—"}</td><td>{formatNumber(item.plannedCrewSize)}</td><td style={{ color: item.plannedProductionRate ? "#087443" : "#b54708", fontWeight: 700 }}>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : "Productivity target incomplete"}<button type="button" className="secondary-button" style={{ display: "block", marginTop: 6 }} onClick={() => editBaseline(item)}>Edit baseline</button></td></tr>)}</tbody></table></div>}
   </section></main>;
 }

@@ -62,3 +62,13 @@ test("programme comparison is isolated from SitePulse actual records", () => {
   classifyProgramme(activities, parseP6Workbook(fixture(), "project", "next", mapping).activities);
   assert.deepEqual(siteActuals, [{ id: "event-1", programmeActivityId: "A1000", quantity: 12 }]);
 });
+
+test("filtered weekly exports can resolve references against the existing programme", () => {
+  const sheets = fixture();
+  sheets.TASK = [sheets.TASK[0], sheets.TASK[1]];
+  sheets.TASKPRED = [{ pred_task_id: "A1000", task_id: "A1010", pred_type: "PR_FS" }];
+  const result = parseP6Workbook(sheets, "project", "update", mapping, ["A1000", "A1010"]);
+  assert.equal(result.activities.length, 1);
+  assert.equal(result.relationships.length, 1);
+  assert.equal(result.issues.filter((issue) => issue.severity === "error").length, 0);
+});
