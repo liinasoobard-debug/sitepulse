@@ -50,7 +50,7 @@ export default function ProgrammePage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ building: "", elevation: "", level: "", status: "", missing: "", baseline: "" });
+  const [filters, setFilters] = useState({ building: "", elevation: "", level: "", status: "", completion: "", missing: "", baseline: "" });
   const [showHistory, setShowHistory] = useState(false);
   const [baselineActivityId, setBaselineActivityId] = useState("");
   const [baselineForm, setBaselineForm] = useState({ quantity: "", unit: "", budgetHours: "", rate: "" });
@@ -133,7 +133,9 @@ export default function ProgrammePage() {
     const query = search.trim().toLowerCase();
     return (!query || [item.activityName, item.activity, item.programmeActivityId, item.wbsCode, item.wbsPath].some((value) => value?.toLowerCase().includes(query)))
       && (!filters.building || item.building === filters.building) && (!filters.elevation || item.elevation === filters.elevation) && (!filters.level || item.level === filters.level)
-      && (!filters.status || item.activityStatus === filters.status) && (!filters.missing || String(Boolean(item.missingFromLatestUpdate)) === filters.missing)
+      && (!filters.status || item.activityStatus === filters.status)
+      && (!filters.completion || (filters.completion === "completed" ? item.activityStatus?.trim().toLowerCase() === "completed" : item.activityStatus?.trim().toLowerCase() !== "completed"))
+      && (!filters.missing || String(Boolean(item.missingFromLatestUpdate)) === filters.missing)
       && (!filters.baseline || String(Boolean(item.productivityBaselineComplete)) === filters.baseline);
   }), [activities, filters, search]);
   const summary = pending ? (["new", "updated", "unchanged", "missing"] as const).map((kind) => [kind, pending.changes.filter((change) => change.classification === kind).length] as const) : [];
@@ -162,6 +164,7 @@ export default function ProgrammePage() {
     <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}><strong>{activities.length} programme activit{activities.length === 1 ? "y" : "ies"}</strong><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search Activity, ID or WBS" style={{ width: "100%", maxWidth: 340, minHeight: 42, padding: "9px 12px", border: "1px solid #ccd3da", borderRadius: 10 }} /></div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, padding: 14, marginBottom: 16, border: "1px solid #d7dde3", borderRadius: 12, background: "#f7f9fa" }}>
       {(["building", "elevation", "level", "status"] as const).map((field) => <label className="attendance-field" key={field}><span>{field[0].toUpperCase() + field.slice(1)}</span><select value={filters[field]} onChange={(event) => setFilters((current) => ({ ...current, [field]: event.target.value }))}><option value="">All</option>{options[`${field === "status" ? "statuses" : `${field}s`}` as keyof typeof options].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>)}
+      <label className="attendance-field"><span>Completion</span><select value={filters.completion} onChange={(event) => setFilters((current) => ({ ...current, completion: event.target.value }))}><option value="">All tasks</option><option value="non-completed">Non-completed tasks</option><option value="completed">Completed tasks</option></select></label>
       <label className="attendance-field"><span>Missing from update</span><select value={filters.missing} onChange={(event) => setFilters((current) => ({ ...current, missing: event.target.value }))}><option value="">All</option><option value="true">Missing</option><option value="false">Present</option></select></label>
       <label className="attendance-field"><span>Productivity baseline</span><select value={filters.baseline} onChange={(event) => setFilters((current) => ({ ...current, baseline: event.target.value }))}><option value="">All</option><option value="false">Incomplete</option><option value="true">Complete</option></select></label>
     </div>
