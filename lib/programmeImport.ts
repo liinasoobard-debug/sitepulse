@@ -122,6 +122,7 @@ function id(prefix: string): string {
 
 function mappedHierarchy(row: WorkbookRow, mapping: HierarchyMapping, field: HierarchyField, wbsPath: string): string {
   const column = mapping[field];
+  if (column.startsWith("__constant__:")) return column.slice("__constant__:".length).trim();
   if (column === "__wbs__") {
     const segments = wbsPath.split(/[>\\/|]/).map((part) => part.trim()).filter(Boolean);
     return field === "workActivity" ? segments.at(-1) ?? "" : segments[{ building: 0, elevation: 1, level: 2, gridline: 3, workActivity: 4 }[field]] ?? "";

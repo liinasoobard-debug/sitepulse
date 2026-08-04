@@ -83,3 +83,8 @@ test("uses P6 row-two descriptions while mapping machine-key hierarchy columns",
   assert.equal(result.activities[0].elevation, "EAST");
   assert.equal(result.activities[0].level, "L20");
 });
+
+test("applies one confirmed building value to every imported row", () => {
+  const result = parseP6Workbook(fixture(), "project", "import", { ...mapping, building: "__constant__:HBX" });
+  assert.ok(result.activities.every((activity) => activity.building === "HBX"));
+});

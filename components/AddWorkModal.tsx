@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { loadProgramme, loadProgrammeImportData, loadDay } from "@/lib/storage";
+import { loadProgramme, loadProgrammeImportData, loadDay, saveProgramme } from "@/lib/storage";
 import { activitiesForVersion, LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, resourcesForActivity, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
@@ -102,6 +102,8 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
   const [numberOfOperatives, setNumberOfOperatives] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [validationMessage, setValidationMessage] = useState("");
+  const [baselineUnit, setBaselineUnit] = useState("");
+  const [baselineRate, setBaselineRate] = useState("");
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
@@ -186,7 +188,9 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     [versionActivities, selectedBuilding, selectedElevation, selectedLevel]
   );
   const selectedResources = selectedProgrammeActivity ? resourcesForActivity(selectedProgrammeActivity, programmeImportData) : [];
-  const baselineValidation = selectedType === "work" ? measuredWorkValidation(selectedProgrammeActivity) : null;
+  const importedBaselineValidation = selectedType === "work" ? measuredWorkValidation(selectedProgrammeActivity) : null;
+  const effectiveActivity = selectedProgrammeActivity ? { ...selectedProgrammeActivity, unit: baselineUnit || selectedProgrammeActivity.unit, plannedProductionRate: Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity.plannedProductionRate } : undefined;
+  const baselineValidation = selectedType === "work" ? measuredWorkValidation(effectiveActivity) : null;
   function chooseRecordType(type: SiteRecordType) {
     setSelectedType(type);
     setSelectedProgrammeVersion(programmeVersions[0]?.id ?? LEGACY_PROGRAMME_VERSION);
@@ -200,6 +204,8 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     setNumberOfOperatives(selectedCrew ? String(selectedCrew.operativeIds.length) : "");
     setPhotos([]);
     setValidationMessage("");
+    setBaselineUnit("");
+    setBaselineRate("");
   }
 
   function chooseProgrammeVersion(version: string) {
@@ -242,6 +248,8 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
       (item) => item.programmeActivityId === programmeActivityId
     );
     if (selectedType === "work") setTitle(activity?.activity ?? "");
+    setBaselineUnit(activity?.unit ?? "");
+    setBaselineRate(activity?.plannedProductionRate ? String(activity.plannedProductionRate) : "");
     setValidationMessage("");
   }
 
@@ -277,6 +285,13 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
     const selectedSnapshot = programmeVersions.find((snapshot) => snapshot.id === selectedProgrammeVersion);
     const operativeCount = selectedType === "work" ? Number(numberOfOperatives) : selectedCrew?.operativeIds.length ?? 0;
     const selectedOperatives = selectedCrew?.operativeIds.slice(0, operativeCount).map(String) ?? [];
+    const effectiveUnit = baselineUnit || selectedProgrammeActivity?.unit || "";
+    const effectiveRate = Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity?.plannedProductionRate;
+    if (selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedProductionRate)) {
+      const updatedProgramme = programmeActivities.map((activity) => activity.id === selectedProgrammeActivity.id ? { ...activity, unit: effectiveUnit, plannedProductionRate: effectiveRate, updatedAt: new Date().toISOString() } : activity);
+      saveProgramme(updatedProgramme);
+      setProgrammeActivities(updatedProgramme);
+    }
 
     onAdd({
       crewId: selectedCrewId,
@@ -295,12 +310,12 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
       type: selectedType,
       status: "completed",
       location: [selectedProgrammeActivity?.building, selectedProgrammeActivity?.elevation, selectedProgrammeActivity?.level, selectedProgrammeActivity?.gridline].filter(Boolean).join(" / ") || undefined,
-      unit: selectedProgrammeActivity?.unit || undefined,
+      unit: effectiveUnit || undefined,
       plannedStart: selectedProgrammeActivity?.plannedStart,
       plannedFinish: selectedProgrammeActivity?.plannedFinish,
       plannedDuration: selectedProgrammeActivity?.originalDuration,
       plannedQuantity: selectedProgrammeActivity?.plannedQuantity,
-      productivityTarget: selectedProgrammeActivity?.plannedProductionRate,
+      productivityTarget: effectiveRate,
       resourceNames: selectedResources,
       numberOfOperatives: operativeCount,
       quantity: selectedType === "work" ? Number(actualQuantity) : undefined,
@@ -562,7 +577,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
         </div>
       )}
 
-      {baselineValidation && <p role="alert" style={{ color: "#b42318", fontWeight: 700 }}>{baselineValidation}</p>}
+      {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>Complete the missing baseline to record measured work. These values will also be saved against the programme activity.</p><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned productivity target *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per labour hour" /></label></div>}
 
       {selectedType === "work" && <>
         <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>
@@ -602,7 +617,7 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           !title.trim() ||
           !time ||
           !finishTime ||
-          (selectedType === "work" && (!selectedProgrammeActivityId || Boolean(baselineValidation) || !actualQuantity || !numberOfOperatives))
+          (selectedType === "work" && !selectedProgrammeActivityId)
         }
       >
         Save for {selectedCrew?.name ?? "Gang"}
@@ -620,6 +635,8 @@ export default function AddWorkModal({ onAdd, onClose }: Props) {
           setSelectedProgrammeActivityId("");
           setTitle("");
           setNotes("");
+          setBaselineUnit("");
+          setBaselineRate("");
         }}
       >
         Back
