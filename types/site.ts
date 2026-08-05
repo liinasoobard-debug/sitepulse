@@ -5,6 +5,20 @@ export interface Project {
   location?: string;
   isArchived?: boolean;
   createdAt: string;
+  labourRateSettings?: LabourRateSettings;
+}
+
+export interface LabourRateRule {
+  backshiftStart: string;
+  backshiftMultiplier: number;
+}
+
+export interface CompanyLabourRateRule extends LabourRateRule {
+  company: string;
+}
+
+export interface LabourRateSettings extends LabourRateRule {
+  companyRules: CompanyLabourRateRule[];
 }
 
 export interface Operative {

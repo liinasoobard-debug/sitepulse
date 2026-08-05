@@ -8,12 +8,15 @@ import {
   deleteOperative,
   loadDay,
   loadOperatives,
+  getActiveProject,
   getActiveDate,
   saveDay,
   saveOperatives,
 } from "@/lib/storage";
+import { calculateLabourRateBreakdown, DEFAULT_LABOUR_RATE_SETTINGS, labourRateRuleForCompany, normaliseLabourRateSettings } from "@/lib/labourRates";
 import type {
   AttendanceRecord,
+  LabourRateSettings,
   Operative,
   SiteDay,
   TimelineEvent,
@@ -69,40 +72,6 @@ function normaliseAttendance(
   }));
 }
 
-function timeToMinutes(time?: string): number | null {
-  if (!time) {
-    return null;
-  }
-
-  const [hours, minutes] = time.split(":").map(Number);
-
-  if (
-    Number.isNaN(hours) ||
-    Number.isNaN(minutes) ||
-    hours < 0 ||
-    hours > 23 ||
-    minutes < 0 ||
-    minutes > 59
-  ) {
-    return null;
-  }
-
-  return hours * 60 + minutes;
-}
-
-function calculateHours(signIn?: string, signOut?: string): number {
-  const start = timeToMinutes(signIn);
-  const finish = timeToMinutes(signOut);
-
-  if (start === null || finish === null) {
-    return 0;
-  }
-
-  const adjustedFinish = finish < start ? finish + 24 * 60 : finish;
-
-  return Math.max(0, (adjustedFinish - start) / 60);
-}
-
 function formatHours(hours: number): string {
   return hours.toFixed(2);
 }
@@ -144,6 +113,7 @@ export default function AttendancePage() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [labourRateSettings, setLabourRateSettings] = useState<LabourRateSettings>(DEFAULT_LABOUR_RATE_SETTINGS);
 
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [newName, setNewName] = useState("");
@@ -163,6 +133,7 @@ export default function AttendancePage() {
     queueMicrotask(() => {
       if (cancelled) return;
       setOperatives(loadOperatives());
+      setLabourRateSettings(normaliseLabourRateSettings(getActiveProject()?.labourRateSettings));
 
       const savedDay = loadDay();
       if (savedDay) {
@@ -216,19 +187,17 @@ export default function AttendancePage() {
           String(item.operativeId) === String(operative.id)
       );
 
-      const hours = calculateHours(
-        record?.signIn,
-        record?.signOut
-      );
-
-      const cost = hours * operative.hourlyRate;
+      const rateRule = labourRateRuleForCompany(labourRateSettings, operative.company);
+      const breakdown = calculateLabourRateBreakdown(record?.signIn, record?.signOut, operative.hourlyRate, rateRule);
       const isOnSite = Boolean(record?.signIn && !record.signOut);
 
       return {
         operative,
         record,
-        hours,
-        cost,
+        hours: breakdown.totalHours,
+        backshiftHours: breakdown.backshiftHours,
+        cost: breakdown.totalCost,
+        rateRule,
         isOnSite,
       };
     }).filter((row) =>
@@ -238,7 +207,7 @@ export default function AttendancePage() {
       Number(b.isOnSite) - Number(a.isOnSite) ||
       a.operative.name.localeCompare(b.operative.name)
     );
-  }, [attendance, attendanceFilter, operatives, searchTerm]);
+  }, [attendance, attendanceFilter, labourRateSettings, operatives, searchTerm]);
 
   const totals = useMemo(() => {
     return attendanceRows.reduce(
@@ -251,12 +220,14 @@ export default function AttendancePage() {
           operatives:
             summary.operatives + (hasAttendance ? 1 : 0),
           hours: summary.hours + row.hours,
+          backshiftHours: summary.backshiftHours + row.backshiftHours,
           cost: summary.cost + row.cost,
         };
       },
       {
         operatives: 0,
         hours: 0,
+        backshiftHours: 0,
         cost: 0,
       }
     );
@@ -831,6 +802,15 @@ export default function AttendancePage() {
 
           <div>
             <span className="attendance-summary-number">
+              {formatHours(totals.backshiftHours)}
+            </span>
+            <span className="attendance-summary-label">
+              Backshift hours
+            </span>
+          </div>
+
+          <div>
+            <span className="attendance-summary-number">
               {formatCurrency(totals.cost)}
             </span>
 
@@ -865,6 +845,7 @@ export default function AttendancePage() {
                 <th>Sign In</th>
                 <th>Sign Out</th>
                 <th>Hours</th>
+                <th>Backshift</th>
                 <th>Labour Rate</th>
                 <th>Cost</th>
                 <th aria-label="Actions" />
@@ -878,7 +859,9 @@ export default function AttendancePage() {
                     operative,
                     record,
                     hours,
+                    backshiftHours,
                     cost,
+                    rateRule,
                     isOnSite,
                   }) => (
                     <tr key={operative.id}>
@@ -952,10 +935,11 @@ export default function AttendancePage() {
 
                       <td>{formatHours(hours)}</td>
 
+                      <td>{formatHours(backshiftHours)}</td>
+
                       <td>
-                        {formatCurrency(
-                          operative.hourlyRate
-                        )}
+                        {formatCurrency(operative.hourlyRate)}
+                        <small style={{ display: "block", color: "#5f6b76" }}>After {rateRule.backshiftStart}: {formatCurrency(operative.hourlyRate * rateRule.backshiftMultiplier)} ({rateRule.backshiftMultiplier}×)</small>
                       </td>
 
                       <td>{formatCurrency(cost)}</td>
@@ -1005,7 +989,7 @@ export default function AttendancePage() {
                 )
               ) : (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     No operatives match the current search and status filter.
                   </td>
                 </tr>
@@ -1016,6 +1000,7 @@ export default function AttendancePage() {
               <tr>
                 <th colSpan={5}>Totals</th>
                 <th>{formatHours(totals.hours)}</th>
+                <th>{formatHours(totals.backshiftHours)}</th>
                 <th />
                 <th>{formatCurrency(totals.cost)}</th>
                 <th />

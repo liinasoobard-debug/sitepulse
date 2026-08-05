@@ -1,20 +1,22 @@
 "use client";
 
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import {
   getActiveProject,
   loadAllSiteDays,
   loadOperatives,
   loadProjects,
   restoreProjectData,
+  updateProject,
 } from "@/lib/storage";
+import { DEFAULT_LABOUR_RATE_SETTINGS, normaliseLabourRateSettings } from "@/lib/labourRates";
 import {
   PROJECT_BACKUP_SCHEMA_VERSION,
   type BackupPreview,
   type ProjectBackup,
   validateProjectBackup,
 } from "@/lib/projectBackup";
-import type { Project } from "@/types/site";
+import type { LabourRateSettings, Project } from "@/types/site";
 
 interface FileSystemWritableFileStream {
   write(data: Blob): Promise<void>;
@@ -59,15 +61,55 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [working, setWorking] = useState(false);
+  const [rateSettings, setRateSettings] = useState<LabourRateSettings>(DEFAULT_LABOUR_RATE_SETTINGS);
+  const [companies, setCompanies] = useState<string[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) setProject(getActiveProject());
+      if (!cancelled) {
+        const activeProject = getActiveProject();
+        setProject(activeProject);
+        setRateSettings(normaliseLabourRateSettings(activeProject?.labourRateSettings));
+        setCompanies([...new Set(loadOperatives().map((operative) => operative.company.trim()).filter(Boolean))].sort());
+      }
     });
     return () => { cancelled = true; };
   }, []);
+
+  function saveRateSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!project) return;
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(rateSettings.backshiftStart) || !Number.isFinite(rateSettings.backshiftMultiplier) || rateSettings.backshiftMultiplier <= 0) {
+      setError("Enter a valid backshift start time and a multiplier above zero.");
+      return;
+    }
+    const nextProject = { ...project, labourRateSettings: normaliseLabourRateSettings(rateSettings) };
+    updateProject(nextProject);
+    setProject(nextProject);
+    setRateSettings(nextProject.labourRateSettings);
+    setError("");
+    setMessage("Labour rate criteria saved for this project.");
+  }
+
+  function toggleCompanyRule(company: string, enabled: boolean) {
+    setRateSettings((current) => ({
+      ...current,
+      companyRules: enabled
+        ? [...current.companyRules, { company, backshiftStart: current.backshiftStart, backshiftMultiplier: current.backshiftMultiplier }]
+        : current.companyRules.filter((rule) => rule.company !== company),
+    }));
+  }
+
+  function updateCompanyRule(company: string, field: "backshiftStart" | "backshiftMultiplier", value: string) {
+    setRateSettings((current) => ({
+      ...current,
+      companyRules: current.companyRules.map((rule) => rule.company === company
+        ? { ...rule, [field]: field === "backshiftMultiplier" ? Number(value) : value }
+        : rule),
+    }));
+  }
 
   async function exportProject() {
     const activeProject = getActiveProject();
@@ -173,7 +215,7 @@ export default function SettingsPage() {
   }
 
   return <main className="timeline-page"><section className="timeline-panel">
-    <header className="timeline-header"><div><p className="eyebrow">Current project</p><h1>Export / Import</h1><p style={{ marginBottom: 0, color: "#5f6b76" }}>{project?.name ?? "Loading project…"}</p></div></header>
+    <header className="timeline-header"><div><p className="eyebrow">Current project</p><h1>Settings</h1><p style={{ marginBottom: 0, color: "#5f6b76" }}>{project?.name ?? "Loading project…"}</p></div></header>
 
     <div role="alert" style={{ padding: 16, marginBottom: 28, border: "1px solid #d39b22", borderRadius: 12, background: "#fff8e7", color: "#684b0c", fontWeight: 700 }}>
       SitePulse shared-drive files are not live multi-user data. Only one person should edit the project file at a time.
@@ -181,6 +223,30 @@ export default function SettingsPage() {
 
     {error && <p role="alert" style={{ padding: 14, borderRadius: 10, background: "#fff0ee", color: "#b42318", fontWeight: 700 }}>{error}</p>}
     {message && <p role="status" style={{ padding: 14, borderRadius: 10, background: "#eaf7ef", color: "#17633a", fontWeight: 700 }}>{message}</p>}
+
+    <section style={{ marginBottom: 36 }}>
+      <p className="eyebrow">Commercial criteria</p>
+      <h2>Labour rate rules</h2>
+      <form onSubmit={saveRateSettings} style={{ display: "grid", gap: 18, maxWidth: 760 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
+          <label className="attendance-field"><span>Backshift starts</span><input type="time" value={rateSettings.backshiftStart} onChange={(event) => setRateSettings((current) => ({ ...current, backshiftStart: event.target.value }))} required /></label>
+          <label className="attendance-field"><span>Backshift rate multiplier</span><input type="number" min="0.01" step="0.01" value={rateSettings.backshiftMultiplier} onChange={(event) => setRateSettings((current) => ({ ...current, backshiftMultiplier: Number(event.target.value) }))} required /></label>
+        </div>
+
+        {companies.length > 0 && <fieldset style={{ display: "grid", gap: 12, margin: 0, padding: 14, border: "1px solid #d7dde3", borderRadius: 8 }}>
+          <legend style={{ padding: "0 5px", fontWeight: 800 }}>Company overrides</legend>
+          {companies.map((company) => {
+            const rule = rateSettings.companyRules.find((item) => item.company === company);
+            return <div key={company} style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1fr) repeat(2, minmax(130px, 180px))", gap: 10, alignItems: "end" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 42 }}><input type="checkbox" checked={Boolean(rule)} onChange={(event) => toggleCompanyRule(company, event.target.checked)} /><strong>{company}</strong></label>
+              <label className="attendance-field"><span>Starts</span><input type="time" disabled={!rule} value={rule?.backshiftStart ?? rateSettings.backshiftStart} onChange={(event) => updateCompanyRule(company, "backshiftStart", event.target.value)} /></label>
+              <label className="attendance-field"><span>Multiplier</span><input type="number" min="0.01" step="0.01" disabled={!rule} value={rule?.backshiftMultiplier ?? rateSettings.backshiftMultiplier} onChange={(event) => updateCompanyRule(company, "backshiftMultiplier", event.target.value)} /></label>
+            </div>;
+          })}
+        </fieldset>}
+        <button type="submit" className="primary-button" disabled={!project}>Save Labour Rate Rules</button>
+      </form>
+    </section>
 
     <section style={{ marginBottom: 36 }}><p className="eyebrow">Backup</p><h2>Export project</h2><p>Save the active project as one portable JSON file. On supported browsers, choose a OneDrive, SharePoint-synchronised, or network shared-drive folder directly.</p>
       <label style={{ display: "grid", gap: 6, maxWidth: 420, marginBottom: 14, fontWeight: 700 }}>Exported by <span style={{ color: "#687580", fontSize: 13, fontWeight: 400 }}>Optional</span><input value={exportedBy} onChange={(event) => setExportedBy(event.target.value)} placeholder="Name or initials" style={{ minHeight: 42, padding: "8px 10px" }} /></label>

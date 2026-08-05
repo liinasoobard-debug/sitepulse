@@ -7,6 +7,7 @@ import type {
 } from "@/types/site";
 import { operatives as defaultOperatives } from "@/lib/operatives";
 import { deleteSharedRecord, queueSharedWrite } from "@/lib/sharedSync";
+import { normaliseLabourRateSettings } from "@/lib/labourRates";
 
 export const LEGACY_DAY_STORAGE_KEY = "sitepulse-day";
 export const OPERATIVES_STORAGE_KEY = "sitepulse-operatives";
@@ -94,6 +95,7 @@ function normaliseProject(project: Project): Project {
     isArchived: Boolean(project.isArchived),
     createdAt:
       project.createdAt || new Date().toISOString(),
+    labourRateSettings: normaliseLabourRateSettings(project.labourRateSettings),
   };
 }
 

@@ -567,7 +567,7 @@ h1 {
 
 .attendance-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1120px;
   border-collapse: collapse;
   table-layout: auto;
 }
@@ -605,11 +605,14 @@ h1 {
 .attendance-table tbody td:nth-child(6),
 .attendance-table tbody td:nth-child(7),
 .attendance-table tbody td:nth-child(8),
+.attendance-table tbody td:nth-child(9),
 .attendance-table thead th:nth-child(6),
 .attendance-table thead th:nth-child(7),
 .attendance-table thead th:nth-child(8),
+.attendance-table thead th:nth-child(9),
 .attendance-table tfoot th:nth-child(6),
-.attendance-table tfoot th:nth-child(8) {
+.attendance-table tfoot th:nth-child(7),
+.attendance-table tfoot th:nth-child(9) {
   text-align: right;
 }
 
