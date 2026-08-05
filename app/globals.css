@@ -521,6 +521,50 @@ h1 {
   -webkit-overflow-scrolling: touch;
 }
 
+.attendance-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 280px;
+  padding: 3px;
+  border: 1px solid #d2dde3;
+  border-radius: 8px;
+  background: #f5f8fa;
+}
+
+.attendance-filter-button {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  color: #53616b;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attendance-filter-button.active {
+  color: #ffffff;
+  background: #176b87;
+}
+
+.attendance-row-status {
+  display: block;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: #5f6b76;
+  background: #eef1f3;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.attendance-row-status.on-site {
+  color: #176b45;
+  background: #e8f5ee;
+}
+
 .attendance-table {
   width: 100%;
   min-width: 980px;

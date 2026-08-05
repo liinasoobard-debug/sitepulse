@@ -27,6 +27,7 @@ type ImportRow = {
   HourlyRate?: unknown;
   Rate?: unknown;
 };
+type AttendanceFilter = "all" | "on-site" | "not-on-site";
 
 function getTodayDate(): string {
   return getActiveDate();
@@ -151,6 +152,7 @@ export default function AttendancePage() {
   const [newHourlyRate, setNewHourlyRate] = useState("");
   const [formError, setFormError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
   const [importMessage, setImportMessage] = useState("");
   const [importError, setImportError] = useState("");
 
@@ -196,7 +198,7 @@ export default function AttendancePage() {
   const attendanceRows = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
 
-    const filteredOperatives = search
+    const matchingOperatives = search
       ? operatives.filter((operative) =>
           [
             operative.name,
@@ -208,7 +210,7 @@ export default function AttendancePage() {
         )
       : operatives;
 
-    return filteredOperatives.map((operative) => {
+    return matchingOperatives.map((operative) => {
       const record = attendance.find(
         (item) =>
           String(item.operativeId) === String(operative.id)
@@ -220,15 +222,23 @@ export default function AttendancePage() {
       );
 
       const cost = hours * operative.hourlyRate;
+      const isOnSite = Boolean(record?.signIn && !record.signOut);
 
       return {
         operative,
         record,
         hours,
         cost,
+        isOnSite,
       };
-    });
-  }, [attendance, operatives, searchTerm]);
+    }).filter((row) =>
+      attendanceFilter === "all" ||
+      (attendanceFilter === "on-site" ? row.isOnSite : !row.isOnSite)
+    ).sort((a, b) =>
+      Number(b.isOnSite) - Number(a.isOnSite) ||
+      a.operative.name.localeCompare(b.operative.name)
+    );
+  }, [attendance, attendanceFilter, operatives, searchTerm]);
 
   const totals = useMemo(() => {
     return attendanceRows.reduce(
@@ -830,33 +840,19 @@ export default function AttendancePage() {
           </div>
         </section>
 
-        <div style={{ marginBottom: 16 }}>
-          <label
-            htmlFor="operative-search"
-            style={{
-              display: "block",
-              marginBottom: 6,
-              fontWeight: 600,
-            }}
-          >
-            Search operatives
+        <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
+          <label htmlFor="operative-search" style={{ display: "grid", gap: 6, width: "min(100%, 420px)", fontWeight: 600 }}>
+            <span>Search operatives</span>
+            <input id="operative-search" type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by name, company or trade..." style={{ width: "100%", minHeight: 42, padding: "8px 10px" }} />
           </label>
 
-          <input
-            id="operative-search"
-            type="search"
-            value={searchTerm}
-            onChange={(event) =>
-              setSearchTerm(event.target.value)
-            }
-            placeholder="Search by name, company or trade..."
-            style={{
-              width: "100%",
-              maxWidth: 420,
-              minHeight: 42,
-              padding: "8px 10px",
-            }}
-          />
+          <div className="attendance-filter" aria-label="Filter operatives by attendance status">
+            {(["all", "on-site", "not-on-site"] as AttendanceFilter[]).map((filter) => (
+              <button key={filter} type="button" className={`attendance-filter-button${attendanceFilter === filter ? " active" : ""}`} aria-pressed={attendanceFilter === filter} onClick={() => setAttendanceFilter(filter)}>
+                {filter === "all" ? "All" : filter === "on-site" ? "On site" : "Not on site"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="attendance-table-wrapper">
@@ -883,12 +879,14 @@ export default function AttendancePage() {
                     record,
                     hours,
                     cost,
+                    isOnSite,
                   }) => (
                     <tr key={operative.id}>
                       <td>{operative.company}</td>
 
                       <td>
                         <strong>{operative.name}</strong>
+                        <span className={`attendance-row-status ${isOnSite ? "on-site" : "not-on-site"}`}>{isOnSite ? "On site" : "Not on site"}</span>
                       </td>
 
                       <td>{operative.position}</td>
@@ -1008,7 +1006,7 @@ export default function AttendancePage() {
               ) : (
                 <tr>
                   <td colSpan={9}>
-                    No operatives match your search.
+                    No operatives match the current search and status filter.
                   </td>
                 </tr>
               )}
