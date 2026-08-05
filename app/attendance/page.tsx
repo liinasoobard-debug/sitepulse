@@ -13,6 +13,7 @@ import {
   getActiveDate,
   saveDay,
   saveOperatives,
+  updateOperative,
 } from "@/lib/storage";
 import { calculateLabourRateBreakdown, DEFAULT_LABOUR_RATE_SETTINGS, labourRateRuleForCompany, normaliseLabourRateSettings } from "@/lib/labourRates";
 import type {
@@ -117,6 +118,7 @@ export default function AttendancePage() {
   const [labourRateSettings, setLabourRateSettings] = useState<LabourRateSettings>(DEFAULT_LABOUR_RATE_SETTINGS);
 
   const [showAddPerson, setShowAddPerson] = useState(false);
+  const [editingOperativeId, setEditingOperativeId] = useState("");
   const [newName, setNewName] = useState("");
   const [newCompany, setNewCompany] = useState("");
   const [newPosition, setNewPosition] = useState("");
@@ -249,6 +251,7 @@ export default function AttendancePage() {
     setNewPosition("");
     setNewHourlyRate("");
     setFormError("");
+    setEditingOperativeId("");
   }
 
   function copyAttendanceFromDate() {
@@ -303,6 +306,7 @@ export default function AttendancePage() {
 
     const duplicateExists = operatives.some(
       (operative) =>
+        String(operative.id) !== editingOperativeId &&
         operative.name.trim().toLowerCase() ===
           name.toLowerCase() &&
         operative.company.trim().toLowerCase() ===
@@ -316,19 +320,33 @@ export default function AttendancePage() {
       return;
     }
 
-    const newOperative: Operative = {
-      id: createOperativeId(),
+    const savedOperative: Operative = {
+      id: editingOperativeId || createOperativeId(),
       name,
       company,
       position,
       hourlyRate,
     };
 
-    const updatedOperatives = [...operatives, newOperative];
-
-    setOperatives(updatedOperatives);
-    saveOperatives(updatedOperatives);
+    if (editingOperativeId) {
+      setOperatives(updateOperative(savedOperative));
+    } else {
+      const updatedOperatives = [...operatives, savedOperative];
+      setOperatives(updatedOperatives);
+      saveOperatives(updatedOperatives);
+    }
     closeAddPersonForm();
+  }
+
+  function editOperative(operative: Operative) {
+    setEditingOperativeId(String(operative.id));
+    setNewName(operative.name);
+    setNewCompany(operative.company);
+    setNewPosition(operative.position);
+    setNewHourlyRate(String(operative.hourlyRate));
+    setFormError("");
+    setShowAddPerson(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleImport(
@@ -575,7 +593,7 @@ export default function AttendancePage() {
               type="button"
               className="secondary-button"
               onClick={() =>
-                setShowAddPerson((current) => !current)
+                showAddPerson ? closeAddPersonForm() : setShowAddPerson(true)
               }
             >
               {showAddPerson ? "Cancel" : "+ Add Person"}
@@ -670,7 +688,7 @@ export default function AttendancePage() {
               background: "#ffffff",
             }}
           >
-            <h2 style={{ marginTop: 0 }}>Add Person</h2>
+            <h2 style={{ marginTop: 0 }}>{editingOperativeId ? "Edit Person Details" : "Add Person"}</h2>
 
             <form onSubmit={handleAddPerson}>
               <div
@@ -811,7 +829,7 @@ export default function AttendancePage() {
                 }}
               >
                 <button type="submit" className="primary-button">
-                  Save Person
+                  {editingOperativeId ? "Save Changes" : "Save Person"}
                 </button>
 
                 <button
@@ -999,6 +1017,13 @@ export default function AttendancePage() {
                             flexWrap: "wrap",
                           }}
                         >
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => editOperative(operative)}
+                          >
+                            Edit details
+                          </button>
                         {(record?.signIn ||
                           record?.signOut) && (
                           <button
