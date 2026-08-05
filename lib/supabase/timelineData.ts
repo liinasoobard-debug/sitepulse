@@ -28,6 +28,40 @@ export async function createTimelineEvent(projectId: string, date: string, event
   created.percentComplete = event.percentComplete;
   return created;
 }
+export async function updateTimelineEvent(event: TimelineEvent): Promise<TimelineEvent> {
+  const supabase = createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error("You must be signed in.");
+  const operativeCount = event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? 0;
+  const durationHours = (event.duration ?? 0) / 60;
+  const { data, error } = await supabase.from("timeline_events").update({
+    activity_name_snapshot: event.title,
+    start_time: event.startTime || event.time,
+    finish_time: event.finishTime || null,
+    actual_quantity: event.quantity ?? null,
+    operative_count: operativeCount,
+    labour_hours: durationHours * operativeCount,
+    note: event.notes || null,
+    status: event.status || "completed",
+    updated_at: new Date().toISOString(),
+  }).eq("id", event.id).select("*").single();
+  if (error) throw error;
+  const { error: labourError } = await supabase.from("timeline_event_labour").update({ hours: durationHours, normal_hours: durationHours }).eq("timeline_event_id", event.id);
+  if (labourError) throw labourError;
+  const updated = timelineEventFromDb(data as DbEvent);
+  updated.affectedOperativeIds = event.affectedOperativeIds ?? [];
+  updated.photoIds = event.photoIds ?? [];
+  updated.percentComplete = event.percentComplete;
+  return updated;
+}
+
+export async function deleteTimelineEvent(eventId: string): Promise<void> {
+  const supabase = createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error("You must be signed in.");
+  const { error } = await supabase.from("timeline_events").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", eventId).select("id").single();
+  if (error) throw error;
+}
 export async function uploadTimelinePhotos(projectId: string, eventId: string, files: File[]) {
   const supabase = createClient(); const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) throw new Error("You must be signed in.");

@@ -4,9 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import AddWorkModal from "@/components/AddWorkModal";
+import EditTimelineEvent from "@/components/EditTimelineEvent";
 import { getActiveDate, getActiveProjectId, loadDay, loadOperatives, saveDay } from "@/lib/storage";
-import { loadProjectRole, loadPublishedProgramme } from "@/lib/supabase/programmeData";
-import { createTimelineEvent, loadTimelineEvents, uploadTimelinePhotos } from "@/lib/supabase/timelineData";
+import { loadProjectRole, loadPublishedProgramme, updateProgrammeProgress } from "@/lib/supabase/programmeData";
+import { createTimelineEvent, deleteTimelineEvent, loadTimelineEvents, updateTimelineEvent, uploadTimelinePhotos } from "@/lib/supabase/timelineData";
 import type {
   AttendanceRecord,
   Crew,
@@ -89,6 +90,7 @@ export default function TimelinePage() {
   const [crews, setCrews] = useState<Crew[]>([]);
   const [operatives, setOperatives] = useState<Operative[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<TimelineEvent | null>(null);
   const [programmeLoading, setProgrammeLoading] = useState(true);
   const [programmeError, setProgrammeError] = useState("");
   const [canEditProgramme, setCanEditProgramme] = useState(false);
@@ -175,6 +177,28 @@ export default function TimelinePage() {
     }
 
     setShowModal(false);
+  }
+
+  async function saveTimelineEdit(updatedEvent: TimelineEvent) {
+    const activity = getActivity(updatedEvent.programmeActivityId);
+    if (activity && canEditProgramme && typeof updatedEvent.percentComplete === "number" && updatedEvent.percentComplete !== activity.physicalPercentComplete) {
+      await updateProgrammeProgress(activity.id, updatedEvent.percentComplete);
+      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: updatedEvent.percentComplete } : item));
+    }
+    const saved = await updateTimelineEvent(updatedEvent);
+    setEvents((current) => current.map((event) => event.id === saved.id ? saved : event).sort((a, b) => a.time.localeCompare(b.time)));
+    setEditingEvent(null);
+  }
+
+  async function removeTimelineEvent(event: TimelineEvent) {
+    if (!window.confirm(`Delete “${event.title}” from the timeline?`)) return;
+    try {
+      await deleteTimelineEvent(event.id);
+      setEvents((current) => current.filter((item) => item.id !== event.id));
+      if (editingEvent?.id === event.id) setEditingEvent(null);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to delete the timeline record.");
+    }
   }
 
   function stopActivity(event: TimelineEvent) {
@@ -360,6 +384,11 @@ export default function TimelinePage() {
                     </button>
                   )}
 
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                    <button type="button" className="secondary-button" onClick={() => setEditingEvent(event)}>Edit</button>
+                    <button type="button" className="secondary-button" style={{ color: "#b42318" }} onClick={() => void removeTimelineEvent(event)}>Delete</button>
+                  </div>
+
                   {event.reason && (
                     <p className="event-reason">{event.reason}</p>
                   )}
@@ -434,6 +463,7 @@ export default function TimelinePage() {
             canEditProgramme={canEditProgramme}
           />
         )}
+        {editingEvent && <EditTimelineEvent event={editingEvent} activity={getActivity(editingEvent.programmeActivityId) ?? undefined} canEditProgramme={canEditProgramme} onCancel={() => setEditingEvent(null)} onSave={saveTimelineEdit} />}
       </section>
     </main>
   );
