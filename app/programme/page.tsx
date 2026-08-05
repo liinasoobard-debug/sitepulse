@@ -79,6 +79,7 @@ export default function ProgrammePage() {
     activityType: "",
   });
   const [edit, setEdit] = useState<ProgrammeActivity | null>(null);
+  const [crewSize, setCrewSize] = useState("");
   const [unit, setUnit] = useState("");
   const [rate, setRate] = useState("");
   const canManage = role === "planner" || role === "admin";
@@ -222,12 +223,12 @@ export default function ProgrammePage() {
   }
 
   async function saveBaseline() {
-    if (!edit || !unit.trim() || !(Number(rate) > 0)) {
-      setError("Unit and productivity target are required.");
+    if (!edit || !unit.trim() || !(Number(rate) > 0) || !Number.isInteger(Number(crewSize)) || Number(crewSize) < 1) {
+      setError("Unit, productivity target, and baseline number of men are required.");
       return;
     }
     try {
-      await updateProgrammeBaseline(edit.id, unit.trim(), Number(rate));
+      await updateProgrammeBaseline(edit.id, unit.trim(), Number(rate), Number(crewSize));
       setEdit(null);
       setMessage("Productivity baseline updated.");
       await refresh();
@@ -399,6 +400,7 @@ export default function ProgrammePage() {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <label className="attendance-field"><span>Unit</span><input value={unit} onChange={(event) => setUnit(event.target.value)} /></label>
               <label className="attendance-field"><span>Productivity target</span><input type="number" value={rate} onChange={(event) => setRate(event.target.value)} /></label>
+              <label className="attendance-field"><span>Baseline number of men</span><input type="number" min="1" step="1" value={crewSize} onChange={(event) => setCrewSize(event.target.value)} /></label>
             </div>
             <button className="add-event-button" style={{ width: "auto" }} onClick={() => void saveBaseline()}>Save</button>
           </section>
@@ -432,7 +434,7 @@ export default function ProgrammePage() {
                   <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small></td>
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
                   <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.plannedCrewSize)}</td>
-                  <td>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/hr` : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); }}>Complete baseline</button> : "Productivity target incomplete"}</td>
+                  <td>{item.plannedProductionRate ? <>{formatNumber(item.plannedProductionRate)} {item.unit}/labour hr{item.plannedCrewSize ? <small style={{ display: "block" }}>Crew output: {formatNumber(item.plannedProductionRate * item.plannedCrewSize)} {item.unit}/hr</small> : null}{canManage && <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedProductionRate ?? "")); setCrewSize(String(item.plannedCrewSize ?? "")); }}>Edit baseline</button>}</> : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); setCrewSize(String(item.plannedCrewSize ?? "")); }}>Complete baseline</button> : "Productivity target incomplete"}</td>
                   <td>{actualProductivity[item.programmeActivityId] === undefined ? "—" : `${formatNumber(actualProductivity[item.programmeActivityId])} ${item.unit}/labour hr`}</td>
                 </tr>
               ))}

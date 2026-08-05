@@ -170,7 +170,7 @@ function normaliseProgrammeActivity(
     sourceType: activity.sourceType || "manual",
     sourceImportId: activity.sourceImportId,
     missingFromLatestUpdate: Boolean(activity.missingFromLatestUpdate),
-    productivityBaselineComplete: activity.productivityBaselineComplete ?? Boolean(Number(activity.plannedQuantity) > 0 && Number(activity.budgetLabourHours) > 0 && activity.unit?.trim()),
+    productivityBaselineComplete: activity.productivityBaselineComplete ?? Boolean(Number(activity.plannedQuantity) > 0 && Number(activity.plannedProductionRate) > 0 && Number.isInteger(Number(activity.plannedCrewSize)) && Number(activity.plannedCrewSize) > 0 && activity.unit?.trim()),
     createdAt:
       activity.createdAt || new Date().toISOString(),
     updatedAt: activity.updatedAt || activity.createdAt || new Date().toISOString(),

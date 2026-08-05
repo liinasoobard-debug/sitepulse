@@ -36,5 +36,6 @@ export function measuredWorkValidation(activity: ProgrammeActivity | undefined):
   const missing: string[] = [];
   if (!activity.unit?.trim()) missing.push("unit of measure");
   if (!(Number(activity.plannedProductionRate) > 0)) missing.push("productivity target");
-  return missing.length ? `This activity requires a unit and productivity target before it can be recorded as measured work. Missing: ${missing.join(" and ")}.` : null;
+  if (!Number.isInteger(Number(activity.plannedCrewSize)) || Number(activity.plannedCrewSize) < 1) missing.push("baseline number of men");
+  return missing.length ? `This activity requires a complete productivity baseline before it can be recorded as measured work. Missing: ${missing.join(" and ")}.` : null;
 }

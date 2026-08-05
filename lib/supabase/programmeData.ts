@@ -26,7 +26,7 @@ export function programmeActivityFromDb(row: DbActivity): ProgrammeActivity {
     originalDuration: row.original_duration ?? undefined, remainingDuration: row.remaining_duration ?? undefined,
     physicalPercentComplete: row.percent_complete ?? undefined, calendar: row.calendar_name ?? "",
     sourceType: "p6-xlsx", sourceImportId: row.programme_import_id, missingFromLatestUpdate: row.is_missing_from_latest,
-    productivityBaselineComplete: Boolean(row.unit && row.productivity_target && row.planned_quantity), createdAt: row.created_at, updatedAt: row.updated_at,
+    productivityBaselineComplete: Boolean(row.unit && row.productivity_target && row.planned_quantity && row.planned_crew_size), createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
@@ -71,8 +71,8 @@ export async function loadActualProductivity(projectId: string): Promise<Record<
 }
 export async function loadProjectRole(projectId:string){const {data,error}=await createClient().from("sitepulse_project_members").select("role").eq("project_id",projectId).maybeSingle();if(error)throw error;return data?.role as "planner"|"admin"|"site_team"|undefined;}
 
-export async function updateProgrammeBaseline(activityId: string, unit: string, productivityTarget: number) {
-  const { error } = await createClient().from("programme_activities").update({ unit, productivity_target: productivityTarget, updated_at: new Date().toISOString() }).eq("id", activityId);
+export async function updateProgrammeBaseline(activityId: string, unit: string, productivityTarget: number, plannedCrewSize: number) {
+  const { error } = await createClient().from("programme_activities").update({ unit, productivity_target: productivityTarget, planned_crew_size: plannedCrewSize, updated_at: new Date().toISOString() }).eq("id", activityId);
   if (error) throw error;
 }
 
