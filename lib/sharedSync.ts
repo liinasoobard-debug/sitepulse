@@ -56,19 +56,22 @@ export function getLocalSharedRecords(): Map<string, unknown> {
   return records;
 }
 
-export function applyRemoteRecord(record: SharedStateRow): void {
+export function applyRemoteRecord(record: SharedStateRow): boolean {
   const payload =
     record.record_key.startsWith("sitepulse-day-project-") &&
     record.payload &&
     typeof record.payload === "object"
       ? { ...record.payload, events: [] }
       : record.payload;
-  localStorage.setItem(record.record_key, JSON.stringify(payload));
+  const serialisedPayload = JSON.stringify(payload);
+  if (localStorage.getItem(record.record_key) === serialisedPayload) return false;
+  localStorage.setItem(record.record_key, serialisedPayload);
   window.dispatchEvent(
     new CustomEvent(SHARED_SYNC_EVENT, {
       detail: { recordKey: record.record_key },
     })
   );
+  return true;
 }
 
 async function writeSharedRecord(key: string, payload: unknown): Promise<void> {

@@ -71,14 +71,15 @@ export default function SharedDataSync({ children }: { children: React.ReactNode
           (change) => {
             if (change.eventType === "DELETE") {
               const oldRecord = change.old as Partial<SharedStateRow>;
-              if (oldRecord.record_key) localStorage.removeItem(oldRecord.record_key);
-              window.location.reload();
+              if (oldRecord.record_key && localStorage.getItem(oldRecord.record_key) !== null) {
+                localStorage.removeItem(oldRecord.record_key);
+                window.location.reload();
+              }
               return;
             }
             const record = change.new as SharedStateRow;
             if (record.client_id === clientId) return;
-            applyRemoteRecord(record);
-            window.location.reload();
+            if (applyRemoteRecord(record)) window.location.reload();
           }
         )
         .subscribe((subscriptionStatus) => {

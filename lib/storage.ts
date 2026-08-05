@@ -606,7 +606,9 @@ export function saveDay(
     const date = isIsoDate(data.date) ? data.date : getActiveDate();
     const normalisedDay = { ...emptySiteDay(date), ...data, date, events: [] };
     const key = getDatedProjectDayStorageKey(resolvedProjectId, date);
-    localStorage.setItem(key, JSON.stringify(normalisedDay));
+    const serialisedDay = JSON.stringify(normalisedDay);
+    if (localStorage.getItem(key) === serialisedDay) return;
+    localStorage.setItem(key, serialisedDay);
     queueSharedWrite(key, normalisedDay);
     window.dispatchEvent(
       new CustomEvent("sitepulse-day-changed", {
