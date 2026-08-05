@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import {
   deleteOperative,
   loadDay,
+  loadAllSiteDays,
   loadOperatives,
   getActiveProject,
   getActiveDate,
@@ -125,6 +126,10 @@ export default function AttendancePage() {
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
   const [importMessage, setImportMessage] = useState("");
   const [importError, setImportError] = useState("");
+  const [showCopyAttendance, setShowCopyAttendance] = useState(false);
+  const [copySourceDate, setCopySourceDate] = useState("");
+  const [attendanceSourceDays, setAttendanceSourceDays] = useState<SiteDay[]>([]);
+  const [copyError, setCopyError] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,6 +145,11 @@ export default function AttendancePage() {
         setAttendance(normaliseAttendance(savedDay.attendance));
         setEvents(Array.isArray(savedDay.events) ? savedDay.events : []);
       }
+      const sourceDays = loadAllSiteDays()
+        .filter((day) => day.date !== getActiveDate() && day.attendance.length > 0)
+        .sort((a, b) => b.date.localeCompare(a.date));
+      setAttendanceSourceDays(sourceDays);
+      setCopySourceDate(sourceDays[0]?.date ?? "");
       setHasLoaded(true);
     });
     return () => { cancelled = true; };
@@ -239,6 +249,19 @@ export default function AttendancePage() {
     setNewPosition("");
     setNewHourlyRate("");
     setFormError("");
+  }
+
+  function copyAttendanceFromDate() {
+    const source = attendanceSourceDays.find((day) => day.date === copySourceDate);
+    if (!source) {
+      setCopyError("Select a date with recorded attendance.");
+      return;
+    }
+    if (attendance.length > 0 && !window.confirm("Replace attendance for the current date with the selected date?")) return;
+    setAttendance(structuredClone(source.attendance));
+    setCopyError("");
+    setShowCopyAttendance(false);
+    setImportMessage(`Attendance copied from ${new Date(`${source.date}T12:00:00`).toLocaleDateString("en-GB")}.`);
   }
 
   function closeAddPersonForm() {
@@ -561,6 +584,14 @@ export default function AttendancePage() {
             <button
               type="button"
               className="secondary-button"
+              onClick={() => { setShowCopyAttendance((current) => !current); setCopyError(""); }}
+            >
+              Copy attendance from…
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
               onClick={() => fileInputRef.current?.click()}
             >
               Import Excel
@@ -611,6 +642,22 @@ export default function AttendancePage() {
           >
             {importError || importMessage}
           </div>
+        )}
+
+        {showCopyAttendance && (
+          <section style={{ display: "flex", alignItems: "end", gap: 12, marginBottom: 24, padding: 16, border: "1px solid #d7dde3", borderRadius: 8, background: "#f7f9fa", flexWrap: "wrap" }}>
+            <label className="attendance-field" style={{ minWidth: 260, flex: "1 1 280px" }}>
+              <span>Copy attendance from</span>
+              <select value={copySourceDate} onChange={(event) => { setCopySourceDate(event.target.value); setCopyError(""); }}>
+                <option value="">Select a recorded date</option>
+                {attendanceSourceDays.map((day) => <option key={day.date} value={day.date}>{new Date(`${day.date}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })} · {day.attendance.length} operative{day.attendance.length === 1 ? "" : "s"}</option>)}
+              </select>
+            </label>
+            <button type="button" className="primary-button" style={{ width: "auto", minHeight: 42, marginTop: 0, padding: "9px 18px" }} disabled={!copySourceDate} onClick={copyAttendanceFromDate}>Copy attendance</button>
+            <button type="button" className="secondary-button" onClick={() => setShowCopyAttendance(false)}>Cancel</button>
+            {attendanceSourceDays.length === 0 && <p style={{ flexBasis: "100%", margin: 0, color: "#5f6b76" }}>No other dates have recorded attendance.</p>}
+            {copyError && <p role="alert" style={{ flexBasis: "100%", margin: 0, color: "#b42318", fontWeight: 700 }}>{copyError}</p>}
+          </section>
         )}
 
         {showAddPerson && (
