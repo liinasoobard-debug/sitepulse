@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { loadDay, loadOperatives } from "@/lib/storage";
-import { updateProgrammeBaseline } from "@/lib/supabase/programmeData";
+import { updateProgrammeBaseline, updateProgrammeProgress } from "@/lib/supabase/programmeData";
 import { LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
@@ -109,6 +109,8 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const [time, setTime] = useState(getCurrentTime());
   const [finishTime, setFinishTime] = useState(getCurrentTime());
   const [actualQuantity, setActualQuantity] = useState("");
+  const [percentComplete, setPercentComplete] = useState("");
+  const [activitySearch, setActivitySearch] = useState("");
   const [numberOfOperatives, setNumberOfOperatives] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const [validationMessage, setValidationMessage] = useState("");
@@ -207,6 +209,12 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     ),
     [versionActivities, selectedBuilding, selectedElevation, selectedLevel]
   );
+  const matchingProgrammeActivities = useMemo(() => {
+    const search = activitySearch.trim().toLowerCase();
+    if (!search) return [];
+    return versionActivities.filter((activity) => [activity.activity, activity.activityName, activity.programmeActivityId, activity.wbsCode, activity.wbsPath, activity.building, activity.elevation, activity.level]
+      .some((value) => value?.toLowerCase().includes(search))).slice(0, 12);
+  }, [activitySearch, versionActivities]);
   const selectedResources = selectedProgrammeActivity?.resourceNames ?? [];
   const importedBaselineValidation = selectedType === "work" ? measuredWorkValidation(selectedProgrammeActivity) : null;
   const effectiveActivity = selectedProgrammeActivity ? { ...selectedProgrammeActivity, unit: canEditProgramme ? baselineUnit || selectedProgrammeActivity.unit : selectedProgrammeActivity.unit, plannedProductionRate: canEditProgramme && Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity.plannedProductionRate } : undefined;
@@ -221,6 +229,8 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     setSelectedProgrammeActivityId("");
     setTitle(type === "break" ? "Break" : "");
     setActualQuantity("");
+    setPercentComplete("");
+    setActivitySearch("");
     setNumberOfOperatives(assignmentMode === "crew" && selectedCrew ? String(selectedCrew.operativeIds.length) : assignmentMode === "individuals" ? String(selectedOperativeIds.length) : "0");
     setPhotos([]);
     setValidationMessage("");
@@ -270,7 +280,17 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     if (selectedType === "work") setTitle(activity?.activity ?? "");
     setBaselineUnit(activity?.unit ?? "");
     setBaselineRate(activity?.plannedProductionRate ? String(activity.plannedProductionRate) : "");
+    setPercentComplete(activity?.physicalPercentComplete === undefined ? "" : String(activity.physicalPercentComplete));
     setValidationMessage("");
+  }
+
+  function chooseSearchedActivity(activity: ProgrammeActivity) {
+    setSelectedProgrammeVersion(LEGACY_PROGRAMME_VERSION);
+    setSelectedBuilding(locationValue(activity.building));
+    setSelectedElevation(locationValue(activity.elevation));
+    setSelectedLevel(locationValue(activity.level));
+    setActivitySearch(activity.activity);
+    chooseActivity(activity.programmeActivityId);
   }
 
   async function addPhotos(files: FileList | null) {
@@ -288,8 +308,10 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     if (selectedType === "work") {
       if (baselineValidation) { setValidationMessage(baselineValidation); return; }
       const quantity = Number(actualQuantity);
+      const completion = Number(percentComplete);
       const operativeCount = assignmentMode === "crew" ? Number(numberOfOperatives) : assignmentMode === "individuals" ? selectedOperativeIds.length : 0;
       if (!actualQuantity.trim() || !Number.isFinite(quantity) || quantity < 0) { setValidationMessage("Enter a valid actual quantity completed."); return; }
+      if (percentComplete.trim() && (!Number.isFinite(completion) || completion < 0 || completion > 100)) { setValidationMessage("Enter a percentage complete between 0 and 100."); return; }
       if (assignmentMode === "crew" && (!Number.isInteger(operativeCount) || operativeCount < 1 || operativeCount > (selectedCrew?.operativeIds.length ?? 0))) { setValidationMessage(`Enter between 1 and ${selectedCrew?.operativeIds.length ?? 0} operatives for this gang.`); return; }
       if (!finishTime) { setValidationMessage("Enter a finish time."); return; }
     }
@@ -305,6 +327,9 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     const effectiveRate = Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity?.plannedProductionRate;
     if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedProductionRate)) {
       try { await updateProgrammeBaseline(selectedProgrammeActivity.id,effectiveUnit,Number(effectiveRate)); } catch(error) { setValidationMessage(error instanceof Error?error.message:"Only a Planner/Admin can update planned data."); return; }
+    }
+    if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && percentComplete.trim() && Number(percentComplete) !== selectedProgrammeActivity.physicalPercentComplete) {
+      try { await updateProgrammeProgress(selectedProgrammeActivity.id, Number(percentComplete)); } catch(error) { setValidationMessage(error instanceof Error ? error.message : "Only a Planner/Admin can update progress."); return; }
     }
 
     await onAdd({
@@ -333,6 +358,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       resourceNames: selectedResources,
       numberOfOperatives: operativeCount,
       quantity: selectedType === "work" ? Number(actualQuantity) : undefined,
+      percentComplete: selectedType === "work" && percentComplete.trim() ? Number(percentComplete) : undefined,
       affectedOperativeIds: selectedOperatives,
       notes: notes.trim() || undefined,
     }, photos);
@@ -460,6 +486,18 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               <label className="attendance-field">
+                <span>Search all programme activities</span>
+                <input type="search" value={activitySearch} onChange={(event) => { setActivitySearch(event.target.value); setSelectedProgrammeActivityId(""); setTitle(""); setValidationMessage(""); }} placeholder="Type activity name, ID, WBS or location" autoComplete="off" />
+              </label>
+              {activitySearch.trim() && !selectedProgrammeActivity && <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #d7dde3", borderRadius: 8 }}>
+                {matchingProgrammeActivities.map((activity) => <button key={activity.id} type="button" onClick={() => chooseSearchedActivity(activity)} style={{ display: "grid", width: "100%", gap: 3, padding: "10px 12px", border: 0, borderBottom: "1px solid #e7edf0", background: "#fff", textAlign: "left", cursor: "pointer" }}>
+                  <strong>{activity.activity}</strong>
+                  <span style={{ color: "#5f6b76", fontSize: 12 }}>{activity.programmeActivityId} · {[activity.building, activity.elevation, activity.level].filter(Boolean).join(" / ") || "Location not specified"}</span>
+                </button>)}
+                {matchingProgrammeActivities.length === 0 && <p style={{ margin: 0, padding: 12, color: "#5f6b76" }}>No activities match this search.</p>}
+              </div>}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, height: 1, background: "#d7dde3" }} /><strong style={{ color: "#5f6b76", fontSize: 12 }}>OR BROWSE BY LOCATION</strong><span style={{ flex: 1, height: 1, background: "#d7dde3" }} /></div>
+              <label className="attendance-field">
                 <span>Programme / programme version</span>
                 <select value={selectedProgrammeVersion} onChange={(event) => chooseProgrammeVersion(event.target.value)}>
                   <option value="">Select a programme version</option>
@@ -564,6 +602,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
 
       {selectedType === "work" && <>
         <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>
+        <label className="attendance-field"><span>Physical % complete</span><input type="number" min="0" max="100" step="0.1" value={percentComplete} onChange={(event) => setPercentComplete(event.target.value)} placeholder="0–100" disabled={!canEditProgramme} />{!canEditProgramme && <small>Planner or Admin access is required to update programme progress.</small>}</label>
         {assignmentMode === "crew" && <label className="attendance-field"><span>Number of operatives</span><input type="number" min="1" max={selectedCrew?.operativeIds.length} step="1" value={numberOfOperatives} onChange={(event) => setNumberOfOperatives(event.target.value)} /></label>}
         {assignmentMode !== "crew" && <div className="evidence-placeholder"><strong>{assignmentMode === "individuals" ? `${selectedOperativeIds.length} operative${selectedOperativeIds.length === 1 ? "" : "s"} selected` : "No operatives assigned"}</strong></div>}
       </>}

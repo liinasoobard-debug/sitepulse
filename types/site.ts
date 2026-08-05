@@ -237,6 +237,7 @@ export interface TimelineEvent {
   notes?: string;
 
   quantity?: number;
+  percentComplete?: number;
 
   affectedOperativeIds?: string[];
 

@@ -170,6 +170,9 @@ export default function TimelinePage() {
         a.time.localeCompare(b.time)
       )
     );
+    if (activity && typeof record.percentComplete === "number") {
+      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: record.percentComplete } : item));
+    }
 
     setShowModal(false);
   }
@@ -333,6 +336,7 @@ export default function TimelinePage() {
                         ["Activity", activity.activity],
                         ["Activity ID", event.programmeActivityId || "—"],
                         ["Quantity", typeof event.quantity === "number" ? `${event.quantity} ${activity.unit}`.trim() : "—"],
+                        ["Physical % complete", typeof event.percentComplete === "number" ? `${event.percentComplete}%` : typeof activity.physicalPercentComplete === "number" ? `${activity.physicalPercentComplete}%` : "—"],
                         ["Operatives", event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? "—"],
                         ["Assignment", assignmentLabel],
                         ["Duration", typeof event.duration === "number" ? formatDuration(event.duration) : event.status === "active" ? "In progress" : "—"],

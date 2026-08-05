@@ -25,6 +25,7 @@ export async function createTimelineEvent(projectId: string, date: string, event
   const labour=(event.affectedOperativeIds??[]).map(operativeId=>({timeline_event_id:data.id,operative_id:operativeId,gang_id:event.crewId||null,hours:durationHours,normal_hours:durationHours,overtime_hours:0}));if(labour.length){const {error:labourError}=await supabase.from("timeline_event_labour").insert(labour);if(labourError)throw labourError;}
   const created = timelineEventFromDb(data as DbEvent);
   created.affectedOperativeIds = event.affectedOperativeIds ?? [];
+  created.percentComplete = event.percentComplete;
   return created;
 }
 export async function uploadTimelinePhotos(projectId: string, eventId: string, files: File[]) {

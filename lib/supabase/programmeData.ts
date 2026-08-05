@@ -75,3 +75,8 @@ export async function updateProgrammeBaseline(activityId: string, unit: string, 
   const { error } = await createClient().from("programme_activities").update({ unit, productivity_target: productivityTarget, updated_at: new Date().toISOString() }).eq("id", activityId);
   if (error) throw error;
 }
+
+export async function updateProgrammeProgress(activityId: string, percentComplete: number) {
+  const { error } = await createClient().from("programme_activities").update({ percent_complete: percentComplete, updated_at: new Date().toISOString() }).eq("id", activityId);
+  if (error) throw error;
+}
