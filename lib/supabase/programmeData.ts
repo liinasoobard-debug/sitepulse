@@ -37,7 +37,39 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
   if (!published) return { importId: "", activities: [] };
   const { data, error } = await supabase.from("programme_activities").select("*").eq("project_id", projectId).eq("programme_import_id", published.id).order("activity_name");
   if (error) throw error;
-  return { importId: published.id, activities: ((data ?? []) as DbActivity[]).map(programmeActivityFromDb) };
+  const activities = ((data ?? []) as DbActivity[]).map(programmeActivityFromDb);
+  const { data: timelineRows, error: timelineError } = await supabase
+    .from("timeline_events")
+    .select("programme_activity_id,external_activity_id,event_date")
+    .eq("project_id", projectId)
+    .eq("event_type", "work")
+    .is("deleted_at", null)
+    .order("event_date");
+  if (timelineError) throw timelineError;
+
+  const datesByActivity = new Map<string, { first: string; last: string }>();
+  for (const row of timelineRows ?? []) {
+    const eventDate = String(row.event_date ?? "");
+    if (!eventDate) continue;
+    const keys = [row.programme_activity_id, row.external_activity_id].filter(Boolean).map(String);
+    for (const key of keys) {
+      const current = datesByActivity.get(key);
+      datesByActivity.set(key, current ? { first: current.first < eventDate ? current.first : eventDate, last: current.last > eventDate ? current.last : eventDate } : { first: eventDate, last: eventDate });
+    }
+  }
+
+  return {
+    importId: published.id,
+    activities: activities.map((activity) => {
+      const dates = datesByActivity.get(activity.id) ?? datesByActivity.get(activity.programmeActivityId);
+      if (!dates) return activity;
+      return {
+        ...activity,
+        actualStart: dates.first,
+        actualFinish: Number(activity.physicalPercentComplete) >= 100 ? dates.last : undefined,
+      };
+    }),
+  };
 }
 
 export async function loadProgrammeImports(projectId: string) {
