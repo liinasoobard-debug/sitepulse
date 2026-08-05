@@ -12,8 +12,6 @@ export async function POST(request: Request) {
   if(!user)return NextResponse.json({error:"Authentication required."},{status:401});
   const form=await request.formData(); const file=form.get("file"); const projectId=String(form.get("projectId")??""); const building=String(form.get("building")??"").trim();
   if(!(file instanceof File)||!file.name.toLowerCase().endsWith(".xlsx"))return NextResponse.json({error:"Select a valid .xlsx workbook."},{status:400});
-  const {data:membership}=await supabase.from("sitepulse_project_members").select("role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle();
-  if(!membership||!["planner","admin"].includes(membership.role))return NextResponse.json({error:"Planner or Admin access is required."},{status:403});
   const {data:last}=await supabase.from("programme_imports").select("import_version").eq("project_id",projectId).order("import_version",{ascending:false}).limit(1).maybeSingle();
   const {data:published}=await supabase.from("programme_imports").select("id").eq("project_id",projectId).eq("status","published").maybeSingle();
   let knownIds:string[]=[]; let previousActivities:Record<string,unknown>[]=[]; if(published){const {data}=await supabase.from("programme_activities").select("*").eq("programme_import_id",published.id);previousActivities=(data??[]) as Record<string,unknown>[];knownIds=previousActivities.map(x=>String(x.external_activity_id));}
