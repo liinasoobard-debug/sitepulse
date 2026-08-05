@@ -172,8 +172,14 @@ export default function TimelinePage() {
         a.time.localeCompare(b.time)
       )
     );
-    if (activity && typeof record.percentComplete === "number") {
-      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: record.percentComplete } : item));
+    if (activity && record.type === "work") {
+      const activeDate = getActiveDate();
+      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? {
+        ...item,
+        actualStart: !item.actualStart || activeDate < item.actualStart ? activeDate : item.actualStart,
+        actualFinish: Number(record.percentComplete) >= 100 ? activeDate : item.actualFinish,
+        physicalPercentComplete: typeof record.percentComplete === "number" ? record.percentComplete : item.physicalPercentComplete,
+      } : item));
     }
 
     setShowModal(false);
@@ -183,7 +189,13 @@ export default function TimelinePage() {
     const activity = getActivity(updatedEvent.programmeActivityId);
     if (activity && canEditProgramme && typeof updatedEvent.percentComplete === "number" && updatedEvent.percentComplete !== activity.physicalPercentComplete) {
       await updateProgrammeProgress(activity.id, updatedEvent.percentComplete);
-      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: updatedEvent.percentComplete } : item));
+      const activeDate = getActiveDate();
+      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? {
+        ...item,
+        actualStart: !item.actualStart || activeDate < item.actualStart ? activeDate : item.actualStart,
+        actualFinish: Number(updatedEvent.percentComplete) >= 100 ? activeDate : undefined,
+        physicalPercentComplete: updatedEvent.percentComplete,
+      } : item));
     }
     const saved = await updateTimelineEvent(updatedEvent);
     setEvents((current) => current.map((event) => event.id === saved.id ? saved : event).sort((a, b) => a.time.localeCompare(b.time)));
@@ -359,6 +371,8 @@ export default function TimelinePage() {
                         ["Level / floor", activity.level || "—"],
                         ["Activity", activity.activity],
                         ["Activity ID", event.programmeActivityId || "—"],
+                        ["Actual start", activity.actualStart || "—"],
+                        ["Actual finish", activity.actualFinish || "—"],
                         ["Quantity", typeof event.quantity === "number" ? `${event.quantity} ${activity.unit}`.trim() : "—"],
                         ["Physical % complete", typeof event.percentComplete === "number" ? `${event.percentComplete}%` : typeof activity.physicalPercentComplete === "number" ? `${activity.physicalPercentComplete}%` : "—"],
                         ["Operatives", event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? "—"],
