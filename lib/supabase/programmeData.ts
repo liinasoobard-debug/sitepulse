@@ -45,7 +45,8 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     .eq("event_type", "work")
     .is("deleted_at", null)
     .order("event_date");
-  if (timelineError) throw timelineError;
+  // Actual-date enrichment must never prevent the published programme loading.
+  if (timelineError) return { importId: published.id, activities };
 
   const datesByActivity = new Map<string, { first: string; last: string }>();
   for (const row of timelineRows ?? []) {
