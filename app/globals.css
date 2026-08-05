@@ -523,7 +523,7 @@ h1 {
 
 .attendance-table {
   width: 100%;
-  min-width: 1160px;
+  min-width: 980px;
   border-collapse: collapse;
   table-layout: auto;
 }
@@ -558,14 +558,14 @@ h1 {
   font-size: 14px;
 }
 
+.attendance-table tbody td:nth-child(6),
 .attendance-table tbody td:nth-child(7),
 .attendance-table tbody td:nth-child(8),
-.attendance-table tbody td:nth-child(9),
+.attendance-table thead th:nth-child(6),
 .attendance-table thead th:nth-child(7),
 .attendance-table thead th:nth-child(8),
-.attendance-table thead th:nth-child(9),
-.attendance-table tfoot th:nth-child(7),
-.attendance-table tfoot th:nth-child(9) {
+.attendance-table tfoot th:nth-child(6),
+.attendance-table tfoot th:nth-child(8) {
   text-align: right;
 }
 
@@ -621,22 +621,6 @@ h1 {
 .secondary-button:hover {
   border-color: #b9c9d1;
   background: #f5f8fa;
-}
-
-.attendance-status-off {
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  padding: 9px 13px;
-  border: 1px solid #aeb9c0;
-  border-radius: 11px;
-  color: #26323a;
-  background: #e8ecef;
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
 .timeline-header > .secondary-button {

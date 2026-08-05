@@ -488,19 +488,6 @@ export default function AttendancePage() {
     );
   }
 
-  function markOnSite(operative: Operative) {
-    const operativeId = String(operative.id);
-    const now = getCurrentTime();
-    setAttendance((current) => {
-      const existingRecord = current.find((record) => String(record.operativeId) === operativeId);
-      if (existingRecord?.signIn && !existingRecord.signOut) return current;
-      const nextRecord: AttendanceRecord = { operativeId, signIn: now, signOut: "" };
-      return existingRecord
-        ? current.map((record) => String(record.operativeId) === operativeId ? nextRecord : record)
-        : [...current, nextRecord];
-    });
-  }
-
   function markNotOnSite(operative: Operative) {
     const operativeId = String(operative.id);
     setAttendance((current) => {
@@ -879,7 +866,6 @@ export default function AttendancePage() {
                 <th>Company</th>
                 <th>Name</th>
                 <th>Position</th>
-                <th>Status</th>
                 <th>Sign In</th>
                 <th>Sign Out</th>
                 <th>Hours</th>
@@ -906,25 +892,6 @@ export default function AttendancePage() {
                       </td>
 
                       <td>{operative.position}</td>
-
-                      <td>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button
-                            type="button"
-                            className={record?.signIn && !record.signOut ? "primary-button" : "secondary-button"}
-                            onClick={() => markOnSite(operative)}
-                          >
-                            On site
-                          </button>
-                          <button
-                            type="button"
-                            className={!record?.signIn || record.signOut ? "attendance-status-off" : "secondary-button"}
-                            onClick={() => markNotOnSite(operative)}
-                          >
-                            Not on site
-                          </button>
-                        </div>
-                      </td>
 
                       <td>
                         <div className="attendance-time-control">
@@ -1020,6 +987,14 @@ export default function AttendancePage() {
                           <button
                             type="button"
                             className="secondary-button"
+                            onClick={() => markNotOnSite(operative)}
+                            disabled={!record?.signIn || Boolean(record.signOut)}
+                          >
+                            Not on site
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
                             onClick={() => removeOperative(operative)}
                             style={{ color: "#b42318" }}
                           >
@@ -1032,7 +1007,7 @@ export default function AttendancePage() {
                 )
               ) : (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={9}>
                     No operatives match your search.
                   </td>
                 </tr>
@@ -1041,7 +1016,7 @@ export default function AttendancePage() {
 
             <tfoot>
               <tr>
-                <th colSpan={6}>Totals</th>
+                <th colSpan={5}>Totals</th>
                 <th>{formatHours(totals.hours)}</th>
                 <th />
                 <th>{formatCurrency(totals.cost)}</th>
