@@ -4,12 +4,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import AddWorkModal from "@/components/AddWorkModal";
-import { getActiveDate, getActiveProjectId, loadDay, saveDay } from "@/lib/storage";
+import { getActiveDate, getActiveProjectId, loadDay, loadOperatives, saveDay } from "@/lib/storage";
 import { loadProjectRole, loadPublishedProgramme } from "@/lib/supabase/programmeData";
 import { createTimelineEvent, loadTimelineEvents, uploadTimelinePhotos } from "@/lib/supabase/timelineData";
 import type {
   AttendanceRecord,
   Crew,
+  Operative,
   ProgrammeActivity,
   SiteDay,
   TimelineEvent,
@@ -86,6 +87,7 @@ export default function TimelinePage() {
   const [programmeActivities, setProgrammeActivities] = useState<ProgrammeActivity[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [crews, setCrews] = useState<Crew[]>([]);
+  const [operatives, setOperatives] = useState<Operative[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [programmeLoading, setProgrammeLoading] = useState(true);
   const [programmeError, setProgrammeError] = useState("");
@@ -111,6 +113,7 @@ export default function TimelinePage() {
         setAttendance(normaliseAttendance(savedDay.attendance));
         setCrews(normaliseCrews(savedDay.crews));
       }
+      setOperatives(loadOperatives());
       try {
         const projectId=getActiveProjectId();
         const [programme,timeline,role]=await Promise.all([loadPublishedProgramme(projectId),loadTimelineEvents(projectId,getActiveDate()),loadProjectRole(projectId)]);
@@ -201,6 +204,16 @@ export default function TimelinePage() {
     return crew?.name ?? "Unknown Gang";
   }
 
+  function getAssignmentLabel(event: TimelineEvent): string {
+    const crewName = getCrewName(event.crewId);
+    if (crewName) return crewName;
+    const names = (event.affectedOperativeIds ?? []).flatMap((operativeId) => {
+      const operative = operatives.find((item) => String(item.id) === String(operativeId));
+      return operative ? [operative.name] : [];
+    });
+    return names.length > 0 ? names.join(", ") : "Unassigned";
+  }
+
   function getActivity(programmeActivityId?: string): ProgrammeActivity | null {
     if (!programmeActivityId) return null;
 
@@ -253,7 +266,7 @@ export default function TimelinePage() {
 
         <div className="timeline-list">
           {sortedEvents.map((event, index) => {
-            const crewName = getCrewName(event.crewId);
+            const assignmentLabel = getAssignmentLabel(event);
             const activity = getActivity(event.programmeActivityId);
 
             return (
@@ -277,7 +290,7 @@ export default function TimelinePage() {
                 <div className={`event-card ${event.type}`}>
                   <div className="event-card-top">
                     <div>
-                      {crewName && !activity && (
+                      {!activity && (
                         <span
                           style={{
                             display: "block",
@@ -289,7 +302,7 @@ export default function TimelinePage() {
                             letterSpacing: "0.04em",
                           }}
                         >
-                          {crewName}
+                          {assignmentLabel}
                         </span>
                       )}
                       <strong>{event.title}</strong>
@@ -321,7 +334,7 @@ export default function TimelinePage() {
                         ["Activity ID", event.programmeActivityId || "—"],
                         ["Quantity", typeof event.quantity === "number" ? `${event.quantity} ${activity.unit}`.trim() : "—"],
                         ["Operatives", event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? "—"],
-                        ["Gang", crewName || "—"],
+                        ["Assignment", assignmentLabel],
                         ["Duration", typeof event.duration === "number" ? formatDuration(event.duration) : event.status === "active" ? "In progress" : "—"],
                       ].map(([label, value]) => (
                         <div key={label}>

@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { loadDay } from "@/lib/storage";
+import { loadDay, loadOperatives } from "@/lib/storage";
 import { updateProgrammeBaseline } from "@/lib/supabase/programmeData";
 import { LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
+  Operative,
   ProgrammeActivity,
   SiteDay,
   SiteRecordType,
@@ -13,6 +14,7 @@ import type {
 } from "@/types/site";
 
 type NewSiteRecord = Omit<TimelineEvent, "id">;
+type AssignmentMode = "crew" | "individuals" | "unassigned";
 
 type Props = {
   onAdd: (record: NewSiteRecord, photos: File[]) => void | Promise<void>;
@@ -90,8 +92,11 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
 
 export default function AddWorkModal({ onAdd, onClose, programmeActivities, programmeLoading = false, programmeError = "", canEditProgramme = false }: Props) {
   const [crews, setCrews] = useState<Crew[]>([]);
+  const [operatives, setOperatives] = useState<Operative[]>([]);
   const [activeCrewIds, setActiveCrewIds] = useState<string[]>([]);
   const [selectedCrewId, setSelectedCrewId] = useState("");
+  const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>("crew");
+  const [selectedOperativeIds, setSelectedOperativeIds] = useState<string[]>([]);
   const [selectedProgrammeVersion, setSelectedProgrammeVersion] = useState("");
   const [selectedBuilding, setSelectedBuilding] = useState("");
   const [selectedElevation, setSelectedElevation] = useState("");
@@ -117,7 +122,9 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       try {
         const savedDay = loadDay() as SiteDay | null;
         const savedCrews = normaliseCrews(savedDay?.crews);
+        const savedOperatives = loadOperatives();
         setCrews(savedCrews);
+        setOperatives(savedOperatives);
       const busyCrewIds = (savedDay?.events ?? [])
         .filter((event) => event.type === "work" && event.status === "active" && event.crewId)
         .map((event) => String(event.crewId));
@@ -126,6 +133,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
         (crew) => crew.operativeIds.length > 0 && !busyCrewIds.includes(crew.id)
       );
         if (selectableCrews.length === 1) setSelectedCrewId(selectableCrews[0].id);
+        if (selectableCrews.length === 0 && savedOperatives.length > 0) setAssignmentMode("individuals");
       } catch (error) { console.error("Unable to load site day:", error); }
     });
     return () => { cancelled = true; };
@@ -141,6 +149,17 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const selectedCrew = availableCrews.find(
     (crew) => crew.id === selectedCrewId
   );
+  const assignmentReady = assignmentMode === "unassigned" ||
+    (assignmentMode === "crew" && Boolean(selectedCrewId)) ||
+    (assignmentMode === "individuals" && selectedOperativeIds.length > 0);
+  const selectedOperativeNames = operatives
+    .filter((operative) => selectedOperativeIds.includes(String(operative.id)))
+    .map((operative) => operative.name);
+  const assignmentLabel = assignmentMode === "crew"
+    ? selectedCrew?.name ?? "Gang"
+    : assignmentMode === "individuals"
+      ? selectedOperativeNames.join(", ") || "Individuals"
+      : "Unassigned";
 
   const selectedProgrammeActivity = programmeActivities.find(
     (activity) => activity.programmeActivityId === selectedProgrammeActivityId
@@ -194,7 +213,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     setSelectedProgrammeActivityId("");
     setTitle(type === "break" ? "Break" : "");
     setActualQuantity("");
-    setNumberOfOperatives(selectedCrew ? String(selectedCrew.operativeIds.length) : "");
+    setNumberOfOperatives(assignmentMode === "crew" && selectedCrew ? String(selectedCrew.operativeIds.length) : assignmentMode === "individuals" ? String(selectedOperativeIds.length) : "0");
     setPhotos([]);
     setValidationMessage("");
     setBaselineUnit("");
@@ -252,20 +271,24 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   }
 
   async function saveRecord() {
-    if (!selectedCrewId || !selectedType || !title.trim() || !time) return;
+    if (!assignmentReady || !selectedType || !title.trim() || !time) return;
     if (selectedType === "work" && !selectedProgrammeActivityId) return;
     if (selectedType === "work") {
       if (baselineValidation) { setValidationMessage(baselineValidation); return; }
       const quantity = Number(actualQuantity);
-      const operativeCount = Number(numberOfOperatives);
+      const operativeCount = assignmentMode === "crew" ? Number(numberOfOperatives) : assignmentMode === "individuals" ? selectedOperativeIds.length : 0;
       if (!actualQuantity.trim() || !Number.isFinite(quantity) || quantity < 0) { setValidationMessage("Enter a valid actual quantity completed."); return; }
-      if (!Number.isInteger(operativeCount) || operativeCount < 1 || operativeCount > (selectedCrew?.operativeIds.length ?? 0)) { setValidationMessage(`Enter between 1 and ${selectedCrew?.operativeIds.length ?? 0} operatives for this gang.`); return; }
+      if (assignmentMode === "crew" && (!Number.isInteger(operativeCount) || operativeCount < 1 || operativeCount > (selectedCrew?.operativeIds.length ?? 0))) { setValidationMessage(`Enter between 1 and ${selectedCrew?.operativeIds.length ?? 0} operatives for this gang.`); return; }
       if (!finishTime) { setValidationMessage("Enter a finish time."); return; }
     }
 
     const selectedSnapshot = programmeVersions.find((snapshot) => snapshot.id === selectedProgrammeVersion);
-    const operativeCount = selectedType === "work" ? Number(numberOfOperatives) : selectedCrew?.operativeIds.length ?? 0;
-    const selectedOperatives = selectedCrew?.operativeIds.slice(0, operativeCount).map(String) ?? [];
+    const operativeCount = assignmentMode === "crew"
+      ? (selectedType === "work" ? Number(numberOfOperatives) : selectedCrew?.operativeIds.length ?? 0)
+      : assignmentMode === "individuals" ? selectedOperativeIds.length : 0;
+    const selectedOperatives = assignmentMode === "crew"
+      ? selectedCrew?.operativeIds.slice(0, operativeCount).map(String) ?? []
+      : assignmentMode === "individuals" ? selectedOperativeIds : [];
     const effectiveUnit = baselineUnit || selectedProgrammeActivity?.unit || "";
     const effectiveRate = Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity?.plannedProductionRate;
     if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedProductionRate)) {
@@ -273,7 +296,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     }
 
     await onAdd({
-      crewId: selectedCrewId,
+      crewId: assignmentMode === "crew" ? selectedCrewId : undefined,
       programmeActivityId:
         selectedType === "work" || selectedType === "disruption"
           ? selectedProgrammeActivity?.programmeActivityId
@@ -303,58 +326,13 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     }, photos);
   }
 
-  if (availableCrews.length === 0) {
-    return (
-      <section className="site-record-modal">
-        <div className="site-record-modal-header">
-          <div>
-            <p className="eyebrow">New gang activity</p>
-            <h2>No gangs available</h2>
-          </div>
-          <button
-            type="button"
-            className="site-record-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="evidence-placeholder">
-          <strong>Create and populate a gang first</strong>
-          <span>
-            Go to Gang Setup and assign signed-in operatives before
-            recording activity.
-          </span>
-        </div>
-
-        <button
-          type="button"
-          className="add-event-button"
-          onClick={() => window.location.assign("/crews")}
-        >
-          Go to Gang Setup
-        </button>
-
-        <button
-          type="button"
-          className="secondary-button site-record-cancel"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-      </section>
-    );
-  }
-
   if (!selectedType) {
     return (
       <section className="site-record-modal">
         <div className="site-record-modal-header">
           <div>
-            <p className="eyebrow">New gang activity</p>
-            <h2>What is the gang doing?</h2>
+            <p className="eyebrow">New site record</p>
+            <h2>Who is this for?</h2>
           </div>
           <button
             type="button"
@@ -366,21 +344,31 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
           </button>
         </div>
 
-        <label className="attendance-field">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+          {(["crew", "individuals", "unassigned"] as AssignmentMode[]).map((mode) => (
+            <button key={mode} type="button" className={assignmentMode === mode ? "primary-button" : "secondary-button"} onClick={() => { setAssignmentMode(mode); setValidationMessage(""); }}>
+              {mode === "crew" ? "Gang" : mode === "individuals" ? "Individuals" : "Unassigned"}
+            </button>
+          ))}
+        </div>
+
+        {assignmentMode === "crew" && <label className="attendance-field">
           <span>Gang</span>
-          <select
-            value={selectedCrewId}
-            onChange={(event) => setSelectedCrewId(event.target.value)}
-          >
+          <select value={selectedCrewId} onChange={(event) => setSelectedCrewId(event.target.value)}>
             <option value="">Select a gang</option>
-            {availableCrews.map((crew) => (
-              <option key={crew.id} value={crew.id}>
-                {crew.name} — {crew.operativeIds.length} operative
-                {crew.operativeIds.length === 1 ? "" : "s"}
-              </option>
-            ))}
+            {availableCrews.map((crew) => <option key={crew.id} value={crew.id}>{crew.name} — {crew.operativeIds.length} operative{crew.operativeIds.length === 1 ? "" : "s"}</option>)}
           </select>
-        </label>
+          {availableCrews.length === 0 && <small>No populated gangs are available. Choose Individuals or Unassigned.</small>}
+        </label>}
+
+        {assignmentMode === "individuals" && <fieldset style={{ display: "grid", gap: 8, margin: 0, padding: 12, border: "1px solid #d7dde3", borderRadius: 8 }}>
+          <legend style={{ padding: "0 5px", fontWeight: 700 }}>Operatives</legend>
+          {operatives.map((operative) => <label key={operative.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input type="checkbox" checked={selectedOperativeIds.includes(String(operative.id))} onChange={(event) => setSelectedOperativeIds((current) => event.target.checked ? [...current, String(operative.id)] : current.filter((id) => id !== String(operative.id)))} />
+            <span>{operative.name}<small style={{ display: "block", color: "#5f6b76" }}>{operative.position}</small></span>
+          </label>)}
+          {operatives.length === 0 && <span>No operatives have been added.</span>}
+        </fieldset>}
 
         <div className="site-record-choice-list">
           {recordChoices.map((choice) => (
@@ -389,7 +377,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
               type="button"
               className={`site-record-choice ${choice.type}`}
               onClick={() => chooseRecordType(choice.type)}
-              disabled={!selectedCrewId}
+              disabled={!assignmentReady}
             >
               <span className="site-record-choice-icon">{choice.icon}</span>
               <span className="site-record-choice-content">
@@ -416,7 +404,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     <section className="site-record-modal">
       <div className="site-record-modal-header">
         <div>
-          <p className="eyebrow">{selectedCrew?.name}</p>
+          <p className="eyebrow">{assignmentLabel}</p>
           <h2>
             {recordChoices.find((choice) => choice.type === selectedType)
               ?.title}
@@ -551,7 +539,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned duration</span><strong>{selectedProgrammeActivity.originalDuration ?? "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned quantity</span><strong>{selectedProgrammeActivity.plannedQuantity || "—"} {selectedProgrammeActivity.unit}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Productivity target</span><strong>{selectedProgrammeActivity.plannedProductionRate ? `${selectedProgrammeActivity.plannedProductionRate} ${selectedProgrammeActivity.unit}/hr` : "—"}</strong></div>
-          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Resource / gang</span><strong>{selectedResources.join(", ") || selectedCrew?.name || "—"}</strong></div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Resource / assignment</span><strong>{selectedResources.join(", ") || assignmentLabel}</strong></div>
         </div>
       )}
 
@@ -559,7 +547,8 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
 
       {selectedType === "work" && <>
         <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>
-        <label className="attendance-field"><span>Number of operatives</span><input type="number" min="1" max={selectedCrew?.operativeIds.length} step="1" value={numberOfOperatives} onChange={(event) => setNumberOfOperatives(event.target.value)} /></label>
+        {assignmentMode === "crew" && <label className="attendance-field"><span>Number of operatives</span><input type="number" min="1" max={selectedCrew?.operativeIds.length} step="1" value={numberOfOperatives} onChange={(event) => setNumberOfOperatives(event.target.value)} /></label>}
+        {assignmentMode !== "crew" && <div className="evidence-placeholder"><strong>{assignmentMode === "individuals" ? `${selectedOperativeIds.length} operative${selectedOperativeIds.length === 1 ? "" : "s"} selected` : "No operatives assigned"}</strong></div>}
       </>}
 
       <label className="attendance-field">
@@ -591,14 +580,14 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
         className="add-event-button"
         onClick={saveRecord}
         disabled={
-          !selectedCrewId ||
+          !assignmentReady ||
           !title.trim() ||
           !time ||
           !finishTime ||
           (selectedType === "work" && !selectedProgrammeActivityId)
         }
       >
-        Save for {selectedCrew?.name ?? "Gang"}
+        Save for {assignmentLabel}
       </button>
 
       <button
