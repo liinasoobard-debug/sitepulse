@@ -93,6 +93,7 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
 export default function AddWorkModal({ onAdd, onClose, programmeActivities, programmeLoading = false, programmeError = "", canEditProgramme = false }: Props) {
   const [crews, setCrews] = useState<Crew[]>([]);
   const [operatives, setOperatives] = useState<Operative[]>([]);
+  const [onSiteOperativeIds, setOnSiteOperativeIds] = useState<string[]>([]);
   const [activeCrewIds, setActiveCrewIds] = useState<string[]>([]);
   const [selectedCrewId, setSelectedCrewId] = useState("");
   const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>("crew");
@@ -125,6 +126,9 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
         const savedOperatives = loadOperatives();
         setCrews(savedCrews);
         setOperatives(savedOperatives);
+        setOnSiteOperativeIds((savedDay?.attendance ?? [])
+          .filter((record) => record.signIn && !record.signOut)
+          .map((record) => String(record.operativeId)));
       const busyCrewIds = (savedDay?.events ?? [])
         .filter((event) => event.type === "work" && event.status === "active" && event.crewId)
         .map((event) => String(event.crewId));
@@ -155,6 +159,10 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const selectedOperativeNames = operatives
     .filter((operative) => selectedOperativeIds.includes(String(operative.id)))
     .map((operative) => operative.name);
+  const orderedOperatives = [...operatives].sort((a, b) => {
+    const attendanceDifference = Number(onSiteOperativeIds.includes(String(b.id))) - Number(onSiteOperativeIds.includes(String(a.id)));
+    return attendanceDifference || a.name.localeCompare(b.name);
+  });
   const assignmentLabel = assignmentMode === "crew"
     ? selectedCrew?.name ?? "Gang"
     : assignmentMode === "individuals"
@@ -272,6 +280,10 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
 
   async function saveRecord() {
     if (!assignmentReady || !selectedType || !title.trim() || !time) return;
+    if (assignmentMode === "individuals" && selectedOperativeIds.some((id) => !onSiteOperativeIds.includes(id))) {
+      setValidationMessage("Only operatives currently signed in can be assigned.");
+      return;
+    }
     if (selectedType === "work" && !selectedProgrammeActivityId) return;
     if (selectedType === "work") {
       if (baselineValidation) { setValidationMessage(baselineValidation); return; }
@@ -363,10 +375,15 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
 
         {assignmentMode === "individuals" && <fieldset style={{ display: "grid", gap: 8, margin: 0, padding: 12, border: "1px solid #d7dde3", borderRadius: 8 }}>
           <legend style={{ padding: "0 5px", fontWeight: 700 }}>Operatives</legend>
-          {operatives.map((operative) => <label key={operative.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <input type="checkbox" checked={selectedOperativeIds.includes(String(operative.id))} onChange={(event) => setSelectedOperativeIds((current) => event.target.checked ? [...current, String(operative.id)] : current.filter((id) => id !== String(operative.id)))} />
-            <span>{operative.name}<small style={{ display: "block", color: "#5f6b76" }}>{operative.position}</small></span>
-          </label>)}
+          {orderedOperatives.map((operative) => {
+            const operativeId = String(operative.id);
+            const isOnSite = onSiteOperativeIds.includes(operativeId);
+            return <label key={operative.id} style={{ display: "grid", gridTemplateColumns: "20px minmax(0, 1fr) auto", alignItems: "center", gap: 10, opacity: isOnSite ? 1 : 0.62 }}>
+              <input type="checkbox" checked={selectedOperativeIds.includes(operativeId)} disabled={!isOnSite} onChange={(event) => setSelectedOperativeIds((current) => event.target.checked ? [...current, operativeId] : current.filter((id) => id !== operativeId))} />
+              <span>{operative.name}<small style={{ display: "block", color: "#5f6b76" }}>{operative.position}</small></span>
+              <span style={{ padding: "4px 7px", borderRadius: 6, background: isOnSite ? "#e8f5ee" : "#eef1f3", color: isOnSite ? "#176b45" : "#5f6b76", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{isOnSite ? "On site" : "Not on site"}</span>
+            </label>;
+          })}
           {operatives.length === 0 && <span>No operatives have been added.</span>}
         </fieldset>}
 
