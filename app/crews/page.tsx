@@ -249,6 +249,7 @@ export default function CrewsPage() {
           </div>
 
           <div
+            className="page-actions"
             style={{
               display: "flex",
               gap: 10,
@@ -414,6 +415,7 @@ export default function CrewsPage() {
         >
           {crews.map((crew) => (
             <article
+              className="gang-card"
               key={crew.id}
               style={{
                 padding: 20,
@@ -423,6 +425,7 @@ export default function CrewsPage() {
               }}
             >
               <div
+                className="gang-card-header"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -467,6 +470,7 @@ export default function CrewsPage() {
                 </p>
               ) : (
                 <div
+                  className="gang-assignment-grid"
                   style={{
                     display: "grid",
                     gridTemplateColumns:
@@ -487,6 +491,7 @@ export default function CrewsPage() {
 
                     return (
                       <label
+                        className="gang-operative-card"
                         key={operative.id}
                         style={{
                           display: "flex",

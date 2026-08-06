@@ -583,6 +583,7 @@ export default function AttendancePage() {
           </div>
 
           <div
+            className="page-actions"
             style={{
               display: "flex",
               gap: 10,
@@ -885,7 +886,7 @@ export default function AttendancePage() {
           </div>
         </section>
 
-        <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
+        <div className="attendance-toolbar" style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 14, marginBottom: 16, flexWrap: "wrap" }}>
           <label htmlFor="operative-search" style={{ display: "grid", gap: 6, width: "min(100%, 420px)", fontWeight: 600 }}>
             <span>Search operatives</span>
             <input id="operative-search" type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by name, company or trade..." style={{ width: "100%", minHeight: 42, padding: "8px 10px" }} />

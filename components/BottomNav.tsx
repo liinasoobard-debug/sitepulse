@@ -27,7 +27,7 @@ export default function BottomNav() {
             className={`bottom-nav-item ${isActive ? "active" : ""}`}
           >
             <span className="bottom-nav-icon">{item.icon}</span>
-            <span>{item.label}</span>
+            <span className="bottom-nav-label">{item.label}</span>
           </Link>
         );
       })}

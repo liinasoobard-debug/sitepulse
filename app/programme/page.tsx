@@ -286,7 +286,7 @@ export default function ProgrammePage() {
             <h1>Programme</h1>
             <p>Published programme data is shared securely through Supabase.</p>
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div className="page-actions" style={{ display: "flex", gap: 10 }}>
             <Link href="/crews" className="secondary-button">Gangs</Link>
             <Link href="/timeline" className="secondary-button">Timeline</Link>
           </div>
@@ -303,7 +303,7 @@ export default function ProgrammePage() {
                 <input value={buildingDefault} onChange={(event) => setBuildingDefault(event.target.value)} placeholder="e.g. HBX" />
               </label>
 
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+              <div className="programme-import-actions" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
                 <label className="add-event-button" style={{ ...touchButtonStyle, display: "inline-flex", position: "relative", cursor: busy ? "not-allowed" : "pointer" }}>
                   Select P6 Workbook
                   <input
@@ -406,11 +406,11 @@ export default function ProgrammePage() {
           </section>
         )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <div className="programme-search-row" style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
           <strong>{loading ? "Loading programme…" : `${activities.length} published activities`}</strong>
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search activity" />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 10, padding: 12 }}>
+        <div className="programme-filters" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 10, padding: 12 }}>
           {(["building", "elevation", "level", "gridline", "status"] as const).map((field) => (
             <label className="attendance-field" key={field}>
               <span>{field}</span>
@@ -424,7 +424,7 @@ export default function ProgrammePage() {
           <label className="attendance-field"><span>Activity type</span><select value={filters.activityType} onChange={(event) => setFilters((current) => ({ ...current, activityType: event.target.value }))}><option value="">All</option>{Object.keys(activityTypeKeywords).map((key) => <option value={key} key={key}>{key.replaceAll("-", " ")}</option>)}</select></label>
         </div>
 
-        <div style={{ overflowX: "auto" }}>
+        <div className="programme-desktop-table" style={{ overflowX: "auto" }}>
           <table className="programme-grid" style={{ width: "100%", minWidth: 1650, borderCollapse: "collapse" }}>
             <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity", "Actual Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
@@ -440,6 +440,35 @@ export default function ProgrammePage() {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="programme-mobile-list">
+          {filtered.map((item) => {
+            const baselineComplete = Boolean(item.unit && item.plannedProductionRate && item.plannedCrewSize);
+            return <article className="programme-activity-card" key={item.id}>
+              <div className="programme-activity-card-header">
+                <div><strong>{item.activityName}</strong><small>{item.programmeActivityId}</small></div>
+                <span className={`programme-baseline-status ${baselineComplete ? "complete" : "incomplete"}`}>{baselineComplete ? "Baseline complete" : "Baseline incomplete"}</span>
+              </div>
+              <dl className="programme-activity-summary">
+                <div><dt>Building</dt><dd>{item.building || "—"}</dd></div>
+                <div><dt>Elevation</dt><dd>{item.elevation || "—"}</dd></div>
+                <div><dt>Level</dt><dd>{item.level || "—"}</dd></div>
+                <div><dt>Planned quantity</dt><dd>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</dd></div>
+              </dl>
+              <details>
+                <summary>Activity details</summary>
+                <dl className="programme-activity-summary programme-activity-details">
+                  <div><dt>Gridline</dt><dd>{item.gridline || "—"}</dd></div>
+                  <div><dt>Planned dates</dt><dd>{item.plannedStart || "—"} to {item.plannedFinish || "—"}</dd></div>
+                  <div><dt>Actual dates</dt><dd>{item.actualStart || "—"} to {item.actualFinish || "—"}</dd></div>
+                  <div><dt>Complete</dt><dd>{formatNumber(item.physicalPercentComplete)}%</dd></div>
+                  <div><dt>Baseline men</dt><dd>{formatNumber(item.plannedCrewSize)}</dd></div>
+                  <div><dt>Planned productivity</dt><dd>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/labour hr` : "—"}</dd></div>
+                </dl>
+              </details>
+              {canManage && <button className="secondary-button programme-baseline-action" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedProductionRate ?? "")); setCrewSize(String(item.plannedCrewSize ?? "")); }}>{baselineComplete ? "Edit baseline" : "Complete baseline"}</button>}
+            </article>;
+          })}
         </div>
       </section>
     </main>

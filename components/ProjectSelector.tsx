@@ -90,6 +90,7 @@ export default function ProjectSelector() {
 
   return (
     <section
+      className="project-selector"
       style={{
         position: "sticky",
         top: 0,
@@ -100,8 +101,9 @@ export default function ProjectSelector() {
         backdropFilter: "blur(8px)",
       }}
     >
-      <div style={{ width: "100%", maxWidth: 1100, margin: "0 auto" }}>
+      <div className="project-selector-inner" style={{ width: "100%", maxWidth: 1100, margin: "0 auto" }}>
         <div
+          className="project-selector-row"
           style={{
             display: "flex",
             alignItems: "center",
@@ -117,6 +119,7 @@ export default function ProjectSelector() {
           </label>
 
           <select
+            className="project-selector-select"
             id="sitepulse-project"
             value={activeProjectId}
             onChange={(event) => handleSelect(event.target.value)}

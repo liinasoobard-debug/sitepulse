@@ -16,5 +16,5 @@ export default function UserIndicator() {
     return () => { active = false; data.subscription.unsubscribe(); };
   }, []);
   if (!email) return null;
-  return <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><span style={{ fontSize: 13, color: "#4a5560" }}>{email}</span><form action={logout}><button type="submit" className="secondary-button">Log out</button></form></div>;
+  return <div className="user-indicator" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><span style={{ fontSize: 13, color: "#4a5560" }}>{email}</span><form action={logout}><button type="submit" className="secondary-button">Log out</button></form></div>;
 }

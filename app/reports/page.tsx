@@ -74,7 +74,7 @@ function labourHours(events: TimelineEvent[], type: TimelineEvent["type"]): numb
 }
 
 function Table({ children, minWidth = 900 }: { children: React.ReactNode; minWidth?: number }) {
-  return <div style={{ overflowX: "auto", border: "1px solid #d7dde3", borderRadius: 12 }}><table style={{ width: "100%", minWidth, borderCollapse: "collapse", background: "#fff" }}>{children}</table></div>;
+  return <div className="report-table-scroll" style={{ overflowX: "auto", border: "1px solid #d7dde3", borderRadius: 12 }}><table style={{ width: "100%", minWidth, borderCollapse: "collapse", background: "#fff" }}>{children}</table></div>;
 }
 
 function Section({ title, children }: { number: number; title: string; children: React.ReactNode }) {
@@ -331,6 +331,13 @@ export default function ReportsPage() {
         {productivityPeriod !== "weekly" && <input type="date" value={productivityDate} onChange={(event) => setProductivityDate(event.target.value)} aria-label="Productivity report date" />}
         <span>{formatDate(report.productivityStart)}{report.productivityEnd !== report.productivityStart ? ` – ${formatDate(report.productivityEnd)}` : ""}</span>
       </div>
+    </section>
+
+    <section className="report-kpi-grid" aria-label="Report highlights">
+      <div><strong>{number(labourHours(report.weeklyEvents.map(({ event }) => event), "work"))}</strong><span>Productive hours</span></div>
+      <div><strong>{number(report.disruptionLostHours)}</strong><span>Disruption hours</span></div>
+      <div><strong>{number(labourHours(report.weeklyEvents.map(({ event }) => event), "variation"))}</strong><span>VO / change hours</span></div>
+      <div><strong>{number(report.weeklyAttendanceHours)}</strong><span>Attendance hours</span></div>
     </section>
 
     {days.length === 0 && <div style={{ padding: 22, marginBottom: 30, border: "1px dashed #9aa6b2", borderRadius: 14, background: "#fff" }}><strong>Enter or backdate daily records for this week to populate the report.</strong><p style={{ marginBottom: 0 }}>Use the date selector above to review another week, or the global date selector to enter historical daily records.</p></div>}
