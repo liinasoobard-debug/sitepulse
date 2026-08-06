@@ -12,6 +12,15 @@ export default function HomePage() {
         </header>
 
         <div style={{ display: "grid", gap: 14 }}>
+          <Link href="/dashboard" className="attendance-card">
+            <span className="attendance-card-icon">▦</span>
+            <span className="attendance-card-content">
+              <strong>Production Dashboard</strong>
+              <span>Planned output, productivity and blockers</span>
+            </span>
+            <span className="attendance-card-arrow">›</span>
+          </Link>
+
           <Link href="/attendance" className="attendance-card">
             <span className="attendance-card-icon">👷</span>
             <span className="attendance-card-content">
