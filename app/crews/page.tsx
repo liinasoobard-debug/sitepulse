@@ -408,6 +408,7 @@ export default function CrewsPage() {
         )}
 
         <div
+          className="gang-list"
           style={{
             display: "grid",
             gap: 16,

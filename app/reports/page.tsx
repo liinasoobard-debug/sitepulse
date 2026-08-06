@@ -322,10 +322,10 @@ export default function ReportsPage() {
 
   return <main className="timeline-page"><section className="timeline-panel">
     <header className="timeline-header"><div><p className="eyebrow">Production reporting</p><h1>Weekly Production Report</h1><p style={{ marginBottom: 0, color: "#5f6b76" }}>{project?.name ?? "Project"}</p></div><button type="button" className="secondary-button" onClick={exportExcel}>Export Excel</button></header>
-    <section style={{ padding: 18, marginBottom: 30, border: "1px solid #d7dde3", borderRadius: 14, background: "#f7f9fa" }}>
+    <section className="report-controls" style={{ padding: 18, marginBottom: 30, border: "1px solid #d7dde3", borderRadius: 14, background: "#f7f9fa" }}>
       <label style={{ display: "grid", gap: 6, maxWidth: 260, fontWeight: 800 }}>Week commencing<input type="date" value={weekStart} onChange={(event) => setWeekStart(mondayFor(event.target.value))} style={{ minHeight: 42, padding: "8px 10px" }} /></label>
       <h2 style={{ marginBottom: 4 }}>Week commencing {formatDate(weekStart)}</h2><p style={{ margin: 0 }}>{formatDate(weekStart)} – {formatDate(report.weekEnd)}</p>
-      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="report-period-controls" style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
         <strong>Productivity period:</strong>
         {(["daily", "weekly", "monthly", "yearly"] as const).map((period) => <button key={period} type="button" className={`attendance-filter-button${productivityPeriod === period ? " active" : ""}`} onClick={() => setProductivityPeriod(period)}>{period[0].toUpperCase() + period.slice(1)}</button>)}
         {productivityPeriod !== "weekly" && <input type="date" value={productivityDate} onChange={(event) => setProductivityDate(event.target.value)} aria-label="Productivity report date" />}

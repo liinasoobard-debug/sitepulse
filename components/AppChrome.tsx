@@ -9,5 +9,5 @@ import SharedDataSync from "@/components/SharedDataSync";
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const isLogin = usePathname() === "/login";
   if (isLogin) return children;
-  return <SharedDataSync><ProjectSelector /> <DateSelector /> {children} <BottomNav /></SharedDataSync>;
+  return <SharedDataSync><div className="context-controls"><ProjectSelector /><DateSelector /></div>{children}<BottomNav /></SharedDataSync>;
 }
