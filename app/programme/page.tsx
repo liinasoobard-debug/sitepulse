@@ -302,10 +302,10 @@ export default function ProgrammePage() {
         <section style={{ padding: 20, border: "1px solid #d7dde3", borderRadius: 18, marginBottom: 20, background: "#f7f9fa" }}>
           <div className="programme-import-heading"><div><h2>Import Programme</h2><p>Choose a source. Every workbook is validated and mapped into the same SitePulse programme model before publication.</p></div><div><strong>Programme Source</strong><span>{publishedSource ? sourceLabels[publishedSource] ?? String(publishedImport?.source_type) : "No published programme"}</span>{publishedImport?.imported_at ? <small>Last import: {new Date(String(publishedImport.imported_at)).toLocaleString("en-GB")}</small> : null}</div></div>
 
-          {canManage ? (
-            <div style={{ display: "grid", gap: 16 }}>
+          <div style={{ display: "grid", gap: 16 }}>
               <fieldset className="programme-source-picker"><legend>Choose Source</legend>{(Object.entries(sourceLabels) as Array<[ImportSource, string]>).map(([value, label]) => <label key={value}><input type="radio" name="programme-source" value={value} checked={importSource === value} onChange={() => { setImportSource(value); cancelImport(); }} /><span>{label}</span></label>)}{["Primavera XML", "Primavera XER", "Microsoft Project XML", "Synchro", "API integrations"].map((label) => <label className="coming-soon" key={label}><input type="radio" disabled /><span>{label} <small>Coming Soon</small></span></label>)}</fieldset>
               <div className="programme-template-actions"><a className="secondary-button" href="/api/programme/template">Export SitePulse Template</a><span>{importSource === "p6-xlsx" ? "Requires TASK; TASKPRED, RSRC and TASKRSRC are supported." : importSource === "asta-xlsx" ? "Use an Asta activity or task export with visible column headings." : "Use the official SitePulse workbook. Budget hours or production rate will calculate the other value."}</span></div>
+              {!canManage && <p style={{ margin: 0, fontWeight: 700 }}>You can view the upload formats and download the template. Planner or Admin access is required to review and publish a programme.</p>}
               <label className="attendance-field" style={{ maxWidth: 360 }}>
                 <span>Single building value (optional)</span>
                 <input value={buildingDefault} onChange={(event) => setBuildingDefault(event.target.value)} placeholder="e.g. HBX" />
@@ -318,13 +318,13 @@ export default function ProgrammePage() {
                     ref={fileInputRef}
                     type="file"
                     accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    disabled={busy}
+                    disabled={busy || !canManage}
                     onChange={(event) => selectWorkbook(event.target.files?.[0])}
                     style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
                     aria-label={`Select ${sourceLabels[importSource]}`}
                   />
                 </label>
-                <button type="button" className="secondary-button" style={touchButtonStyle} disabled={!selectedFile || busy} onClick={() => void reviewImport()}>
+                <button type="button" className="secondary-button" style={touchButtonStyle} disabled={!canManage || !selectedFile || busy} onClick={() => void reviewImport()}>
                   {busy && selectedFile && !preview ? "Reviewing…" : "Review Import"}
                 </button>
                 <button type="button" className="add-event-button" style={{ ...touchButtonStyle, width: "auto" }} disabled={!canManage || busy || preview?.status !== "draft" || !preview.importId} onClick={() => preview && void publish(preview.importId)}>
@@ -337,10 +337,7 @@ export default function ProgrammePage() {
               <p style={{ margin: 0, fontWeight: 700 }}>
                 {selectedFile ? `Selected workbook: ${selectedFile.name}` : "No workbook selected."}
               </p>
-            </div>
-          ) : (
-            <p style={{ fontWeight: 700 }}>Published programme access is read-only for Site Team users. Planner or Admin access is required to import.</p>
-          )}
+          </div>
 
           {preview && (
             <section style={{ marginTop: 20, padding: 18, border: "1px solid #cbd5df", borderRadius: 14, background: "white" }} aria-live="polite">
