@@ -70,6 +70,8 @@ export interface ProgrammeActivity {
   description?: string;
 
   trade?: string;
+  productType?: string;
+  status?: string;
 
   wbs?: string;
   activityStatus?: string;
@@ -97,8 +99,11 @@ export interface ProgrammeActivity {
   calendar?: string;
   resourceNames?: string[];
   dataDate?: string;
-  sourceType?: "p6-xlsx" | "manual";
+  sourceType?: "sitepulse-template" | "p6-xlsx" | "asta-xlsx" | "manual";
   sourceImportId?: string;
+  sourceFilename?: string;
+  importDate?: string;
+  importedBy?: string;
   missingFromLatestUpdate?: boolean;
   productivityBaselineComplete?: boolean;
 

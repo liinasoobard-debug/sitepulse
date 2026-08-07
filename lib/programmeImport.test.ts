@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyProgramme, parseP6Workbook, type WorkbookSheets } from "./programmeImport.ts";
+import { parseAstaWorkbook, parseSitePulseTemplate } from "./programmeImportAdapters.ts";
 
 const mapping = { building: "Building", elevation: "Elevation", level: "Level", gridline: "Gridline", workActivity: "Activity Name" };
 
@@ -106,4 +107,27 @@ test("uses P6 row-two descriptions while mapping machine-key hierarchy columns",
 test("applies one confirmed building value to every imported row", () => {
   const result = parseP6Workbook(fixture(), "project", "import", { ...mapping, building: "__constant__:HBX" });
   assert.ok(result.activities.every((activity) => activity.building === "HBX"));
+});
+
+test("SitePulse template calculates interchangeable productivity baseline fields", () => {
+  const result = parseSitePulseTemplate({ "SitePulse Programme": [{ "Programme Activity ID": "SP-1", Building: "B1", Elevation: "East", Level: "02", Activity: "Install glazing", "Product Type": "CW Stick Glazing", Unit: "m2", "Planned Quantity": 120, "Planned Start": "2026-08-10", "Planned Finish": "2026-08-21", "Budget Labour Hours": 60 }] }, "project", "import");
+  assert.equal(result.issues.filter((issue) => issue.severity === "error").length, 0);
+  assert.equal(result.activities[0].plannedProductionRate, 2);
+  assert.equal(result.activities[0].budgetLabourHours, 60);
+  assert.equal(result.activities[0].productType, "CW Stick Glazing");
+  assert.equal(result.activities[0].sourceType, "sitepulse-template");
+});
+
+test("Asta and SitePulse sources map equivalent rows into the same canonical fields", () => {
+  const standard = parseSitePulseTemplate({ Programme: [{ "Programme Activity ID": "A-1", Building: "B1", Elevation: "West", Level: "03", Activity: "Install panels", "Product Type": "Composite Panels", Unit: "m2", "Planned Quantity": 80, "Planned Start": "2026-08-10", "Planned Finish": "2026-08-20", "Planned Production Rate": 4, Trade: "Facades", Status: "Not Started" }] }, "project", "one").activities[0];
+  const asta = parseAstaWorkbook({ Activities: [{ "Task ID": "A-1", Building: "B1", Area: "West", Floor: "03", "Task Name": "Install panels", Product: "Composite Panels", UOM: "m2", Quantity: 80, Start: "2026-08-10", Finish: "2026-08-20", "Production Rate": 4, Trade: "Facades", Status: "Not Started" }] }, "project", "two").activities[0];
+  const canonical = (activity: typeof standard) => ({ programmeActivityId: activity.programmeActivityId, building: activity.building, elevation: activity.elevation, level: activity.level, activity: activity.activity, productType: activity.productType, unit: activity.unit, plannedQuantity: activity.plannedQuantity, plannedStart: activity.plannedStart, plannedFinish: activity.plannedFinish, plannedProductionRate: activity.plannedProductionRate, budgetLabourHours: activity.budgetLabourHours, trade: activity.trade, status: activity.status });
+  assert.deepEqual(canonical(asta), canonical(standard));
+});
+
+test("standard template returns row-level hierarchy and baseline validation", () => {
+  const result = parseSitePulseTemplate({ Programme: [{ "Programme Activity ID": "SP-2", Activity: "Incomplete" }] }, "project", "import");
+  assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Building")));
+  assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Product Type")));
+  assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Productivity Baseline Incomplete")));
 });

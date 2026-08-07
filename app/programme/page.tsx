@@ -31,6 +31,9 @@ type ImportPreview = {
   issues: ImportIssue[];
 };
 
+type ImportSource = "sitepulse-template" | "p6-xlsx" | "asta-xlsx";
+const sourceLabels: Record<ImportSource, string> = { "sitepulse-template": "SitePulse Standard Template", "p6-xlsx": "Primavera P6 Export", "asta-xlsx": "Asta Powerproject Export" };
+
 const activityTypeKeywords: Record<string, string[]> = {
   design: ["design", "drawing", "engineering"],
   install: ["install", "installation", "erection"],
@@ -67,6 +70,7 @@ export default function ProgrammePage() {
   const [error, setError] = useState("");
   const [buildingDefault, setBuildingDefault] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importSource, setImportSource] = useState<ImportSource>("sitepulse-template");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({
@@ -144,6 +148,7 @@ export default function ProgrammePage() {
       form.set("file", selectedFile, selectedFile.name);
       form.set("projectId", getActiveProjectId());
       form.set("building", buildingDefault);
+      form.set("sourceType", importSource);
       const response = await fetch("/api/programme/import", {
         method: "POST",
         body: form,
@@ -251,6 +256,8 @@ export default function ProgrammePage() {
     }),
     [activities]
   );
+  const publishedImport = imports.find((row) => row.status === "published");
+  const publishedSource = publishedImport?.source_type as ImportSource | undefined;
 
   const filtered = useMemo(
     () =>
@@ -293,11 +300,12 @@ export default function ProgrammePage() {
         </header>
 
         <section style={{ padding: 20, border: "1px solid #d7dde3", borderRadius: 18, marginBottom: 20, background: "#f7f9fa" }}>
-          <h2>Import P6 Workbook</h2>
-          <p>Select an Excel export containing TASK, TASKPRED, RSRC and TASKRSRC sheets. The workbook is validated before publication.</p>
+          <div className="programme-import-heading"><div><h2>Import Programme</h2><p>Choose a source. Every workbook is validated and mapped into the same SitePulse programme model before publication.</p></div><div><strong>Programme Source</strong><span>{publishedSource ? sourceLabels[publishedSource] ?? String(publishedImport?.source_type) : "No published programme"}</span>{publishedImport?.imported_at ? <small>Last import: {new Date(String(publishedImport.imported_at)).toLocaleString("en-GB")}</small> : null}</div></div>
 
           {canManage ? (
             <div style={{ display: "grid", gap: 16 }}>
+              <fieldset className="programme-source-picker"><legend>Choose Source</legend>{(Object.entries(sourceLabels) as Array<[ImportSource, string]>).map(([value, label]) => <label key={value}><input type="radio" name="programme-source" value={value} checked={importSource === value} onChange={() => { setImportSource(value); cancelImport(); }} /><span>{label}</span></label>)}{["Primavera XML", "Primavera XER", "Microsoft Project XML", "Synchro", "API integrations"].map((label) => <label className="coming-soon" key={label}><input type="radio" disabled /><span>{label} <small>Coming Soon</small></span></label>)}</fieldset>
+              <div className="programme-template-actions"><a className="secondary-button" href="/api/programme/template">Export SitePulse Template</a><span>{importSource === "p6-xlsx" ? "Requires TASK; TASKPRED, RSRC and TASKRSRC are supported." : importSource === "asta-xlsx" ? "Use an Asta activity or task export with visible column headings." : "Use the official SitePulse workbook. Budget hours or production rate will calculate the other value."}</span></div>
               <label className="attendance-field" style={{ maxWidth: 360 }}>
                 <span>Single building value (optional)</span>
                 <input value={buildingDefault} onChange={(event) => setBuildingDefault(event.target.value)} placeholder="e.g. HBX" />
@@ -305,7 +313,7 @@ export default function ProgrammePage() {
 
               <div className="programme-import-actions" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
                 <label className="add-event-button" style={{ ...touchButtonStyle, display: "inline-flex", position: "relative", cursor: busy ? "not-allowed" : "pointer" }}>
-                  Select P6 Workbook
+                  Select {sourceLabels[importSource]}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -313,7 +321,7 @@ export default function ProgrammePage() {
                     disabled={busy}
                     onChange={(event) => selectWorkbook(event.target.files?.[0])}
                     style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
-                    aria-label="Select P6 Workbook"
+                    aria-label={`Select ${sourceLabels[importSource]}`}
                   />
                 </label>
                 <button type="button" className="secondary-button" style={touchButtonStyle} disabled={!selectedFile || busy} onClick={() => void reviewImport()}>
@@ -377,11 +385,12 @@ export default function ProgrammePage() {
           <h3>Import history</h3>
           <div style={{ overflowX: "auto" }}>
             <table className="programme-grid" style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><th>Version</th><th>Filename</th><th>Status</th><th>Imported</th><th>Activities</th><th></th></tr></thead>
+              <thead><tr><th>Version</th><th>Source</th><th>Filename</th><th>Status</th><th>Imported</th><th>Activities</th><th></th></tr></thead>
               <tbody>
                 {imports.map((row) => (
                   <tr key={String(row.id)}>
                     <td>{String(row.import_version)}</td>
+                    <td>{sourceLabels[row.source_type as ImportSource] ?? String(row.source_type)}</td>
                     <td>{String(row.source_filename)}</td>
                     <td>{String(row.status)}</td>
                     <td>{new Date(String(row.imported_at)).toLocaleString("en-GB")}</td>
@@ -426,12 +435,12 @@ export default function ProgrammePage() {
 
         <div className="programme-desktop-table" style={{ overflowX: "auto" }}>
           <table className="programme-grid" style={{ width: "100%", minWidth: 1650, borderCollapse: "collapse" }}>
-            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity", "Actual Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Product Type", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity", "Actual Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
               {filtered.map((item) => (
                 <tr key={item.id}>
                   <td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td>
-                  <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small></td>
+                  <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small></td><td>{item.productType || "—"}</td>
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
                   <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.plannedCrewSize)}</td>
                   <td>{item.plannedProductionRate ? <>{formatNumber(item.plannedProductionRate)} {item.unit}/labour hr{item.plannedCrewSize ? <small style={{ display: "block" }}>Crew output: {formatNumber(item.plannedProductionRate * item.plannedCrewSize)} {item.unit}/hr</small> : null}{canManage && <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedProductionRate ?? "")); setCrewSize(String(item.plannedCrewSize ?? "")); }}>Edit baseline</button>}</> : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); setCrewSize(String(item.plannedCrewSize ?? "")); }}>Complete baseline</button> : "Productivity target incomplete"}</td>
@@ -454,6 +463,7 @@ export default function ProgrammePage() {
                 <div><dt>Elevation</dt><dd>{item.elevation || "—"}</dd></div>
                 <div><dt>Level</dt><dd>{item.level || "—"}</dd></div>
                 <div><dt>Planned quantity</dt><dd>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</dd></div>
+                <div><dt>Product type</dt><dd>{item.productType || "—"}</dd></div>
               </dl>
               <details>
                 <summary>Activity details</summary>
