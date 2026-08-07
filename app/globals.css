@@ -2219,7 +2219,8 @@ h1 {
   font-size: 13px;
 }
 
-.programme-template-actions .secondary-button { flex: 0 0 auto; text-decoration: none; }
+.programme-template-actions .secondary-button,
+.programme-template-actions .add-event-button { flex: 0 0 auto; text-decoration: none; }
 
 @media (max-width: 760px) {
   .programme-import-heading { display: grid; }
