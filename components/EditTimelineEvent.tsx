@@ -5,10 +5,11 @@ import type { ProgrammeActivity, TimelineEvent } from "@/types/site";
 
 type Props = {
   event: TimelineEvent;
+  date: string;
   activity?: ProgrammeActivity;
   canEditProgramme: boolean;
   onCancel: () => void;
-  onSave: (event: TimelineEvent) => void | Promise<void>;
+  onSave: (event: TimelineEvent, date: string) => void | Promise<void>;
 };
 
 function durationMinutes(start: string, finish: string): number {
@@ -20,7 +21,8 @@ function durationMinutes(start: string, finish: string): number {
   return Math.max(0, finishValue - startValue);
 }
 
-export default function EditTimelineEvent({ event, activity, canEditProgramme, onCancel, onSave }: Props) {
+export default function EditTimelineEvent({ event, date, activity, canEditProgramme, onCancel, onSave }: Props) {
+  const [eventDate, setEventDate] = useState(date);
   const [title, setTitle] = useState(event.title);
   const [startTime, setStartTime] = useState(event.startTime ?? event.time);
   const [finishTime, setFinishTime] = useState(event.finishTime ?? event.startTime ?? event.time);
@@ -34,12 +36,12 @@ export default function EditTimelineEvent({ event, activity, canEditProgramme, o
   async function save() {
     const numericQuantity = quantity.trim() ? Number(quantity) : undefined;
     const numericPercent = percentComplete.trim() ? Number(percentComplete) : undefined;
-    if (!title.trim() || !startTime || !finishTime) return setError("Enter a title, start time and finish time.");
+    if (!eventDate || !title.trim() || !startTime || !finishTime) return setError("Enter a date, title, start time and finish time.");
     if (numericQuantity !== undefined && (!Number.isFinite(numericQuantity) || numericQuantity < 0)) return setError("Enter a valid quantity.");
     if (numericPercent !== undefined && (!Number.isFinite(numericPercent) || numericPercent < 0 || numericPercent > 100)) return setError("Enter a percentage between 0 and 100.");
     setPending(true);
     try {
-      await onSave({ ...event, title: title.trim(), time: startTime, startTime, finishTime, duration: durationMinutes(startTime, finishTime), quantity: numericQuantity, percentComplete: numericPercent, notes: notes.trim() || undefined, status });
+      await onSave({ ...event, title: title.trim(), time: startTime, startTime, finishTime, duration: durationMinutes(startTime, finishTime), quantity: numericQuantity, percentComplete: numericPercent, notes: notes.trim() || undefined, status }, eventDate);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to update the timeline record.");
       setPending(false);
@@ -48,6 +50,7 @@ export default function EditTimelineEvent({ event, activity, canEditProgramme, o
 
   return <section className="site-record-modal">
     <div className="site-record-modal-header"><div><p className="eyebrow">Edit timeline record</p><h2>{event.title}</h2></div><button type="button" className="site-record-close" onClick={onCancel} aria-label="Close">×</button></div>
+    <label className="attendance-field"><span>Date</span><input type="date" value={eventDate} onChange={(change) => setEventDate(change.target.value)} /></label>
     <label className="attendance-field"><span>Title</span><input value={title} onChange={(change) => setTitle(change.target.value)} readOnly={Boolean(activity)} /></label>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
       <label className="attendance-field"><span>Start time</span><input type="time" value={startTime} onChange={(change) => setStartTime(change.target.value)} /></label>

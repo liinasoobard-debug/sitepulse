@@ -179,14 +179,16 @@ export default function TimelinePage() {
     setShowModal(false);
   }
 
-  async function saveTimelineEdit(updatedEvent: TimelineEvent) {
+  async function saveTimelineEdit(updatedEvent: TimelineEvent, date: string) {
     const activity = getActivity(updatedEvent.programmeActivityId);
     if (activity && canEditProgramme && typeof updatedEvent.percentComplete === "number" && updatedEvent.percentComplete !== activity.physicalPercentComplete) {
       await updateProgrammeProgress(activity.id, updatedEvent.percentComplete);
       setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: updatedEvent.percentComplete } : item));
     }
-    const saved = await updateTimelineEvent(updatedEvent);
-    setEvents((current) => current.map((event) => event.id === saved.id ? saved : event).sort((a, b) => a.time.localeCompare(b.time)));
+    const saved = await updateTimelineEvent(updatedEvent, date);
+    setEvents((current) => date === getActiveDate()
+      ? current.map((event) => event.id === saved.id ? saved : event).sort((a, b) => a.time.localeCompare(b.time))
+      : current.filter((event) => event.id !== saved.id));
     setEditingEvent(null);
   }
 
@@ -463,7 +465,7 @@ export default function TimelinePage() {
             canEditProgramme={canEditProgramme}
           />
         )}
-        {editingEvent && <EditTimelineEvent event={editingEvent} activity={getActivity(editingEvent.programmeActivityId) ?? undefined} canEditProgramme={canEditProgramme} onCancel={() => setEditingEvent(null)} onSave={saveTimelineEdit} />}
+        {editingEvent && <EditTimelineEvent event={editingEvent} date={getActiveDate()} activity={getActivity(editingEvent.programmeActivityId) ?? undefined} canEditProgramme={canEditProgramme} onCancel={() => setEditingEvent(null)} onSave={saveTimelineEdit} />}
       </section>
     </main>
   );

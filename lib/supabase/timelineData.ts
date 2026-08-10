@@ -28,13 +28,14 @@ export async function createTimelineEvent(projectId: string, date: string, event
   created.percentComplete = event.percentComplete;
   return created;
 }
-export async function updateTimelineEvent(event: TimelineEvent): Promise<TimelineEvent> {
+export async function updateTimelineEvent(event: TimelineEvent, date?: string): Promise<TimelineEvent> {
   const supabase = createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) throw new Error("You must be signed in.");
   const operativeCount = event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? 0;
   const durationHours = (event.duration ?? 0) / 60;
   const { data, error } = await supabase.from("timeline_events").update({
+    ...(date ? { event_date: date } : {}),
     activity_name_snapshot: event.title,
     start_time: event.startTime || event.time,
     finish_time: event.finishTime || null,
