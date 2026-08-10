@@ -9,11 +9,18 @@ const hierarchyLabels: Record<HierarchyField,string>={building:"Building",elevat
 async function insertBatches(supabase: Awaited<ReturnType<typeof createClient>>, table: string, rows: Record<string,unknown>[]) { for(let i=0;i<rows.length;i+=400){const {error}=await supabase.from(table).insert(rows.slice(i,i+400));if(error)throw new Error(`${table}: ${error.message}`);} }
 
 export async function POST(request: Request) {
-  const supabase = await createClient(); const {data:{user}}=await supabase.auth.getUser();
+  const supabase = await createClient(); const {data:{user},error:authError}=await supabase.auth.getUser();
+  if(authError){console.error("Programme import auth lookup failed",{message:authError.message});return NextResponse.json({error:"Unable to verify the authenticated user."},{status:401});}
   if(!user)return NextResponse.json({error:"Authentication required."},{status:401});
   const form=await request.formData(); const file=form.get("file"); const projectId=String(form.get("projectId")??""); const building=String(form.get("building")??"").trim(); const sourceType=String(form.get("sourceType")??"p6-xlsx") as ProgrammeImportSource;
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)){console.warn("Programme import rejected invalid project ID",{userId:user.id,projectId});return NextResponse.json({error:"The selected project ID is invalid. Select a project created by SitePulse and try again.",diagnostic:{userId:user.id,projectId,membership:null}},{status:400});}
   if(!(file instanceof File)||!file.name.toLowerCase().endsWith(".xlsx"))return NextResponse.json({error:"Select a valid .xlsx workbook."},{status:400});
   if(!["sitepulse-template","p6-xlsx","asta-xlsx"].includes(sourceType))return NextResponse.json({error:"Select a supported programme source."},{status:400});
+  const {data:membership,error:membershipError}=await supabase.from("sitepulse_project_members").select("project_id,user_id,role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle();
+  console.info("Programme import authorization",{userId:user.id,projectId,membership,membershipError:membershipError?.message??null});
+  if(membershipError)return NextResponse.json({error:`Unable to verify project membership: ${membershipError.message}`,diagnostic:{userId:user.id,projectId,membership:null}},{status:500});
+  if(!membership)return NextResponse.json({error:"Your authenticated user has no membership for the selected project. Ask a Project Admin to add this user to sitepulse_project_members.",diagnostic:{userId:user.id,projectId,membership:null}},{status:403});
+  if(!["planner","admin"].includes(membership.role))return NextResponse.json({error:`Programme imports require the Admin or Planner role. Current role: ${membership.role}.`,diagnostic:{userId:user.id,projectId,membership}},{status:403});
   const {data:last}=await supabase.from("programme_imports").select("import_version").eq("project_id",projectId).order("import_version",{ascending:false}).limit(1).maybeSingle();
   const {data:published}=await supabase.from("programme_imports").select("id").eq("project_id",projectId).eq("status","published").maybeSingle();
   let knownIds:string[]=[]; let previousActivities:Record<string,unknown>[]=[]; if(published){const {data}=await supabase.from("programme_activities").select("*").eq("programme_import_id",published.id);previousActivities=(data??[]) as Record<string,unknown>[];knownIds=previousActivities.map(x=>String(x.external_activity_id));}

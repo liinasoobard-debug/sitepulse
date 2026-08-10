@@ -73,7 +73,21 @@ export async function loadActualProductivity(projectId: string): Promise<Record<
     )
   );
 }
-export async function loadProjectRole(projectId:string):Promise<"planner"|"admin"|"site_team"|undefined>{void projectId;return "admin";}
+export async function loadProjectRole(projectId: string): Promise<"planner" | "admin" | "site_team" | undefined> {
+  const supabase = createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError) throw authError;
+  if (!user) return undefined;
+  const { data, error } = await supabase
+    .from("sitepulse_project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (error) throw error;
+  console.info("Programme project authorization", { userId: user.id, projectId, membership: data });
+  return data?.role as "planner" | "admin" | "site_team" | undefined;
+}
 
 export async function updateProgrammeBaseline(activityId: string, unit: string, productivityTarget: number, plannedCrewSize: number) {
   const { error } = await createClient().from("programme_activities").update({ unit, productivity_target: productivityTarget, planned_crew_size: plannedCrewSize, updated_at: new Date().toISOString() }).eq("id", activityId);
