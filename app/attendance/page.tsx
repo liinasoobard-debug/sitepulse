@@ -8,6 +8,7 @@ import {
   deleteOperative,
   loadDay,
   loadAllSiteDays,
+  loadSiteDay,
   loadOperatives,
   getActiveProject,
   getActiveDate,
@@ -132,6 +133,9 @@ export default function AttendancePage() {
   const [copySourceDate, setCopySourceDate] = useState("");
   const [attendanceSourceDays, setAttendanceSourceDays] = useState<SiteDay[]>([]);
   const [copyError, setCopyError] = useState("");
+  const [showMoveAttendance, setShowMoveAttendance] = useState(false);
+  const [moveTargetDate, setMoveTargetDate] = useState("");
+  const [moveError, setMoveError] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -265,6 +269,62 @@ export default function AttendancePage() {
     setCopyError("");
     setShowCopyAttendance(false);
     setImportMessage(`Attendance copied from ${new Date(`${source.date}T12:00:00`).toLocaleDateString("en-GB")}.`);
+  }
+
+  function moveAttendanceToDate() {
+    const sourceDate = getActiveDate();
+    if (!moveTargetDate) {
+      setMoveError("Select the correct date.");
+      return;
+    }
+    if (moveTargetDate === sourceDate) {
+      setMoveError("Select a different date.");
+      return;
+    }
+
+    const sourceDay = loadDay();
+    if (!sourceDay || (sourceDay.attendance.length === 0 && (sourceDay.crews?.length ?? 0) === 0)) {
+      setMoveError("There is no attendance or gang setup to move from this date.");
+      return;
+    }
+
+    const destinationDay = loadSiteDay(moveTargetDate) ?? {
+      date: moveTargetDate,
+      attendance: [],
+      crews: [],
+      events: [],
+    };
+    const destinationHasData = destinationDay.attendance.length > 0 || (destinationDay.crews?.length ?? 0) > 0;
+    if (destinationHasData && !window.confirm("The destination date already has attendance or gangs. Merge the moved records into that date?")) return;
+
+    const mergedAttendance = new Map(
+      destinationDay.attendance.map((record) => [String(record.operativeId), record])
+    );
+    sourceDay.attendance.forEach((record) => mergedAttendance.set(String(record.operativeId), record));
+
+    const movedOperativeIds = new Set(
+      (sourceDay.crews ?? []).flatMap((crew) => crew.operativeIds.map(String))
+    );
+    const mergedCrews = new Map(
+      (destinationDay.crews ?? []).map((crew) => [String(crew.id), {
+        ...crew,
+        operativeIds: crew.operativeIds.filter((operativeId) => !movedOperativeIds.has(String(operativeId))),
+      }])
+    );
+    (sourceDay.crews ?? []).forEach((crew) => mergedCrews.set(String(crew.id), crew));
+
+    saveDay({
+      ...destinationDay,
+      date: moveTargetDate,
+      attendance: [...mergedAttendance.values()],
+      crews: [...mergedCrews.values()],
+    });
+    saveDay({ ...sourceDay, attendance: [], crews: [] });
+    setAttendance([]);
+    setShowMoveAttendance(false);
+    setMoveTargetDate("");
+    setMoveError("");
+    setImportMessage(`Attendance and gangs moved to ${new Date(`${moveTargetDate}T12:00:00`).toLocaleDateString("en-GB")}.`);
   }
 
   function closeAddPersonForm() {
@@ -611,6 +671,14 @@ export default function AttendancePage() {
             <button
               type="button"
               className="secondary-button"
+              onClick={() => { setShowMoveAttendance((current) => !current); setMoveError(""); }}
+            >
+              Move attendance…
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
               onClick={() => fileInputRef.current?.click()}
             >
               Import Excel
@@ -676,6 +744,19 @@ export default function AttendancePage() {
             <button type="button" className="secondary-button" onClick={() => setShowCopyAttendance(false)}>Cancel</button>
             {attendanceSourceDays.length === 0 && <p style={{ flexBasis: "100%", margin: 0, color: "#5f6b76" }}>No other dates have recorded attendance.</p>}
             {copyError && <p role="alert" style={{ flexBasis: "100%", margin: 0, color: "#b42318", fontWeight: 700 }}>{copyError}</p>}
+          </section>
+        )}
+
+        {showMoveAttendance && (
+          <section style={{ display: "flex", alignItems: "end", gap: 12, marginBottom: 24, padding: 16, border: "1px solid #d7dde3", borderRadius: 8, background: "#f7f9fa", flexWrap: "wrap" }}>
+            <label className="attendance-field" style={{ minWidth: 260, flex: "1 1 280px" }}>
+              <span>Move attendance and gangs to</span>
+              <input type="date" value={moveTargetDate} onChange={(event) => { setMoveTargetDate(event.target.value); setMoveError(""); }} />
+            </label>
+            <button type="button" className="primary-button" style={{ width: "auto", minHeight: 42, marginTop: 0, padding: "9px 18px" }} disabled={!moveTargetDate} onClick={moveAttendanceToDate}>Move to date</button>
+            <button type="button" className="secondary-button" onClick={() => { setShowMoveAttendance(false); setMoveError(""); }}>Cancel</button>
+            <p style={{ flexBasis: "100%", margin: 0, color: "#5f6b76" }}>This moves all attendance and gang assignments from the selected Timeline date. Site records remain unchanged.</p>
+            {moveError && <p role="alert" style={{ flexBasis: "100%", margin: 0, color: "#b42318", fontWeight: 700 }}>{moveError}</p>}
           </section>
         )}
 
