@@ -12,6 +12,14 @@ type Props = {
   onSave: (event: TimelineEvent, date: string) => void | Promise<void>;
 };
 
+function errorMessage(caught: unknown): string {
+  if (caught instanceof Error) return caught.message;
+  if (caught && typeof caught === "object" && "message" in caught && typeof caught.message === "string") {
+    return caught.message;
+  }
+  return "Unable to update the timeline record.";
+}
+
 function durationMinutes(start: string, finish: string): number {
   const [startHour, startMinute] = start.split(":").map(Number);
   const [finishHour, finishMinute] = finish.split(":").map(Number);
@@ -40,7 +48,7 @@ export default function EditTimelineEvent({ event, date, activity, onCancel, onS
     try {
       await onSave({ ...event, title: title.trim(), time: startTime, startTime, finishTime, duration: durationMinutes(startTime, finishTime), quantity: numericQuantity, notes: notes.trim() || undefined, status }, eventDate);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to update the timeline record.");
+      setError(errorMessage(caught));
       setPending(false);
     }
   }
