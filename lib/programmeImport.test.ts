@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyProgramme, parseP6Workbook, type WorkbookSheets } from "./programmeImport.ts";
+import { classifyProgramme, hierarchyFromActivityDescription, parseP6Workbook, type WorkbookSheets } from "./programmeImport.ts";
 import { parseAstaWorkbook, parseSitePulseTemplate } from "./programmeImportAdapters.ts";
 
 const mapping = { building: "Building", elevation: "Elevation", level: "Level", gridline: "Gridline", workActivity: "Activity Name" };
@@ -76,6 +76,26 @@ test("imports activities with incomplete productivity baselines", () => {
   assert.equal(result.activities.find((item) => item.programmeActivityId === "A1000")?.plannedProductionRate, 2);
 });
 
+test("derives the activity baseline from P6 labour and material assignments", () => {
+  const sheets = fixture();
+  sheets.TASK[1] = { task_id: "1", task_code: "A1000", task_name: "Install panels", target_drtn_hr_cnt: 40 };
+  sheets.RSRC = [
+    { rsrc_id: "10", rsrc_short_name: "LAB-01", rsrc_name: "Facade gang", rsrc_type: "RT_Labor", unit: "h" },
+    { rsrc_id: "11", rsrc_short_name: "MAT-01", rsrc_name: "Panels", rsrc_type: "RT_Mat", unit: "m²" },
+  ];
+  sheets.TASKRSRC = [
+    { task_id: "1", rsrc_id: "10", target_qty: 160 },
+    { task_id: "1", rsrc_id: "11", target_qty: 75 },
+  ];
+  const activity = parseP6Workbook(sheets, "project", "import", mapping).activities[0];
+  assert.equal(activity.plannedQuantity, 75);
+  assert.equal(activity.unit, "m²");
+  assert.equal(activity.budgetLabourHours, 160);
+  assert.equal(activity.plannedCrewSize, 4);
+  assert.equal(activity.plannedProductionRate, 75 / 160);
+  assert.equal(activity.productivityBaselineComplete, true);
+});
+
 test("programme comparison is isolated from SitePulse actual records", () => {
   const activities = parseP6Workbook(fixture(), "project", "first", mapping).activities;
   const siteActuals = [{ id: "event-1", programmeActivityId: "A1000", quantity: 12 }];
@@ -102,6 +122,22 @@ test("uses P6 row-two descriptions while mapping machine-key hierarchy columns",
   assert.equal(result.columnLabels.actv_code_elevation_id, "ALUMET - ELEVATION");
   assert.equal(result.activities[0].elevation, "EAST");
   assert.equal(result.activities[0].level, "L20");
+});
+
+test("extracts hierarchy and product type from a structured activity description", () => {
+  assert.deepEqual(hierarchyFromActivityDescription("North, L01 - Install - CW Wall"), {
+    elevation: "North",
+    level: "L01",
+    workActivity: "Install",
+    productType: "CW Wall",
+  });
+  const sheets = fixture();
+  sheets.TASK[1] = { task_id: "1", task_code: "A1000", task_name: "North, L01 - Install - CW Wall" };
+  const activity = parseP6Workbook(sheets, "project", "import", { ...mapping, elevation: "", level: "", workActivity: "" }).activities[0];
+  assert.equal(activity.elevation, "North");
+  assert.equal(activity.level, "L01");
+  assert.equal(activity.workActivity, "Install");
+  assert.equal(activity.productType, "CW Wall");
 });
 
 test("applies one confirmed building value to every imported row", () => {

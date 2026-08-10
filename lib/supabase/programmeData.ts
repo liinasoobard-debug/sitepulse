@@ -41,19 +41,19 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
   if (!published) return { importId: "", activities: [] };
   const [activityResult, resourceResult, assignmentResult] = await Promise.all([
     supabase.from("programme_activities").select("*").eq("project_id", projectId).eq("programme_import_id", published.id).order("activity_name"),
-    supabase.from("programme_resources").select("external_resource_id,resource_name,resource_type").eq("project_id", projectId).eq("programme_import_id", published.id),
-    supabase.from("programme_assignments").select("activity_external_id,resource_external_id").eq("project_id", projectId).eq("programme_import_id", published.id),
+    supabase.from("programme_resources").select("external_resource_id,resource_name,resource_type,unit").eq("project_id", projectId).eq("programme_import_id", published.id),
+    supabase.from("programme_assignments").select("activity_external_id,resource_external_id,budgeted_units").eq("project_id", projectId).eq("programme_import_id", published.id),
   ]);
   if (activityResult.error) throw activityResult.error;
   if (resourceResult.error) throw resourceResult.error;
   if (assignmentResult.error) throw assignmentResult.error;
-  const resources = new Map((resourceResult.data ?? []).map((row) => [String(row.external_resource_id), { name: String(row.resource_name), type: String(row.resource_type ?? "") }]));
-  const assigned = new Map<string, Array<{ name: string; type: string }>>();
+  const resources = new Map((resourceResult.data ?? []).map((row) => [String(row.external_resource_id), { name: String(row.resource_name), type: String(row.resource_type ?? ""), unit: String(row.unit ?? "") }]));
+  const assigned = new Map<string, Array<{ name: string; type: string; unit: string; budgetedUnits: number }>>();
   for (const row of assignmentResult.data ?? []) {
     const resource = resources.get(String(row.resource_external_id));
     if (!resource) continue;
     const activityId = String(row.activity_external_id);
-    assigned.set(activityId, [...(assigned.get(activityId) ?? []), resource]);
+    assigned.set(activityId, [...(assigned.get(activityId) ?? []), { ...resource, budgetedUnits: Number(row.budgeted_units ?? 0) }]);
   }
   const uniqueNames = (items: Array<{ name: string }>) => [...new Set(items.map((item) => item.name).filter(Boolean))];
   const isMaterial = (type: string) => /mat|material/i.test(type);
@@ -61,11 +61,26 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
   const activities = ((activityResult.data ?? []) as DbActivity[]).map((row) => {
     const activity = programmeActivityFromDb(row, published);
     const activityResources = assigned.get(activity.programmeActivityId) ?? [];
+    const labourResources = activityResources.filter((resource) => isLabour(resource.type));
+    const materialResources = activityResources.filter((resource) => isMaterial(resource.type));
+    const assignedLabourHours = labourResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
+    const assignedMaterialQuantity = materialResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
+    const budgetLabourHours = activity.budgetLabourHours || assignedLabourHours || undefined;
+    const plannedQuantity = activity.plannedQuantity || assignedMaterialQuantity || 0;
+    const unit = activity.unit || materialResources.map((resource) => resource.unit).find(Boolean) || "";
+    const plannedCrewSize = activity.plannedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
+    const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
     return {
       ...activity,
+      plannedQuantity,
+      budgetLabourHours,
+      plannedCrewSize,
+      plannedProductionRate,
+      unit,
+      productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedProductionRate && unit),
       resourceNames: uniqueNames(activityResources),
-      labourResourceNames: uniqueNames(activityResources.filter((resource) => isLabour(resource.type))),
-      materialResourceNames: uniqueNames(activityResources.filter((resource) => isMaterial(resource.type))),
+      labourResourceNames: uniqueNames(labourResources),
+      materialResourceNames: uniqueNames(materialResources),
     };
   });
   return { importId: published.id, activities };

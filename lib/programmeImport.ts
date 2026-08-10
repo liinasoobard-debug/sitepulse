@@ -134,6 +134,16 @@ function mappedHierarchy(row: WorkbookRow, mapping: HierarchyMapping, field: Hie
   return column ? text(row[column]) : "";
 }
 
+export function hierarchyFromActivityDescription(description: string): { elevation: string; level: string; workActivity: string; productType: string } | null {
+  const [elevationPart, ...remainder] = description.split(",");
+  if (!elevationPart || remainder.length === 0) return null;
+  const segments = remainder.join(",").split(" - ").map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length < 3) return null;
+  const [level, workActivity, ...productParts] = segments;
+  if (!/^(?:L(?:EVEL)?\s*)?\d+[A-Z]?$/i.test(level)) return null;
+  return { elevation: elevationPart.trim(), level, workActivity, productType: productParts.join(" - ") };
+}
+
 export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, importId: string, mapping: HierarchyMapping, knownActivityIds: string[] = []): ParsedP6Workbook {
   const taskRows = sheet(sheets, "task");
   const issues: ImportIssue[] = [];
@@ -177,11 +187,14 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     dataDate ??= date(value(row, aliases.dataDate));
     const now = new Date().toISOString();
     const plannedCrewSize = number(value(row, aliases.plannedCrewSize));
-    return [{ id: id("programme-activity"), projectId, programmeActivityId: activityId, activityName, activity: activityName || "Unnamed programme activity", workActivity: mappedHierarchy(row, mapping, "workActivity", wbsPath) || activityName, building: mappedHierarchy(row, mapping, "building", wbsPath), elevation: mappedHierarchy(row, mapping, "elevation", wbsPath), level: mappedHierarchy(row, mapping, "level", wbsPath), gridline: mappedHierarchy(row, mapping, "gridline", wbsPath), wbsCode, wbsPath, wbs: wbsCode, trade: text(value(row, aliases.trade)), productType: text(value(row, aliases.productType)), unit: text(value(row, aliases.unit)), plannedQuantity, budgetLabourHours, plannedProductionRate: calculatedRate ?? suppliedRate, plannedCrewSize, status: text(value(row, aliases.status)), activityStatus: text(value(row, aliases.status)), originalDuration: number(value(row, aliases.originalDuration)), remainingDuration: number(value(row, aliases.remainingDuration)), plannedStart: date(value(row, aliases.plannedStart)), plannedFinish: date(value(row, aliases.plannedFinish)), actualStart: date(value(row, aliases.actualStart)), actualFinish: date(value(row, aliases.actualFinish)), physicalPercentComplete: number(value(row, aliases.percent)), primaryConstraint: text(value(row, aliases.primaryConstraint)), secondaryConstraint: text(value(row, aliases.secondaryConstraint)), calendar: text(value(row, aliases.calendar)), resourceNames: text(value(row, aliases.resourceNames)).split(/[;,]/).map((item) => item.trim()).filter(Boolean), dataDate, sourceType: "p6-xlsx", sourceImportId: importId, missingFromLatestUpdate: false, productivityBaselineComplete: plannedQuantity > 0 && Boolean((calculatedRate ?? suppliedRate) && (calculatedRate ?? suppliedRate)! > 0) && Boolean(text(value(row, aliases.unit))), createdAt: now, updatedAt: now }];
+    const described = hierarchyFromActivityDescription(activityName);
+    const mappedWorkActivity = mappedHierarchy(row, mapping, "workActivity", wbsPath);
+    return [{ id: id("programme-activity"), projectId, programmeActivityId: activityId, activityName, activity: activityName || "Unnamed programme activity", workActivity: mappedWorkActivity && mappedWorkActivity !== activityName ? mappedWorkActivity : described?.workActivity || mappedWorkActivity || activityName, building: mappedHierarchy(row, mapping, "building", wbsPath), elevation: mappedHierarchy(row, mapping, "elevation", wbsPath) || described?.elevation || "", level: mappedHierarchy(row, mapping, "level", wbsPath) || described?.level || "", gridline: mappedHierarchy(row, mapping, "gridline", wbsPath), wbsCode, wbsPath, wbs: wbsCode, trade: text(value(row, aliases.trade)), productType: text(value(row, aliases.productType)) || described?.productType || "", unit: text(value(row, aliases.unit)), plannedQuantity, budgetLabourHours, plannedProductionRate: calculatedRate ?? suppliedRate, plannedCrewSize, status: text(value(row, aliases.status)), activityStatus: text(value(row, aliases.status)), originalDuration: number(value(row, aliases.originalDuration)), remainingDuration: number(value(row, aliases.remainingDuration)), plannedStart: date(value(row, aliases.plannedStart)), plannedFinish: date(value(row, aliases.plannedFinish)), actualStart: date(value(row, aliases.actualStart)), actualFinish: date(value(row, aliases.actualFinish)), physicalPercentComplete: number(value(row, aliases.percent)), primaryConstraint: text(value(row, aliases.primaryConstraint)), secondaryConstraint: text(value(row, aliases.secondaryConstraint)), calendar: text(value(row, aliases.calendar)), resourceNames: text(value(row, aliases.resourceNames)).split(/[;,]/).map((item) => item.trim()).filter(Boolean), dataDate, sourceType: "p6-xlsx", sourceImportId: importId, missingFromLatestUpdate: false, productivityBaselineComplete: plannedQuantity > 0 && Boolean((calculatedRate ?? suppliedRate) && (calculatedRate ?? suppliedRate)! > 0) && Boolean(text(value(row, aliases.unit))), createdAt: now, updatedAt: now }];
   });
 
   const resourceRows = sheet(sheets, "rsrc") ?? [];
   const resourceRefs = new Map<string, string>();
+  const resourceById = new Map<string, ProgrammeResource>();
   const seenResourceIds = new Set<string>();
   let duplicateResourceRows = 0;
   const resources = resourceRows.flatMap((row, index): ProgrammeResource[] => {
@@ -192,7 +205,9 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     resourceRefs.set(resourceId, official); resourceRefs.set(official, official);
     if (seenResourceIds.has(official.toLowerCase())) { duplicateResourceRows += 1; return []; }
     seenResourceIds.add(official.toLowerCase());
-    return [{ id: id("programme-resource"), projectId, resourceId: official, resourceName: text(value(row, aliases.resourceName)) || official, resourceType: text(value(row, aliases.resourceType)), parentResourceId: text(value(row, aliases.parentResource)), unitOfMeasure: text(value(row, aliases.unit)), calendar: text(value(row, aliases.calendar)), sourceImportId: importId }];
+    const resource = { id: id("programme-resource"), projectId, resourceId: official, resourceName: text(value(row, aliases.resourceName)) || official, resourceType: text(value(row, aliases.resourceType)), parentResourceId: text(value(row, aliases.parentResource)), unitOfMeasure: text(value(row, aliases.unit)), calendar: text(value(row, aliases.calendar)), sourceImportId: importId };
+    resourceById.set(official, resource);
+    return [resource];
   });
   if (duplicateResourceRows) issues.push({ sheet: "RSRC", severity: "warning", message: `${duplicateResourceRows} duplicate resource row${duplicateResourceRows === 1 ? " was" : "s were"} consolidated by official Resource ID.` });
 
@@ -218,10 +233,24 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     const resourceId = resourceRefs.get(rawResource) ?? rawResource;
     if (!programmeActivityId || !resourceId) { issues.push({ sheet: "TASKRSRC", rowNumber: index + 2, severity: "error", message: `Assignment requires both an Activity ID and Resource ID.` }); return []; }
     if (!resolveActivity(rawActivity) || !resourceRefs.has(rawResource)) externalAssignmentReferences += 1;
-    return [{ id: id("programme-assignment"), projectId, programmeActivityId, resourceId, resourceType: text(value(row, aliases.resourceType)), assignmentStart: date(value(row, aliases.assignmentStart)), assignmentFinish: date(value(row, aliases.assignmentFinish)), budgetedLabourUnits: number(value(row, aliases.budgetedUnits)), actualLabourUnits: number(value(row, aliases.actualUnits)), remainingLabourUnits: number(value(row, aliases.remainingUnits)), atCompletionUnits: number(value(row, aliases.atCompletionUnits)), sourceImportId: importId }];
+    return [{ id: id("programme-assignment"), projectId, programmeActivityId, resourceId, resourceType: text(value(row, aliases.resourceType)) || resourceById.get(resourceId)?.resourceType, assignmentStart: date(value(row, aliases.assignmentStart)), assignmentFinish: date(value(row, aliases.assignmentFinish)), budgetedLabourUnits: number(value(row, aliases.budgetedUnits)), actualLabourUnits: number(value(row, aliases.actualUnits)), remainingLabourUnits: number(value(row, aliases.remainingUnits)), atCompletionUnits: number(value(row, aliases.atCompletionUnits)), sourceImportId: importId }];
   });
   if (externalAssignmentReferences) issues.push({ sheet: "TASKRSRC", severity: "warning", message: `${externalAssignmentReferences} assignments reference activities or resources outside this filtered workbook. Their official P6 IDs were preserved.` });
-  return { sourceType: "p6-xlsx", availableColumns, columnLabels, activities, relationships, resources, assignments, issues, dataDate };
+  const enrichedActivities = activities.map((activity) => {
+    const activityAssignments = assignments.filter((assignment) => assignment.programmeActivityId === activity.programmeActivityId);
+    const labourAssignments = activityAssignments.filter((assignment) => /labor|labour|human|role/i.test(assignment.resourceType ?? ""));
+    const materialAssignments = activityAssignments.filter((assignment) => /mat|material/i.test(assignment.resourceType ?? ""));
+    const assignedLabourHours = labourAssignments.reduce((total, assignment) => total + (assignment.budgetedLabourUnits ?? 0), 0);
+    const assignedMaterialQuantity = materialAssignments.reduce((total, assignment) => total + (assignment.budgetedLabourUnits ?? 0), 0);
+    const budgetLabourHours = activity.budgetLabourHours || assignedLabourHours || undefined;
+    const plannedQuantity = activity.plannedQuantity || assignedMaterialQuantity || 0;
+    const materialUnit = materialAssignments.map((assignment) => resourceById.get(assignment.resourceId)?.unitOfMeasure).find(Boolean);
+    const unit = activity.unit || materialUnit || "";
+    const plannedCrewSize = activity.plannedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
+    const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
+    return { ...activity, plannedQuantity, budgetLabourHours, plannedCrewSize, plannedProductionRate, unit, productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedProductionRate && unit) };
+  });
+  return { sourceType: "p6-xlsx", availableColumns, columnLabels, activities: enrichedActivities, relationships, resources, assignments, issues, dataDate };
 }
 
 const comparedFields: (keyof ProgrammeActivity)[] = ["activityName", "productType", "trade", "wbsCode", "wbsPath", "building", "elevation", "level", "gridline", "workActivity", "status", "activityStatus", "originalDuration", "remainingDuration", "plannedStart", "plannedFinish", "actualStart", "actualFinish", "physicalPercentComplete", "calendar", "budgetLabourHours", "plannedQuantity", "plannedCrewSize", "plannedProductionRate"];
