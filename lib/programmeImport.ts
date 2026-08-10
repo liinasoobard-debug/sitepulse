@@ -70,7 +70,7 @@ const aliases = {
   parentResource: ["parent resource", "parent_resource", "parent rsrc id", "parent_rsrc_id"],
   assignmentStart: ["assignment start", "assignment_start", "start date", "start_date"],
   assignmentFinish: ["assignment finish", "assignment_finish", "end date", "end_date", "finish date"],
-  budgetedUnits: ["budgeted labour units", "budgeted labor units", "budgeted_units", "target qty", "target_qty"],
+  budgetedUnits: ["budgeted units", "budget units", "budgeted labour units", "budgeted labor units", "budgeted material units", "budgeted quantity", "budget quantity", "planned units", "planned quantity", "budgeted_units", "target qty", "target_qty"],
   actualUnits: ["actual labour units", "actual labor units", "actual_units", "act reg qty", "act_reg_qty"],
   remainingUnits: ["remaining labour units", "remaining labor units", "remaining_units", "remain qty", "remain_qty"],
   atCompletionUnits: ["at completion units", "at_completion_units"],
@@ -240,13 +240,17 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     const activityAssignments = assignments.filter((assignment) => assignment.programmeActivityId === activity.programmeActivityId);
     const labourAssignments = activityAssignments.filter((assignment) => /labor|labour|human|role/i.test(assignment.resourceType ?? ""));
     const materialAssignments = activityAssignments.filter((assignment) => /mat|material/i.test(assignment.resourceType ?? ""));
-    const assignedLabourHours = labourAssignments.reduce((total, assignment) => total + (assignment.budgetedLabourUnits ?? 0), 0);
+    const labourHourAssignments = labourAssignments.filter((assignment) => /^(?:h|hr|hrs|hour|hours)$/i.test(resourceById.get(assignment.resourceId)?.unitOfMeasure?.trim() ?? ""));
+    const labourCountAssignments = labourAssignments.filter((assignment) => !labourHourAssignments.includes(assignment));
+    const assignedLabourHours = labourHourAssignments.reduce((total, assignment) => total + (assignment.budgetedLabourUnits ?? 0), 0);
+    const assignedCrewSize = labourCountAssignments.reduce((total, assignment) => total + (assignment.budgetedLabourUnits ?? 0), 0);
     const assignedMaterialQuantity = materialAssignments.reduce((total, assignment) => total + (assignment.budgetedLabourUnits ?? 0), 0);
-    const budgetLabourHours = activity.budgetLabourHours || assignedLabourHours || undefined;
+    const derivedLabourHours = assignedLabourHours || (assignedCrewSize && activity.originalDuration ? assignedCrewSize * activity.originalDuration : 0);
+    const budgetLabourHours = activity.budgetLabourHours || derivedLabourHours || undefined;
     const plannedQuantity = activity.plannedQuantity || assignedMaterialQuantity || 0;
     const materialUnit = materialAssignments.map((assignment) => resourceById.get(assignment.resourceId)?.unitOfMeasure).find(Boolean);
     const unit = activity.unit || materialUnit || "";
-    const plannedCrewSize = activity.plannedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
+    const plannedCrewSize = activity.plannedCrewSize || assignedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
     const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
     return { ...activity, plannedQuantity, budgetLabourHours, plannedCrewSize, plannedProductionRate, unit, productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedProductionRate && unit) };
   });

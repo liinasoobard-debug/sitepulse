@@ -96,6 +96,25 @@ test("derives the activity baseline from P6 labour and material assignments", ()
   assert.equal(activity.productivityBaselineComplete, true);
 });
 
+test("treats a non-hour labour assignment as crew size", () => {
+  const sheets = fixture();
+  sheets.TASK[1] = { task_id: "1", task_code: "A1000", task_name: "Install panels", target_drtn_hr_cnt: 40 };
+  sheets.RSRC = [
+    { rsrc_id: "10", rsrc_short_name: "LAB-QTY", rsrc_name: "Labour QTY", rsrc_type: "RT_Labor", unit: "men" },
+    { rsrc_id: "11", rsrc_short_name: "MAT-QTY", rsrc_name: "CW QTY", rsrc_type: "RT_Mat", unit: "m²" },
+  ];
+  sheets.TASKRSRC = [
+    { task_id: "1", rsrc_id: "10", "Budgeted Units": 4 },
+    { task_id: "1", rsrc_id: "11", "Budgeted Material Units": 75 },
+  ];
+  const activity = parseP6Workbook(sheets, "project", "import", mapping).activities[0];
+  assert.equal(activity.plannedQuantity, 75);
+  assert.equal(activity.unit, "m²");
+  assert.equal(activity.plannedCrewSize, 4);
+  assert.equal(activity.budgetLabourHours, 160);
+  assert.equal(activity.plannedProductionRate, 75 / 160);
+});
+
 test("programme comparison is isolated from SitePulse actual records", () => {
   const activities = parseP6Workbook(fixture(), "project", "first", mapping).activities;
   const siteActuals = [{ id: "event-1", programmeActivityId: "A1000", quantity: 12 }];

@@ -63,12 +63,16 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const activityResources = assigned.get(activity.programmeActivityId) ?? [];
     const labourResources = activityResources.filter((resource) => isLabour(resource.type));
     const materialResources = activityResources.filter((resource) => isMaterial(resource.type));
-    const assignedLabourHours = labourResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
+    const labourHourResources = labourResources.filter((resource) => /^(?:h|hr|hrs|hour|hours)$/i.test(resource.unit.trim()));
+    const labourCountResources = labourResources.filter((resource) => !labourHourResources.includes(resource));
+    const assignedLabourHours = labourHourResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
+    const assignedCrewSize = labourCountResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
     const assignedMaterialQuantity = materialResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
-    const budgetLabourHours = activity.budgetLabourHours || assignedLabourHours || undefined;
+    const derivedLabourHours = assignedLabourHours || (assignedCrewSize && activity.originalDuration ? assignedCrewSize * activity.originalDuration : 0);
+    const budgetLabourHours = activity.budgetLabourHours || derivedLabourHours || undefined;
     const plannedQuantity = activity.plannedQuantity || assignedMaterialQuantity || 0;
     const unit = activity.unit || materialResources.map((resource) => resource.unit).find(Boolean) || "";
-    const plannedCrewSize = activity.plannedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
+    const plannedCrewSize = activity.plannedCrewSize || assignedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
     const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
     return {
       ...activity,
