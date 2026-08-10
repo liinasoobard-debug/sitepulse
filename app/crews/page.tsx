@@ -116,15 +116,15 @@ export default function CrewsPage() {
     saveDay(updatedDay);
   }, [attendance, crews, events, hasLoaded]);
 
-  const signedInOperatives = useMemo(() => {
-    const signedInIds = new Set(
+  const attendedOperatives = useMemo(() => {
+    const attendedIds = new Set(
       attendance
-        .filter((record) => record.signIn && !record.signOut)
+        .filter((record) => record.signIn)
         .map((record) => String(record.operativeId))
     );
 
     return operatives.filter((operative) =>
-      signedInIds.has(String(operative.id))
+      attendedIds.has(String(operative.id))
     );
   }, [attendance, operatives]);
 
@@ -142,11 +142,20 @@ export default function CrewsPage() {
 
   const unassignedOperatives = useMemo(
     () =>
-      signedInOperatives.filter(
+      attendedOperatives.filter(
         (operative) =>
           !operativeGangMap.has(String(operative.id))
       ),
-    [operativeGangMap, signedInOperatives]
+    [attendedOperatives, operativeGangMap]
+  );
+
+  const signedOutOperativeIds = useMemo(
+    () => new Set(
+      attendance
+        .filter((record) => record.signIn && record.signOut)
+        .map((record) => String(record.operativeId))
+    ),
+    [attendance]
   );
 
   function addGang() {
@@ -299,7 +308,7 @@ export default function CrewsPage() {
             </span>
 
             <span className="attendance-summary-label">
-              Unassigned on site
+              Unassigned attendees
             </span>
           </div>
         </section>
@@ -323,7 +332,7 @@ export default function CrewsPage() {
         )}
 
         {operatives.length > 0 &&
-          signedInOperatives.length === 0 && (
+          attendedOperatives.length === 0 && (
             <section
               style={{
                 marginBottom: 20,
@@ -334,12 +343,12 @@ export default function CrewsPage() {
               }}
             >
               <strong>
-                No operatives are currently signed in.
+                No operatives attended on this date.
               </strong>
 
               <p style={{ margin: "8px 0 0" }}>
-                Go to Attendance and sign operatives in before
-                assigning them to gangs.
+                Go to Attendance and add sign-in times before
+                assigning operatives to gangs.
               </p>
             </section>
           )}
@@ -357,7 +366,7 @@ export default function CrewsPage() {
             <strong>
               {unassignedOperatives.length} operative
               {unassignedOperatives.length === 1 ? "" : "s"} on
-              site not assigned to a gang
+              attended but not assigned to a gang
             </strong>
 
             <div
@@ -465,9 +474,9 @@ export default function CrewsPage() {
                 </button>
               </div>
 
-              {signedInOperatives.length === 0 ? (
+              {attendedOperatives.length === 0 ? (
                 <p style={{ margin: 0 }}>
-                  No signed-in operatives available.
+                  No attended operatives available.
                 </p>
               ) : (
                 <div
@@ -479,7 +488,7 @@ export default function CrewsPage() {
                     gap: 10,
                   }}
                 >
-                  {signedInOperatives.map((operative) => {
+                  {attendedOperatives.map((operative) => {
                     const operativeId = String(operative.id);
                     const assignedGangId =
                       operativeGangMap.get(operativeId);
@@ -541,6 +550,20 @@ export default function CrewsPage() {
                             {operative.company} ·{" "}
                             {operative.position}
                           </span>
+
+                          {signedOutOperativeIds.has(operativeId) && (
+                            <span
+                              style={{
+                                display: "block",
+                                marginTop: 5,
+                                color: "#5f6b76",
+                                fontSize: 12,
+                                fontWeight: 700,
+                              }}
+                            >
+                              Signed out
+                            </span>
+                          )}
 
                           {assignedGangId &&
                             assignedGangId !== crew.id && (
