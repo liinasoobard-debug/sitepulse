@@ -32,7 +32,7 @@ type ImportPreview = {
 };
 
 type ImportSource = "sitepulse-template" | "p6-xlsx" | "asta-xlsx";
-const sourceLabels: Record<ImportSource, string> = { "sitepulse-template": "SitePulse Standard Template", "p6-xlsx": "Primavera P6 Export", "asta-xlsx": "Asta Powerproject Export" };
+const sourceLabels: Record<ImportSource, string> = { "sitepulse-template": "SitePulse Programme (.xlsx)", "p6-xlsx": "Primavera P6 Programme (.xlsx)", "asta-xlsx": "Asta Powerproject Programme (.xlsx)" };
 
 const activityTypeKeywords: Record<string, string[]> = {
   design: ["design", "drawing", "engineering"],
@@ -303,7 +303,19 @@ export default function ProgrammePage() {
           <div className="programme-import-heading"><div><h2>Import Programme</h2><p>Choose a source. Every workbook is validated and mapped into the same SitePulse programme model before publication.</p></div><div><strong>Programme Source</strong><span>{publishedSource ? sourceLabels[publishedSource] ?? String(publishedImport?.source_type) : "No published programme"}</span>{publishedImport?.imported_at ? <small>Last import: {new Date(String(publishedImport.imported_at)).toLocaleString("en-GB")}</small> : null}</div></div>
 
           <div style={{ display: "grid", gap: 16 }}>
-              <fieldset className="programme-source-picker"><legend>Choose Source</legend>{(Object.entries(sourceLabels) as Array<[ImportSource, string]>).map(([value, label]) => <label key={value}><input type="radio" name="programme-source" value={value} checked={importSource === value} onChange={() => { setImportSource(value); cancelImport(); }} /><span>{label}</span></label>)}{["Primavera XML", "Primavera XER", "Microsoft Project XML", "Synchro", "API integrations"].map((label) => <label className="coming-soon" key={label}><input type="radio" disabled /><span>{label} <small>Coming Soon</small></span></label>)}</fieldset>
+              <label className="attendance-field" style={{ maxWidth: 460 }}>
+                <span>Import format</span>
+                <select
+                  value={importSource}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setImportSource(event.target.value as ImportSource);
+                    cancelImport();
+                  }}
+                >
+                  {(Object.entries(sourceLabels) as Array<[ImportSource, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
               <div className="programme-template-actions"><a className="add-event-button" href="/api/programme/template" download="SitePulse-Programme-Template.xlsx">Download SitePulse Programme Template (.xlsx)</a><span>{importSource === "p6-xlsx" ? "Requires TASK; TASKPRED, RSRC and TASKRSRC are supported." : importSource === "asta-xlsx" ? "Use an Asta activity or task export with visible column headings." : "Download the official workbook, complete its programme rows, then upload it below. Budget hours or production rate will calculate the other value."}</span></div>
               {!canManage && <p style={{ margin: 0, fontWeight: 700 }}>You can view the upload formats and download the template. Planner or Admin access is required to review and publish a programme.</p>}
               <label className="attendance-field" style={{ maxWidth: 360 }}>
@@ -312,16 +324,14 @@ export default function ProgrammePage() {
               </label>
 
               <div className="programme-import-actions" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-                <label className="add-event-button" style={{ ...touchButtonStyle, display: "inline-flex", position: "relative", cursor: busy ? "not-allowed" : "pointer" }}>
-                  Select {sourceLabels[importSource]}
+                <label className="programme-file-picker">
+                  <span>Choose programme file to import</span>
                   <input
                     ref={fileInputRef}
                     type="file"
                     accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    disabled={busy || !canManage}
+                    disabled={busy}
                     onChange={(event) => selectWorkbook(event.target.files?.[0])}
-                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
-                    aria-label={`Select ${sourceLabels[importSource]}`}
                   />
                 </label>
                 <button type="button" className="secondary-button" style={touchButtonStyle} disabled={!canManage || !selectedFile || busy} onClick={() => void reviewImport()}>
