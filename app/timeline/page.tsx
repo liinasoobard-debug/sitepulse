@@ -83,6 +83,23 @@ function getEventLabel(type: TimelineEvent["type"]): string {
   return "Break";
 }
 
+function withRecalculatedProgress(
+  activity: ProgrammeActivity,
+  progress: Awaited<ReturnType<typeof recalculateProgrammeProgress>>
+): ProgrammeActivity {
+  const status = progress.percentageComplete >= 100
+    ? "Completed"
+    : progress.actualStart ? "In Progress" : "Not Started";
+  return {
+    ...activity,
+    actualStart: progress.actualStart,
+    actualFinish: progress.actualFinish,
+    physicalPercentComplete: progress.percentageComplete,
+    status,
+    activityStatus: status,
+  };
+}
+
 export default function TimelinePage() {
   const [events, setEvents] = useState<TimelineEvent[]>(startingEvents);
   const [programmeActivities, setProgrammeActivities] = useState<ProgrammeActivity[]>([]);
@@ -169,9 +186,9 @@ export default function TimelinePage() {
 
     if (activity && record.type === "work") {
       try {
-        const percentComplete = await recalculateProgrammeProgress(getActiveProjectId(), activity);
-        newEvent = { ...newEvent, percentComplete };
-        setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: percentComplete, status: percentComplete >= 100 ? "Completed" : "In Progress", activityStatus: percentComplete >= 100 ? "Completed" : "In Progress" } : item));
+        const progress = await recalculateProgrammeProgress(getActiveProjectId(), activity);
+        newEvent = { ...newEvent, percentComplete: progress.percentageComplete };
+        setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? withRecalculatedProgress(item, progress) : item));
       } catch (error) {
         window.alert(`The site record was saved, but programme progress could not be recalculated: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
@@ -194,9 +211,9 @@ export default function TimelinePage() {
     }
     const saved = await updateTimelineEvent(updatedEvent, date);
     if (activity && saved.type === "work") {
-      const percentComplete = await recalculateProgrammeProgress(getActiveProjectId(), activity);
-      saved.percentComplete = percentComplete;
-      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: percentComplete, status: percentComplete >= 100 ? "Completed" : "In Progress", activityStatus: percentComplete >= 100 ? "Completed" : "In Progress" } : item));
+      const progress = await recalculateProgrammeProgress(getActiveProjectId(), activity);
+      saved.percentComplete = progress.percentageComplete;
+      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? withRecalculatedProgress(item, progress) : item));
     }
     setEvents((current) => date === getActiveDate()
       ? current.map((event) => event.id === saved.id ? saved : event).sort((a, b) => a.time.localeCompare(b.time))
@@ -210,8 +227,8 @@ export default function TimelinePage() {
     try {
       await deleteTimelineEvent(event.id);
       if (activity && event.type === "work") {
-        const percentComplete = await recalculateProgrammeProgress(getActiveProjectId(), activity);
-        setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: percentComplete, status: percentComplete >= 100 ? "Completed" : "In Progress", activityStatus: percentComplete >= 100 ? "Completed" : "In Progress" } : item));
+        const progress = await recalculateProgrammeProgress(getActiveProjectId(), activity);
+        setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? withRecalculatedProgress(item, progress) : item));
       }
       setEvents((current) => current.filter((item) => item.id !== event.id));
       if (editingEvent?.id === event.id) setEditingEvent(null);

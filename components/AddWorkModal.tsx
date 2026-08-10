@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getActiveProjectId, loadDay, loadOperatives } from "@/lib/storage";
-import { loadActivityInstalledQuantity, installedCompletionPercent, updateProgrammeBaseline } from "@/lib/supabase/programmeData";
+import { loadActivityInstalledQuantity, updateProgrammeBaseline } from "@/lib/supabase/programmeData";
+import { installedCompletionPercent } from "@/lib/progress";
 import { LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,

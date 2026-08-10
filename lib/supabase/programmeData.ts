@@ -145,11 +145,6 @@ export async function updateProgrammeProgress(activityId: string, percentComplet
   if (error) throw error;
 }
 
-export function installedCompletionPercent(installedQuantity: number, plannedQuantity: number): number {
-  if (!Number.isFinite(plannedQuantity) || plannedQuantity <= 0) return 0;
-  return Math.min(100, Math.max(0, installedQuantity / plannedQuantity * 100));
-}
-
 export async function loadActivityInstalledQuantity(projectId: string, externalActivityId: string): Promise<number> {
   const { data, error } = await createClient()
     .from("timeline_events")
@@ -163,18 +158,22 @@ export async function loadActivityInstalledQuantity(projectId: string, externalA
   return (data ?? []).reduce((total, row) => total + Number(row.actual_quantity ?? 0), 0);
 }
 
-export async function recalculateProgrammeProgress(projectId: string, activity: ProgrammeActivity): Promise<number> {
-  const installedQuantity = await loadActivityInstalledQuantity(projectId, activity.programmeActivityId);
-  const percentComplete = installedCompletionPercent(installedQuantity, activity.plannedQuantity);
-  const completed = percentComplete >= 100;
-  const { error } = await createClient().from("programme_activities").update({
-    percent_complete: percentComplete,
-    programme_status: completed ? "Completed" : "In Progress",
-    activity_status: completed ? "Completed" : "In Progress",
-    actual_finish: completed ? new Date().toISOString().slice(0, 10) : null,
-    remaining_duration: completed ? 0 : activity.remainingDuration ?? null,
-    updated_at: new Date().toISOString(),
-  }).eq("id", activity.id).eq("project_id", projectId);
+export type RecalculatedProgrammeProgress = {
+  actualStart?: string;
+  actualFinish?: string;
+  percentageComplete: number;
+};
+
+export async function recalculateProgrammeProgress(projectId: string, activity: ProgrammeActivity): Promise<RecalculatedProgrammeProgress> {
+  const { data, error } = await createClient().rpc("recalculate_programme_activity_actuals", {
+    target_project: projectId,
+    target_external_activity: activity.programmeActivityId,
+  });
   if (error) throw error;
-  return percentComplete;
+  const result = Array.isArray(data) ? data[0] : data;
+  return {
+    actualStart: result?.actual_start ?? undefined,
+    actualFinish: result?.actual_finish ?? undefined,
+    percentageComplete: Number(result?.percent_complete ?? 0),
+  };
 }

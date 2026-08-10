@@ -16,5 +16,7 @@ export async function POST(request: Request) {
   if (!membership || !["planner", "admin"].includes(membership.role)) return NextResponse.json({ error: "Only a Project Admin or Planner can publish programme imports.", diagnostic: { userId: user.id, projectId, membership } }, { status: 403 });
   const { error } = await supabase.rpc("publish_programme_import", { target_import: importId });
   if (error) return NextResponse.json({ error: error.message }, { status: 403 });
+  const { error: progressError } = await supabase.rpc("recalculate_published_programme_actuals", { target_import: importId });
+  if (progressError) return NextResponse.json({ error: `Programme published, but actual progress could not be linked: ${progressError.message}` }, { status: 500 });
   return NextResponse.json({ status: "published" });
 }

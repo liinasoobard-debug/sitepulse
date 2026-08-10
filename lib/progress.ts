@@ -4,6 +4,50 @@ import type {
   TimelineEvent,
 } from "@/types/site";
 
+export interface DatedProgressRecord {
+  date: string;
+  quantity?: number | null;
+  status?: TimelineEvent["status"];
+}
+
+export interface ProgrammeActuals {
+  actualStart?: string;
+  actualFinish?: string;
+  percentageComplete: number;
+}
+
+/** Derives programme actuals from site records in chronological order. */
+export function deriveProgrammeActuals(
+  plannedQuantity: number,
+  records: DatedProgressRecord[]
+): ProgrammeActuals {
+  const chronological = [...records]
+    .filter((record) => Boolean(record.date))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const actualStart = chronological[0]?.date;
+  let installedQuantity = 0;
+  let actualFinish: string | undefined;
+
+  for (const record of chronological) {
+    if (record.status !== "completed") continue;
+    installedQuantity += Math.max(0, Number(record.quantity ?? 0));
+    if (!actualFinish && plannedQuantity > 0 && installedQuantity >= plannedQuantity) {
+      actualFinish = record.date;
+    }
+  }
+
+  return {
+    actualStart,
+    actualFinish,
+    percentageComplete: installedCompletionPercent(installedQuantity, plannedQuantity),
+  };
+}
+
+export function installedCompletionPercent(installedQuantity: number, plannedQuantity: number): number {
+  if (!Number.isFinite(plannedQuantity) || plannedQuantity <= 0) return 0;
+  return Math.min(100, Math.max(0, installedQuantity / plannedQuantity * 100));
+}
+
 export function eventLabourHours(event: TimelineEvent): number {
   return ((event.duration ?? 0) / 60) *
     (event.affectedOperativeIds?.length ?? 0);
