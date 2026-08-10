@@ -98,6 +98,8 @@ export interface ProgrammeActivity {
   secondaryConstraint?: string;
   calendar?: string;
   resourceNames?: string[];
+  labourResourceNames?: string[];
+  materialResourceNames?: string[];
   dataDate?: string;
   sourceType?: "sitepulse-template" | "p6-xlsx" | "asta-xlsx" | "manual";
   sourceImportId?: string;
