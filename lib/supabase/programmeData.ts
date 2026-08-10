@@ -144,3 +144,37 @@ export async function updateProgrammeProgress(activityId: string, percentComplet
   const { error } = await createClient().from("programme_activities").update({ percent_complete: percentComplete, updated_at: new Date().toISOString() }).eq("id", activityId);
   if (error) throw error;
 }
+
+export function installedCompletionPercent(installedQuantity: number, plannedQuantity: number): number {
+  if (!Number.isFinite(plannedQuantity) || plannedQuantity <= 0) return 0;
+  return Math.min(100, Math.max(0, installedQuantity / plannedQuantity * 100));
+}
+
+export async function loadActivityInstalledQuantity(projectId: string, externalActivityId: string): Promise<number> {
+  const { data, error } = await createClient()
+    .from("timeline_events")
+    .select("actual_quantity")
+    .eq("project_id", projectId)
+    .eq("external_activity_id", externalActivityId)
+    .eq("event_type", "work")
+    .eq("status", "completed")
+    .is("deleted_at", null);
+  if (error) throw error;
+  return (data ?? []).reduce((total, row) => total + Number(row.actual_quantity ?? 0), 0);
+}
+
+export async function recalculateProgrammeProgress(projectId: string, activity: ProgrammeActivity): Promise<number> {
+  const installedQuantity = await loadActivityInstalledQuantity(projectId, activity.programmeActivityId);
+  const percentComplete = installedCompletionPercent(installedQuantity, activity.plannedQuantity);
+  const completed = percentComplete >= 100;
+  const { error } = await createClient().from("programme_activities").update({
+    percent_complete: percentComplete,
+    programme_status: completed ? "Completed" : "In Progress",
+    activity_status: completed ? "Completed" : "In Progress",
+    actual_finish: completed ? new Date().toISOString().slice(0, 10) : null,
+    remaining_duration: completed ? 0 : activity.remainingDuration ?? null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", activity.id).eq("project_id", projectId);
+  if (error) throw error;
+  return percentComplete;
+}

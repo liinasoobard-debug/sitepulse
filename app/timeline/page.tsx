@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import AddWorkModal from "@/components/AddWorkModal";
 import EditTimelineEvent from "@/components/EditTimelineEvent";
 import { getActiveDate, getActiveProjectId, loadDay, loadOperatives, saveDay } from "@/lib/storage";
-import { loadProjectRole, loadPublishedProgramme, updateProgrammeProgress } from "@/lib/supabase/programmeData";
+import { loadActivityInstalledQuantity, loadProjectRole, loadPublishedProgramme, recalculateProgrammeProgress } from "@/lib/supabase/programmeData";
 import { createTimelineEvent, deleteTimelineEvent, loadTimelineEvents, updateTimelineEvent, uploadTimelinePhotos } from "@/lib/supabase/timelineData";
 import type {
   AttendanceRecord,
@@ -167,25 +167,37 @@ export default function TimelinePage() {
     try { newEvent=await createTimelineEvent(getActiveProjectId(),getActiveDate(),record,activity?.id); if(photos.length)await uploadTimelinePhotos(getActiveProjectId(),newEvent.id,photos); }
     catch(error){window.alert(error instanceof Error?error.message:"Unable to save timeline event.");return;}
 
+    if (activity && record.type === "work") {
+      try {
+        const percentComplete = await recalculateProgrammeProgress(getActiveProjectId(), activity);
+        newEvent = { ...newEvent, percentComplete };
+        setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: percentComplete, status: percentComplete >= 100 ? "Completed" : "In Progress", activityStatus: percentComplete >= 100 ? "Completed" : "In Progress" } : item));
+      } catch (error) {
+        window.alert(`The site record was saved, but programme progress could not be recalculated: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    }
+
     setEvents((current) =>
       [...current, newEvent].sort((a, b) =>
         a.time.localeCompare(b.time)
       )
     );
-    if (activity && typeof record.percentComplete === "number") {
-      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: record.percentComplete } : item));
-    }
-
     setShowModal(false);
   }
 
   async function saveTimelineEdit(updatedEvent: TimelineEvent, date: string) {
     const activity = getActivity(updatedEvent.programmeActivityId);
-    if (activity && canEditProgramme && typeof updatedEvent.percentComplete === "number" && updatedEvent.percentComplete !== activity.physicalPercentComplete) {
-      await updateProgrammeProgress(activity.id, updatedEvent.percentComplete);
-      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: updatedEvent.percentComplete } : item));
+    if (activity && updatedEvent.type === "work" && typeof updatedEvent.quantity === "number") {
+      const installed = await loadActivityInstalledQuantity(getActiveProjectId(), activity.programmeActivityId);
+      const projected = installed - (editingEvent?.quantity ?? 0) + updatedEvent.quantity;
+      if (projected > activity.plannedQuantity && !window.confirm(`This change takes installed quantity to ${projected} ${activity.unit}, above the planned ${activity.plannedQuantity} ${activity.unit}. Save it anyway?`)) return;
     }
     const saved = await updateTimelineEvent(updatedEvent, date);
+    if (activity && saved.type === "work") {
+      const percentComplete = await recalculateProgrammeProgress(getActiveProjectId(), activity);
+      saved.percentComplete = percentComplete;
+      setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: percentComplete, status: percentComplete >= 100 ? "Completed" : "In Progress", activityStatus: percentComplete >= 100 ? "Completed" : "In Progress" } : item));
+    }
     setEvents((current) => date === getActiveDate()
       ? current.map((event) => event.id === saved.id ? saved : event).sort((a, b) => a.time.localeCompare(b.time))
       : current.filter((event) => event.id !== saved.id));
@@ -194,8 +206,13 @@ export default function TimelinePage() {
 
   async function removeTimelineEvent(event: TimelineEvent) {
     if (!window.confirm(`Delete “${event.title}” from the timeline?`)) return;
+    const activity = getActivity(event.programmeActivityId);
     try {
       await deleteTimelineEvent(event.id);
+      if (activity && event.type === "work") {
+        const percentComplete = await recalculateProgrammeProgress(getActiveProjectId(), activity);
+        setProgrammeActivities((current) => current.map((item) => item.id === activity.id ? { ...item, physicalPercentComplete: percentComplete, status: percentComplete >= 100 ? "Completed" : "In Progress", activityStatus: percentComplete >= 100 ? "Completed" : "In Progress" } : item));
+      }
       setEvents((current) => current.filter((item) => item.id !== event.id));
       if (editingEvent?.id === event.id) setEditingEvent(null);
     } catch (error) {

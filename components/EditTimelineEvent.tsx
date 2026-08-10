@@ -21,13 +21,12 @@ function durationMinutes(start: string, finish: string): number {
   return Math.max(0, finishValue - startValue);
 }
 
-export default function EditTimelineEvent({ event, date, activity, canEditProgramme, onCancel, onSave }: Props) {
+export default function EditTimelineEvent({ event, date, activity, onCancel, onSave }: Props) {
   const [eventDate, setEventDate] = useState(date);
   const [title, setTitle] = useState(event.title);
   const [startTime, setStartTime] = useState(event.startTime ?? event.time);
   const [finishTime, setFinishTime] = useState(event.finishTime ?? event.startTime ?? event.time);
   const [quantity, setQuantity] = useState(event.quantity === undefined ? "" : String(event.quantity));
-  const [percentComplete, setPercentComplete] = useState(event.percentComplete === undefined ? activity?.physicalPercentComplete === undefined ? "" : String(activity.physicalPercentComplete) : String(event.percentComplete));
   const [notes, setNotes] = useState(event.notes ?? "");
   const [status, setStatus] = useState<TimelineEvent["status"]>(event.status ?? "completed");
   const [error, setError] = useState("");
@@ -35,13 +34,11 @@ export default function EditTimelineEvent({ event, date, activity, canEditProgra
 
   async function save() {
     const numericQuantity = quantity.trim() ? Number(quantity) : undefined;
-    const numericPercent = percentComplete.trim() ? Number(percentComplete) : undefined;
     if (!eventDate || !title.trim() || !startTime || !finishTime) return setError("Enter a date, title, start time and finish time.");
     if (numericQuantity !== undefined && (!Number.isFinite(numericQuantity) || numericQuantity < 0)) return setError("Enter a valid quantity.");
-    if (numericPercent !== undefined && (!Number.isFinite(numericPercent) || numericPercent < 0 || numericPercent > 100)) return setError("Enter a percentage between 0 and 100.");
     setPending(true);
     try {
-      await onSave({ ...event, title: title.trim(), time: startTime, startTime, finishTime, duration: durationMinutes(startTime, finishTime), quantity: numericQuantity, percentComplete: numericPercent, notes: notes.trim() || undefined, status }, eventDate);
+      await onSave({ ...event, title: title.trim(), time: startTime, startTime, finishTime, duration: durationMinutes(startTime, finishTime), quantity: numericQuantity, notes: notes.trim() || undefined, status }, eventDate);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to update the timeline record.");
       setPending(false);
@@ -57,7 +54,7 @@ export default function EditTimelineEvent({ event, date, activity, canEditProgra
       <label className="attendance-field"><span>Finish time</span><input type="time" value={finishTime} onChange={(change) => setFinishTime(change.target.value)} /></label>
     </div>
     {event.type === "work" && <label className="attendance-field"><span>Actual quantity</span><input type="number" min="0" step="any" value={quantity} onChange={(change) => setQuantity(change.target.value)} /></label>}
-    {event.type === "work" && <label className="attendance-field"><span>Physical % complete</span><input type="number" min="0" max="100" step="0.1" value={percentComplete} onChange={(change) => setPercentComplete(change.target.value)} disabled={!canEditProgramme} /></label>}
+    {event.type === "work" && <label className="attendance-field"><span>Physical % complete</span><input value={activity?.physicalPercentComplete === undefined ? "Calculated on save" : `${activity.physicalPercentComplete}%`} readOnly /><small>Automatically calculated from cumulative installed quantity.</small></label>}
     <label className="attendance-field"><span>Status</span><select value={status} onChange={(change) => setStatus(change.target.value as TimelineEvent["status"])}><option value="active">Active</option><option value="completed">Completed</option></select></label>
     <label className="attendance-field"><span>Description</span><textarea rows={4} value={notes} onChange={(change) => setNotes(change.target.value)} /></label>
     {error && <p role="alert" style={{ color: "#b42318", fontWeight: 700 }}>{error}</p>}

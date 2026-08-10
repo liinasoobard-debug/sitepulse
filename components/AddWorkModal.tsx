@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { loadDay, loadOperatives } from "@/lib/storage";
-import { updateProgrammeBaseline, updateProgrammeProgress } from "@/lib/supabase/programmeData";
+import { getActiveProjectId, loadDay, loadOperatives } from "@/lib/storage";
+import { loadActivityInstalledQuantity, installedCompletionPercent, updateProgrammeBaseline } from "@/lib/supabase/programmeData";
 import { LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
@@ -308,15 +308,25 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       return;
     }
     if (selectedType === "work" && !selectedProgrammeActivityId) return;
+    let calculatedPercentComplete: number | undefined;
     if (selectedType === "work") {
       if (baselineValidation) { setValidationMessage(baselineValidation); return; }
       const quantity = Number(actualQuantity);
-      const completion = Number(percentComplete);
       const operativeCount = assignmentMode === "crew" ? Number(numberOfOperatives) : assignmentMode === "individuals" ? selectedOperativeIds.length : 0;
       if (!actualQuantity.trim() || !Number.isFinite(quantity) || quantity < 0) { setValidationMessage("Enter a valid actual quantity completed."); return; }
-      if (percentComplete.trim() && (!Number.isFinite(completion) || completion < 0 || completion > 100)) { setValidationMessage("Enter a percentage complete between 0 and 100."); return; }
       if (assignmentMode === "crew" && (!Number.isInteger(operativeCount) || operativeCount < 1 || operativeCount > (selectedCrew?.operativeIds.length ?? 0))) { setValidationMessage(`Enter between 1 and ${selectedCrew?.operativeIds.length ?? 0} operatives for this gang.`); return; }
       if (!finishTime) { setValidationMessage("Enter a finish time."); return; }
+      if (selectedProgrammeActivity) {
+        try {
+          const installed = await loadActivityInstalledQuantity(getActiveProjectId(), selectedProgrammeActivity.programmeActivityId);
+          const projected = installed + quantity;
+          if (projected > selectedProgrammeActivity.plannedQuantity && !window.confirm(`This entry takes installed quantity to ${projected} ${selectedProgrammeActivity.unit}, above the planned ${selectedProgrammeActivity.plannedQuantity} ${selectedProgrammeActivity.unit}. Save it anyway?`)) return;
+          calculatedPercentComplete = installedCompletionPercent(projected, selectedProgrammeActivity.plannedQuantity);
+        } catch (error) {
+          setValidationMessage(error instanceof Error ? error.message : "Unable to verify installed quantity.");
+          return;
+        }
+      }
     }
 
     const selectedSnapshot = programmeVersions.find((snapshot) => snapshot.id === selectedProgrammeVersion);
@@ -332,10 +342,6 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedProductionRate || effectiveCrewSize !== selectedProgrammeActivity.plannedCrewSize)) {
       try { await updateProgrammeBaseline(selectedProgrammeActivity.id,effectiveUnit,Number(effectiveRate),Number(effectiveCrewSize)); } catch(error) { setValidationMessage(error instanceof Error?error.message:"Only a Planner/Admin can update planned data."); return; }
     }
-    if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && percentComplete.trim() && Number(percentComplete) !== selectedProgrammeActivity.physicalPercentComplete) {
-      try { await updateProgrammeProgress(selectedProgrammeActivity.id, Number(percentComplete)); } catch(error) { setValidationMessage(error instanceof Error ? error.message : "Only a Planner/Admin can update progress."); return; }
-    }
-
     await onAdd({
       crewId: assignmentMode === "crew" ? selectedCrewId : undefined,
       programmeActivityId:
@@ -362,7 +368,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       resourceNames: selectedResources,
       numberOfOperatives: operativeCount,
       quantity: selectedType === "work" ? Number(actualQuantity) : undefined,
-      percentComplete: selectedType === "work" && percentComplete.trim() ? Number(percentComplete) : undefined,
+      percentComplete: selectedType === "work" ? calculatedPercentComplete : undefined,
       affectedOperativeIds: selectedOperatives,
       notes: notes.trim() || undefined,
     }, photos);
@@ -607,7 +613,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
 
       {selectedType === "work" && <>
         <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>
-        <label className="attendance-field"><span>Physical % complete</span><input type="number" min="0" max="100" step="0.1" value={percentComplete} onChange={(event) => setPercentComplete(event.target.value)} placeholder="0–100" disabled={!canEditProgramme} />{!canEditProgramme && <small>Planner or Admin access is required to update programme progress.</small>}</label>
+        <label className="attendance-field"><span>Physical % complete</span><input value={percentComplete ? `${percentComplete}%` : "Calculated on save"} readOnly /><small>Automatically calculated from cumulative installed quantity against planned quantity.</small></label>
         {assignmentMode === "crew" && <label className="attendance-field"><span>Number of operatives</span><input type="number" min="1" max={selectedCrew?.operativeIds.length} step="1" value={numberOfOperatives} onChange={(event) => setNumberOfOperatives(event.target.value)} /></label>}
         {assignmentMode !== "crew" && <div className="evidence-placeholder"><strong>{assignmentMode === "individuals" ? `${selectedOperativeIds.length} operative${selectedOperativeIds.length === 1 ? "" : "s"} selected` : "No operatives assigned"}</strong></div>}
       </>}
