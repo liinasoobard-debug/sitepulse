@@ -79,15 +79,17 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const plannedQuantity = activity.plannedQuantity || assignedMaterialQuantity || 0;
     const unit = activity.unit || materialResources.map((resource) => resource.unit).find(Boolean) || "";
     const plannedCrewSize = activity.plannedCrewSize || assignedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
+    const assumedGangSize = activity.assumedGangSize || plannedCrewSize;
     const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
     return {
       ...activity,
       plannedQuantity,
       budgetLabourHours,
       plannedCrewSize,
+      assumedGangSize,
       plannedProductionRate,
       unit,
-      productivityBaselineComplete: Boolean(plannedQuantity > 0 && activity.plannedManDayProductivity && activity.assumedGangSize && unit),
+      productivityBaselineComplete: Boolean(plannedQuantity > 0 && activity.plannedManDayProductivity && assumedGangSize && unit),
       resourceNames: uniqueNames(activityResources),
       labourResourceNames: uniqueNames(labourResources),
       materialResourceNames: uniqueNames(materialResources),
