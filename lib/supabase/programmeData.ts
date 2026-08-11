@@ -21,6 +21,7 @@ type DbActivity = {
 export function programmeActivityFromDb(row: DbActivity, source?: { source_type?: string; source_filename?: string; imported_at?: string; imported_by?: string }): ProgrammeActivity {
   const raw = row.raw_data ?? {};
   const sourceType = (row.source_type ?? raw.sourceType ?? source?.source_type ?? "manual") as ProgrammeActivity["sourceType"];
+  const assumedGangSize = row.assumed_gang_size ?? row.planned_crew_size ?? undefined;
   return {
     id: row.id, projectId: row.project_id, programmeActivityId: row.external_activity_id,
     activityName: row.activity_name, activity: row.activity_name, workActivity: row.activity_name,
@@ -28,14 +29,14 @@ export function programmeActivityFromDb(row: DbActivity, source?: { source_type?
     building: row.building ?? "", elevation: row.area ?? "", level: row.level ?? "", gridline: row.gridline ?? "",
     productType: row.product_type ?? String(raw.productType ?? ""), status: row.programme_status ?? String(raw.programmeStatus ?? row.activity_status ?? ""), unit: row.unit ?? "", plannedQuantity: Number(row.planned_quantity ?? 0), budgetLabourHours: row.budget_labour_hours ?? (raw.budgetLabourHours === null || raw.budgetLabourHours === undefined ? undefined : Number(raw.budgetLabourHours)), plannedProductionRate: row.productivity_target ?? undefined,
     plannedCrewSize: row.planned_crew_size ?? undefined, plannedManDayProductivity: row.planned_man_day_productivity ?? undefined,
-    assumedGangSize: row.assumed_gang_size ?? undefined, plannedGangDailyOutput: row.planned_gang_daily_output ?? undefined,
+    assumedGangSize, plannedGangDailyOutput: row.planned_gang_daily_output ?? undefined,
     plannedManDays: row.planned_man_days ?? undefined, plannedDurationDays: row.planned_duration_days ?? undefined,
     plannedStart: row.planned_start ?? undefined, plannedFinish: row.planned_finish ?? undefined,
     actualStart: row.actual_start ?? undefined, actualFinish: row.actual_finish ?? undefined,
     originalDuration: row.original_duration ?? undefined, remainingDuration: row.remaining_duration ?? undefined,
     physicalPercentComplete: row.percent_complete ?? undefined, calendar: row.calendar_name ?? "",
     sourceType, sourceImportId: row.programme_import_id, sourceFilename: source?.source_filename, importDate: source?.imported_at, importedBy: source?.imported_by, missingFromLatestUpdate: row.is_missing_from_latest,
-    productivityBaselineComplete: Boolean(row.unit && row.planned_man_day_productivity && row.assumed_gang_size && row.planned_quantity), createdAt: row.created_at, updatedAt: row.updated_at,
+    productivityBaselineComplete: Boolean(row.unit && row.planned_man_day_productivity && assumedGangSize && row.planned_quantity), createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
