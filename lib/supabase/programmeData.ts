@@ -113,6 +113,16 @@ export async function loadProgrammeImports(projectId: string) {
   return data ?? [];
 }
 
+export async function loadPublishedProgrammeRelationships(projectId: string) {
+  const supabase = createClient();
+  const { data: published, error: importError } = await supabase.from("programme_imports").select("id").eq("project_id", projectId).eq("status", "published").maybeSingle();
+  if (importError) throw importError;
+  if (!published) return [];
+  const { data, error } = await supabase.from("programme_relationships").select("predecessor_external_activity_id,successor_external_activity_id,relationship_type,lag").eq("project_id", projectId).eq("programme_import_id", published.id);
+  if (error) return [];
+  return (data ?? []).map((row) => ({ predecessorId: String(row.predecessor_external_activity_id), successorId: String(row.successor_external_activity_id), type: String(row.relationship_type ?? ""), lag: row.lag === null ? undefined : Number(row.lag) }));
+}
+
 export async function loadActualProductivity(projectId: string): Promise<Record<string, number>> {
   const { data, error } = await createClient()
     .from("timeline_events")
