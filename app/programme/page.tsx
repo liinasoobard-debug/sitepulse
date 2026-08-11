@@ -229,7 +229,7 @@ export default function ProgrammePage() {
 
   async function saveBaseline() {
     if (!edit || !unit.trim() || !(Number(rate) > 0) || !Number.isInteger(Number(crewSize)) || Number(crewSize) < 1) {
-      setError("Unit, productivity target, and baseline number of men are required.");
+      setError("Unit, Planned Man-Day Productivity, and Assumed Gang Size are required.");
       return;
     }
     try {
@@ -415,8 +415,8 @@ export default function ProgrammePage() {
             <h3>Complete baseline — {edit.activityName}</h3>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <label className="attendance-field"><span>Unit</span><input value={unit} onChange={(event) => setUnit(event.target.value)} /></label>
-              <label className="attendance-field"><span>Productivity target</span><input type="number" value={rate} onChange={(event) => setRate(event.target.value)} /></label>
-              <label className="attendance-field"><span>Baseline number of men</span><input type="number" min="1" step="1" value={crewSize} onChange={(event) => setCrewSize(event.target.value)} /></label>
+              <label className="attendance-field"><span>Planned Man-Day Productivity</span><input type="number" value={rate} onChange={(event) => setRate(event.target.value)} /></label>
+              <label className="attendance-field"><span>Assumed Gang Size</span><input type="number" min="1" step="1" value={crewSize} onChange={(event) => setCrewSize(event.target.value)} /></label>
             </div>
             <button className="add-event-button" style={{ width: "auto" }} onClick={() => void saveBaseline()}>Save</button>
           </section>
@@ -442,7 +442,7 @@ export default function ProgrammePage() {
 
         <div className="programme-desktop-table" style={{ overflowX: "auto" }}>
           <table className="programme-grid" style={{ width: "100%", minWidth: 1900, borderCollapse: "collapse" }}>
-            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Product Type", "Labour Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "No. of Men", "Planned Productivity", "Actual Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Product Type", "Labour Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "Assumed Gang Size", "Planned Man-Day Productivity", "Actual Man-Day Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
               {filtered.map((item) => (
                 <tr key={item.id}>
@@ -450,9 +450,9 @@ export default function ProgrammePage() {
                   <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small></td><td>{item.productType || "—"}</td>
                   <td>{item.labourResourceNames?.join(", ") || "—"}</td><td>{item.materialResourceNames?.join(", ") || "—"}</td>
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
-                  <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.plannedCrewSize)}</td>
-                  <td>{item.plannedProductionRate ? <>{formatNumber(item.plannedProductionRate)} {item.unit}/labour hr{item.plannedCrewSize ? <small style={{ display: "block" }}>Crew output: {formatNumber(item.plannedProductionRate * item.plannedCrewSize)} {item.unit}/hr</small> : null}{canManage && <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedProductionRate ?? "")); setCrewSize(String(item.plannedCrewSize ?? "")); }}>Edit baseline</button>}</> : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); setCrewSize(String(item.plannedCrewSize ?? "")); }}>Complete baseline</button> : "Productivity target incomplete"}</td>
-                  <td>{actualProductivity[item.programmeActivityId] === undefined ? "—" : `${formatNumber(actualProductivity[item.programmeActivityId])} ${item.unit}/labour hr`}</td>
+                  <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.assumedGangSize)}</td>
+                  <td>{item.plannedManDayProductivity ? <>{formatNumber(item.plannedManDayProductivity)} {item.unit}/man-day{item.assumedGangSize ? <small style={{ display: "block" }}>Daily Gang Output: {formatNumber(item.plannedGangDailyOutput ?? item.plannedManDayProductivity * item.assumedGangSize)} {item.unit}/day</small> : null}{canManage && <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? "")); }}>Edit baseline</button>}</> : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); setCrewSize(String(item.assumedGangSize ?? "")); }}>Complete baseline</button> : "Man-day productivity baseline required"}</td>
+                  <td>{actualProductivity[item.programmeActivityId] === undefined ? "—" : `${formatNumber(actualProductivity[item.programmeActivityId])} ${item.unit}/man-day`}</td>
                 </tr>
               ))}
             </tbody>
@@ -460,7 +460,7 @@ export default function ProgrammePage() {
         </div>
         <div className="programme-mobile-list">
           {filtered.map((item) => {
-            const baselineComplete = Boolean(item.unit && item.plannedProductionRate && item.plannedCrewSize);
+            const baselineComplete = Boolean(item.unit && item.plannedManDayProductivity && item.assumedGangSize);
             return <article className="programme-activity-card" key={item.id}>
               <div className="programme-activity-card-header">
                 <div><strong>{item.activityName}</strong><small>{item.programmeActivityId}</small></div>
@@ -482,11 +482,13 @@ export default function ProgrammePage() {
                   <div><dt>Planned dates</dt><dd>{item.plannedStart || "—"} to {item.plannedFinish || "—"}</dd></div>
                   <div><dt>Actual dates</dt><dd>{item.actualStart || "—"} to {item.actualFinish || "—"}</dd></div>
                   <div><dt>Complete</dt><dd>{formatNumber(item.physicalPercentComplete)}%</dd></div>
-                  <div><dt>Baseline men</dt><dd>{formatNumber(item.plannedCrewSize)}</dd></div>
-                  <div><dt>Planned productivity</dt><dd>{item.plannedProductionRate ? `${formatNumber(item.plannedProductionRate)} ${item.unit}/labour hr` : "—"}</dd></div>
+                  <div><dt>Assumed Gang Size</dt><dd>{formatNumber(item.assumedGangSize)}</dd></div>
+                  <div><dt>Planned Man-Day Productivity</dt><dd>{item.plannedManDayProductivity ? `${formatNumber(item.plannedManDayProductivity)} ${item.unit}/man-day` : "—"}</dd></div>
+                  <div><dt>Planned Daily Gang Output</dt><dd>{item.plannedGangDailyOutput ? `${formatNumber(item.plannedGangDailyOutput)} ${item.unit}/day` : "—"}</dd></div>
+                  <div><dt>Planned Man-Days</dt><dd>{formatNumber(item.plannedManDays)}</dd></div>
                 </dl>
               </details>
-              {canManage && <button className="secondary-button programme-baseline-action" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedProductionRate ?? "")); setCrewSize(String(item.plannedCrewSize ?? "")); }}>{baselineComplete ? "Edit baseline" : "Complete baseline"}</button>}
+              {canManage && <button className="secondary-button programme-baseline-action" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? "")); }}>{baselineComplete ? "Edit baseline" : "Complete baseline"}</button>}
             </article>;
           })}
         </div>

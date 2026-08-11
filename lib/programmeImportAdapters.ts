@@ -10,7 +10,10 @@ const fields = {
   unit: ["unit", "uom", "unit of measure"], quantity: ["planned quantity", "quantity", "budget quantity"],
   start: ["planned start", "start", "start date"], finish: ["planned finish", "finish", "finish date", "end date"],
   budgetHours: ["budget labour hours", "budget labor hours", "labour hours", "labor hours"],
-  productionRate: ["planned production rate", "production rate", "productivity target"], crewSize: ["planned crew size", "crew size", "no of men", "number of men"],
+  productionRate: ["planned production rate", "planned man-hour productivity", "production rate", "productivity target"], crewSize: ["planned crew size", "crew size", "no of men", "number of men"],
+  manDayRate: ["planned man-day productivity", "planned man day productivity", "man-day productivity", "man day productivity"],
+  gangDailyOutput: ["planned gang daily output", "daily gang output"], plannedManDays: ["planned man-days", "planned man days"],
+  durationDays: ["planned duration days", "duration days"], assumedGangSize: ["assumed gang size", "typical gang size"],
   trade: ["trade", "trade name"], wbs: ["wbs", "wbs code"], status: ["status", "activity status"], calendar: ["calendar", "calendar name"],
 } as const;
 
@@ -40,7 +43,7 @@ export function mapToCanonicalProgramme(sheets: WorkbookSheets, projectId: strin
     const productType = text(cell(row, fields.productType)), unit = text(cell(row, fields.unit));
     const quantityRaw = cell(row, fields.quantity), startRaw = cell(row, fields.start), finishRaw = cell(row, fields.finish);
     const plannedQuantity = numeric(quantityRaw), plannedStart = isoDate(startRaw), plannedFinish = isoDate(finishRaw);
-    const budgetRaw = cell(row, fields.budgetHours), rateRaw = cell(row, fields.productionRate);
+    const budgetRaw = cell(row, fields.budgetHours), rateRaw = cell(row, fields.productionRate), manDayRaw = cell(row, fields.manDayRate);
     let budgetLabourHours = numeric(budgetRaw), plannedProductionRate = numeric(rateRaw);
     const add = (severity: ImportIssue["severity"], message: string) => issues.push({ sheet: sheetName, rowNumber, activityId: activityId || undefined, severity, message });
     if (!activityId) add("error", "Programme Activity ID is required.");
@@ -61,12 +64,19 @@ export function mapToCanonicalProgramme(sheets: WorkbookSheets, projectId: strin
     if (text(rateRaw) && (plannedProductionRate === undefined || plannedProductionRate <= 0)) add("error", "Planned Production Rate must be greater than zero.");
     if (plannedQuantity && budgetLabourHours && !plannedProductionRate) plannedProductionRate = plannedQuantity / budgetLabourHours;
     if (plannedQuantity && plannedProductionRate && !budgetLabourHours) budgetLabourHours = plannedQuantity / plannedProductionRate;
-    if (!budgetLabourHours && !plannedProductionRate) add("warning", "Productivity Baseline Incomplete: provide Budget Labour Hours or Planned Production Rate.");
+    const plannedManDayProductivity = numeric(manDayRaw);
+    if (text(manDayRaw) && (!plannedManDayProductivity || plannedManDayProductivity <= 0)) add("error", "Planned Man-Day Productivity must be greater than zero.");
+    if (sourceType === "sitepulse-template" && !plannedManDayProductivity) add("warning", "Man-day productivity baseline required.");
     const plannedCrewSize = numeric(cell(row, fields.crewSize));
+    const assumedGangSize = numeric(cell(row, fields.assumedGangSize)) ?? plannedCrewSize;
     if (plannedCrewSize !== undefined && plannedCrewSize <= 0) add("error", "Planned Crew Size must be greater than zero.");
+    if (sourceType === "sitepulse-template" && (!assumedGangSize || assumedGangSize <= 0)) add("warning", "Assumed Gang Size is required for a complete measured-work baseline.");
+    const plannedDurationDays = numeric(cell(row, fields.durationDays));
+    const plannedGangDailyOutput = plannedManDayProductivity && assumedGangSize ? plannedManDayProductivity * assumedGangSize : numeric(cell(row, fields.gangDailyOutput));
+    const plannedManDays = plannedManDayProductivity && plannedQuantity ? plannedQuantity / plannedManDayProductivity : numeric(cell(row, fields.plannedManDays));
     if (!activityId || !activity) return [];
     const status = text(cell(row, fields.status));
-    return [{ id: identifier(), projectId, programmeActivityId: activityId, activityName: activity, activity, workActivity: activity, building, elevation, level, productType, unit, plannedQuantity: plannedQuantity ?? 0, plannedStart, plannedFinish, budgetLabourHours, plannedProductionRate, plannedCrewSize, trade: text(cell(row, fields.trade)), wbs: text(cell(row, fields.wbs)), wbsCode: text(cell(row, fields.wbs)), status, activityStatus: status, calendar: text(cell(row, fields.calendar)), sourceType, sourceImportId: importId, missingFromLatestUpdate: false, productivityBaselineComplete: Boolean(plannedQuantity && unit && plannedProductionRate), createdAt: now, updatedAt: now }];
+    return [{ id: identifier(), projectId, programmeActivityId: activityId, activityName: activity, activity, workActivity: activity, building, elevation, level, productType, unit, plannedQuantity: plannedQuantity ?? 0, plannedStart, plannedFinish, budgetLabourHours, plannedProductionRate, plannedCrewSize, plannedManDayProductivity, assumedGangSize, plannedGangDailyOutput, plannedManDays, plannedDurationDays, trade: text(cell(row, fields.trade)), wbs: text(cell(row, fields.wbs)), wbsCode: text(cell(row, fields.wbs)), status, activityStatus: status, calendar: text(cell(row, fields.calendar)), sourceType, sourceImportId: importId, missingFromLatestUpdate: false, productivityBaselineComplete: Boolean(plannedQuantity && unit && plannedManDayProductivity && assumedGangSize), createdAt: now, updatedAt: now }];
   });
   if (!rows.length) issues.push({ sheet: sheetName, severity: "error", message: "No programme rows were found in the workbook." });
   return { sourceType, availableColumns: [...new Set(rows.flatMap((row) => Object.keys(row)))], columnLabels: {}, activities, relationships: [], resources: [], assignments: [], issues };

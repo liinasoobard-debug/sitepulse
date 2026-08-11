@@ -109,14 +109,17 @@ export default function DashboardPage() {
     {data.warnings.map((warning) => <div className="dashboard-notice warning" key={warning}>{warning}</div>)}
 
     <section className="dashboard-kpi-grid-main" aria-label="Production key performance indicators">
-      <DashboardKpiCard label="Expected Output" value={format(data.kpis.expected, data.unit ? ` ${data.unit}` : "")} detail="Selected period" />
-      <DashboardKpiCard label="Achieved Output" value={format(data.kpis.achieved, data.unit ? ` ${data.unit}` : "")} detail="Measured work" />
-      <DashboardKpiCard label="Achievement" value={format(data.kpis.achievement, "%")} tone={performanceTone(data.kpis.achievement)} />
-      <DashboardKpiCard label="Planned Production Rate" value={format(data.kpis.plannedRate, data.unit ? ` ${data.unit}/labour hr` : "")} />
-      <DashboardKpiCard label="Actual Production Rate" value={format(data.kpis.actualRate, data.unit ? ` ${data.unit}/labour hr` : "")} />
+      <DashboardKpiCard label="Planned Daily Gang Output" value={format(data.kpis.plannedDailyGangOutput, data.unit ? ` ${data.unit}/day` : "")} />
+      <DashboardKpiCard label="Actual Daily Gang Output" value={format(data.kpis.actualDailyGangOutput, data.unit ? ` ${data.unit}/day` : "")} />
+      <DashboardKpiCard label="Planned Man-Day Productivity" value={format(data.kpis.plannedRate, data.unit ? ` ${data.unit}/man-day` : "")} />
+      <DashboardKpiCard label="Actual Man-Day Productivity" value={format(data.kpis.actualRate, data.unit ? ` ${data.unit}/man-day` : "")} />
       <DashboardKpiCard label="Productivity Performance" value={format(data.kpis.productivityPerformance, "%")} tone={performanceTone(data.kpis.productivityPerformance)} />
-      <DashboardKpiCard label="Productive Labour Hours" value={format(data.kpis.productiveHours, " hr")} detail={data.kpis.utilisation === null ? undefined : `${format(data.kpis.utilisation, "%")} utilisation`} />
+      <DashboardKpiCard label="Operatives Used" value={format(data.kpis.operativesUsed)} detail="Average contributing operatives per working day" />
+      <DashboardKpiCard label="Planned Gang Size" value={format(data.kpis.plannedGangSize)} />
+      <DashboardKpiCard label="Gang Size Variance" value={format(data.kpis.gangSizeVariance)} />
       <DashboardKpiCard label="Disruption Labour Hours" value={format(data.kpis.lostHours, " hr")} tone={data.kpis.lostHours ? "bad" : "neutral"} />
+      <DashboardKpiCard label="Productive Labour Hours" value={format(data.kpis.productiveHours, " hr")} detail="Advanced detail" />
+      <DashboardKpiCard label="Man-Hour Productivity" value={format(data.kpis.manHourProductivity, data.unit ? ` ${data.unit}/labour hr` : "")} detail="Advanced detail" />
       <DashboardKpiCard label="VO / Change Labour Hours" value={format(data.kpis.changeHours, " hr")} />
       <DashboardKpiCard label="Activities Behind Target" value={String(data.kpis.behindCount)} tone={data.kpis.behindCount ? "bad" : "good"} />
       <DashboardKpiCard label="Principal Blocker" value={data.kpis.principalBlocker ?? "—"} detail={mostFrequent ? `Most frequent: ${mostFrequent.category} (${mostFrequent.events})` : undefined} />
@@ -134,7 +137,7 @@ export default function DashboardPage() {
       <ChangeWorkSummary data={data.changes} />
     </section>
 
-    {selectedGangRow && <section className="dashboard-drilldown"><h2>Gang drill-down</h2><p><strong>{selectedGangRow.gang}</strong> · {selectedGangRow.activity} · {selectedGangRow.status}</p><p>Planned {format(selectedGangRow.planned)} vs actual {format(selectedGangRow.actual)} {selectedGangRow.unit}/labour hr ({format(selectedGangRow.performance, "%")}).</p></section>}
+    {selectedGangRow && <section className="dashboard-drilldown"><h2>Gang drill-down</h2><p><strong>{selectedGangRow.gang}</strong> · {selectedGangRow.activity} · {selectedGangRow.date} · {selectedGangRow.status}</p><p>Planned {format(selectedGangRow.planned)} vs actual {format(selectedGangRow.actual)} {selectedGangRow.unit}/man-day ({format(selectedGangRow.performance, "%")}). Daily Gang Output {format(selectedGangRow.dailyOutput)} {selectedGangRow.unit}; Gang Size {selectedGangRow.gangSize}.</p></section>}
     {selectedBlocker && <section className="dashboard-drilldown"><h2>{selectedBlocker} disruption events</h2><div className="report-table-scroll"><table><thead><tr><th>Date</th><th>Activity</th><th>Reason</th><th>Lost hours</th></tr></thead><tbody>{selectedBlockerRows.map(({ date, event }) => <tr key={event.id}><td>{date}</td><td>{programme.find((item) => item.programmeActivityId === event.programmeActivityId)?.activity ?? event.title}</td><td>{event.reason ?? event.title}</td><td>{format(event.lostLabourHours ?? 0)}</td></tr>)}</tbody></table></div></section>}
     {selectedActivityRow && <section className="dashboard-drilldown"><h2>Activity detail</h2><p><strong>{selectedActivityRow.activity}</strong> · {selectedActivityRow.building} / {selectedActivityRow.elevation} / {selectedActivityRow.level}</p><p>Expected {format(selectedActivityRow.expected)} {selectedActivityRow.unit}; actual {format(selectedActivityRow.actual)}; variance {format(selectedActivityRow.variance)}. Planned finish {selectedActivityRow.plannedFinish ?? "—"}. Main blocker {selectedActivityRow.mainBlocker}.</p></section>}
 

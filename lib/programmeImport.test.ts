@@ -184,5 +184,5 @@ test("standard template returns row-level hierarchy and baseline validation", ()
   const result = parseSitePulseTemplate({ Programme: [{ "Programme Activity ID": "SP-2", Activity: "Incomplete" }] }, "project", "import");
   assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Building")));
   assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Product Type")));
-  assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Productivity Baseline Incomplete")));
+  assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Man-day productivity baseline required")));
 });

@@ -3,7 +3,7 @@ import test from "node:test";
 import { activitiesForVersion, locationValue, measuredWorkValidation, resourcesForActivity, UNSPECIFIED_LOCATION } from "./programmeSelection.ts";
 import type { ProgrammeActivity, ProgrammeImportData } from "../types/site.ts";
 
-const activity = { id: "1", programmeActivityId: "A1", activity: "Panels", building: "", elevation: "North", level: "01", unit: "m²", plannedQuantity: 10, plannedProductionRate: 2, plannedCrewSize: 4, sourceImportId: "v2", createdAt: "now" } satisfies ProgrammeActivity;
+const activity = { id: "1", programmeActivityId: "A1", activity: "Panels", building: "", elevation: "North", level: "01", unit: "m²", plannedQuantity: 10, plannedManDayProductivity: 2, assumedGangSize: 4, sourceImportId: "v2", createdAt: "now" } satisfies ProgrammeActivity;
 
 test("blank imported hierarchy remains selectable", () => assert.equal(locationValue(activity.building), UNSPECIFIED_LOCATION));
 test("programme version filtering keeps latest and missing activities", () => {
@@ -11,7 +11,7 @@ test("programme version filtering keeps latest and missing activities", () => {
   assert.deepEqual(activitiesForVersion([activity, missing], { snapshots: [], relationships: [], resources: [], assignments: [] }, "v2").map((item) => item.programmeActivityId), ["A1", "A2"]);
 });
 test("incomplete activities are visible but identify missing baseline fields", () => {
-  assert.match(measuredWorkValidation({ ...activity, unit: "", plannedProductionRate: undefined, plannedCrewSize: undefined }) ?? "", /unit of measure.*productivity target.*baseline number of men/);
+  assert.match(measuredWorkValidation({ ...activity, unit: "", plannedManDayProductivity: undefined, assumedGangSize: undefined }) ?? "", /unit of measure.*planned man-day productivity.*assumed gang size/);
   assert.equal(measuredWorkValidation(activity), null);
 });
 test("activity assignments resolve imported resource names", () => {

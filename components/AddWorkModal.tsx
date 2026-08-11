@@ -219,7 +219,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   }, [activitySearch, versionActivities]);
   const selectedResources = selectedProgrammeActivity?.resourceNames ?? [];
   const importedBaselineValidation = selectedType === "work" ? measuredWorkValidation(selectedProgrammeActivity) : null;
-  const effectiveActivity = selectedProgrammeActivity ? { ...selectedProgrammeActivity, unit: canEditProgramme ? baselineUnit || selectedProgrammeActivity.unit : selectedProgrammeActivity.unit, plannedProductionRate: canEditProgramme && Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity.plannedProductionRate, plannedCrewSize: canEditProgramme && Number(baselineCrewSize) > 0 ? Number(baselineCrewSize) : selectedProgrammeActivity.plannedCrewSize } : undefined;
+  const effectiveActivity = selectedProgrammeActivity ? { ...selectedProgrammeActivity, unit: canEditProgramme ? baselineUnit || selectedProgrammeActivity.unit : selectedProgrammeActivity.unit, plannedManDayProductivity: canEditProgramme && Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity.plannedManDayProductivity, assumedGangSize: canEditProgramme && Number(baselineCrewSize) > 0 ? Number(baselineCrewSize) : selectedProgrammeActivity.assumedGangSize } : undefined;
   const baselineValidation = selectedType === "work" ? measuredWorkValidation(effectiveActivity) : null;
   function chooseRecordType(type: SiteRecordType) {
     setSelectedType(type);
@@ -282,8 +282,8 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     );
     if (selectedType === "work") setTitle(activity?.activity ?? "");
     setBaselineUnit(activity?.unit ?? "");
-    setBaselineRate(activity?.plannedProductionRate ? String(activity.plannedProductionRate) : "");
-    setBaselineCrewSize(activity?.plannedCrewSize ? String(activity.plannedCrewSize) : "");
+    setBaselineRate(activity?.plannedManDayProductivity ? String(activity.plannedManDayProductivity) : "");
+    setBaselineCrewSize(activity?.assumedGangSize ? String(activity.assumedGangSize) : "");
     setPercentComplete(activity?.physicalPercentComplete === undefined ? "" : String(activity.physicalPercentComplete));
     setValidationMessage("");
   }
@@ -338,9 +338,9 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       ? selectedCrew?.operativeIds.slice(0, operativeCount).map(String) ?? []
       : assignmentMode === "individuals" ? selectedOperativeIds : [];
     const effectiveUnit = baselineUnit || selectedProgrammeActivity?.unit || "";
-    const effectiveRate = Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity?.plannedProductionRate;
-    const effectiveCrewSize = Number(baselineCrewSize) > 0 ? Number(baselineCrewSize) : selectedProgrammeActivity?.plannedCrewSize;
-    if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedProductionRate || effectiveCrewSize !== selectedProgrammeActivity.plannedCrewSize)) {
+    const effectiveRate = Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity?.plannedManDayProductivity;
+    const effectiveCrewSize = Number(baselineCrewSize) > 0 ? Number(baselineCrewSize) : selectedProgrammeActivity?.assumedGangSize;
+    if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedManDayProductivity || effectiveCrewSize !== selectedProgrammeActivity.assumedGangSize)) {
       try { await updateProgrammeBaseline(selectedProgrammeActivity.id,effectiveUnit,Number(effectiveRate),Number(effectiveCrewSize)); } catch(error) { setValidationMessage(error instanceof Error?error.message:"Only a Planner/Admin can update planned data."); return; }
     }
     await onAdd({
@@ -365,7 +365,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       plannedFinish: selectedProgrammeActivity?.plannedFinish,
       plannedDuration: selectedProgrammeActivity?.originalDuration,
       plannedQuantity: selectedProgrammeActivity?.plannedQuantity,
-      productivityTarget: effectiveRate,
+      productivityTarget: selectedProgrammeActivity?.plannedProductionRate,
       resourceNames: selectedResources,
       numberOfOperatives: operativeCount,
       quantity: selectedType === "work" ? Number(actualQuantity) : undefined,
@@ -604,13 +604,13 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned dates</span><strong>{selectedProgrammeActivity.plannedStart || "—"} → {selectedProgrammeActivity.plannedFinish || "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned duration</span><strong>{selectedProgrammeActivity.originalDuration ?? "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned quantity</span><strong>{selectedProgrammeActivity.plannedQuantity || "—"} {selectedProgrammeActivity.unit}</strong></div>
-          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Productivity target</span><strong>{selectedProgrammeActivity.plannedProductionRate ? `${selectedProgrammeActivity.plannedProductionRate} ${selectedProgrammeActivity.unit}/hr` : "—"}</strong></div>
+          <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned Man-Day Productivity</span><strong>{selectedProgrammeActivity.plannedManDayProductivity ? `${selectedProgrammeActivity.plannedManDayProductivity} ${selectedProgrammeActivity.unit}/man-day` : "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Baseline men</span><strong>{selectedProgrammeActivity.plannedCrewSize ?? "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Resource / assignment</span><strong>{selectedResources.join(", ") || assignmentLabel}</strong></div>
         </div>
       )}
 
-      {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>{canEditProgramme ? "Complete the missing baseline to record measured work. These values will also be saved against the programme activity." : importedBaselineValidation}</p>{canEditProgramme && <><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned productivity target *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per labour hour" /></label><label className="attendance-field"><span>Baseline number of men *</span><input type="number" min="1" step="1" value={baselineCrewSize} onChange={(event) => { setBaselineCrewSize(event.target.value); setValidationMessage(""); }} /></label></>}</div>}
+      {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>{canEditProgramme ? "Complete the missing baseline to record measured work. These values will also be saved against the programme activity." : importedBaselineValidation}</p>{canEditProgramme && <><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned Man-Day Productivity *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per operative per day" /></label><label className="attendance-field"><span>Assumed Gang Size *</span><input type="number" min="1" step="1" value={baselineCrewSize} onChange={(event) => { setBaselineCrewSize(event.target.value); setValidationMessage(""); }} /></label></>}</div>}
 
       {selectedType === "work" && <>
         <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>

@@ -35,7 +35,7 @@ export function measuredWorkValidation(activity: ProgrammeActivity | undefined):
   if (!activity) return null;
   const missing: string[] = [];
   if (!activity.unit?.trim()) missing.push("unit of measure");
-  if (!(Number(activity.plannedProductionRate) > 0)) missing.push("productivity target");
-  if (!Number.isInteger(Number(activity.plannedCrewSize)) || Number(activity.plannedCrewSize) < 1) missing.push("baseline number of men");
+  if (!(Number(activity.plannedManDayProductivity) > 0)) missing.push("planned man-day productivity");
+  if (!Number.isInteger(Number(activity.assumedGangSize)) || Number(activity.assumedGangSize) < 1) missing.push("assumed gang size");
   return missing.length ? `This activity requires a complete productivity baseline before it can be recorded as measured work. Missing: ${missing.join(" and ")}.` : null;
 }

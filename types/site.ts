@@ -86,6 +86,16 @@ export interface ProgrammeActivity {
 
   plannedProductionRate?: number;
 
+  plannedManDayProductivity?: number;
+
+  assumedGangSize?: number;
+
+  plannedGangDailyOutput?: number;
+
+  plannedManDays?: number;
+
+  plannedDurationDays?: number;
+
   plannedCrewSize?: number;
 
   plannedStart?: string;
@@ -202,6 +212,21 @@ export interface ProgrammeProgress {
   labourProductivityIndex: number | null;
   overallLabourEfficiencyIndex: number | null;
   productivityPerformancePercentage: number | null;
+  plannedManDayProductivity?: number | null;
+  actualManDayProductivity?: number | null;
+  dailyGangOutput?: number;
+  operativesContributing?: number;
+}
+
+export interface ProductivityBenchmark {
+  productType: string;
+  unit: string;
+  plannedManDayProductivity: number;
+  typicalGangSize: number;
+  typicalDailyGangOutput: number;
+  source?: string;
+  effectiveDate?: string;
+  notes?: string;
 }
 
 export interface TimelineEvent {

@@ -6,10 +6,13 @@ export async function GET() {
   const rows = [{
     "Programme Activity ID": "SP-001", Building: "Building A", Elevation: "North", Level: "01", Activity: "Install curtain wall",
     "Product Type": "Unitised Curtain Wall", Unit: "m2", "Planned Quantity": 100, "Planned Start": "2026-08-10", "Planned Finish": "2026-08-21",
-    "Budget Labour Hours": 50, "Planned Production Rate": "", "Planned Crew Size": 5, Trade: "Facades", WBS: "1.1", Status: "Not Started",
+    "Planned Man-Day Productivity": 6, "Assumed Gang Size": 5, "Planned Gang Daily Output": 30, "Planned Man-Days": 20,
+    "Planned Duration Days": 20, "Budget Labour Hours": "", "Planned Man-Hour Productivity": "", Trade: "Facades", WBS: "1.1", Status: "Not Started",
   }];
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.json_to_sheet(rows);
+  worksheet.M2 = { t: "n", f: "K2*L2" };
+  worksheet.N2 = { t: "n", f: "H2/K2" };
   worksheet["!cols"] = Object.keys(rows[0]).map((heading) => ({ wch: Math.max(14, heading.length + 2) }));
   XLSX.utils.book_append_sheet(workbook, worksheet, "SitePulse Programme");
   const content = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
