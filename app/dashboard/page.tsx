@@ -17,7 +17,7 @@ import { buildDashboardData, classifyDashboardBlocker, dashboardRange, type Dash
 import { getActiveDate, getActiveProject, getActiveProjectId, getLocalDate, loadSiteDaysBetween } from "@/lib/storage";
 import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
 import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
-import { productivityRagLabels, type ProductivityRag } from "@/lib/productivityRag";
+import { productivityRag, productivityRagLabels, type ProductivityRag } from "@/lib/productivityRag";
 import type { ProgrammeActivity, Project, SiteDay } from "@/types/site";
 
 const emptyFilters: DashboardFilters = { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "" };
@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [selectedActivity, setSelectedActivity] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailWindow, setDetailWindow] = useState<{ label: string; start: string; end: string } | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => { queueMicrotask(() => setSelectedDate(getActiveDate())); }, []);
   useEffect(() => {
@@ -87,7 +88,20 @@ export default function DashboardPage() {
   const activeFilters = (Object.entries(filters) as Array<[keyof DashboardFilters, string]>).filter(([, value]) => value);
   const setCrossFilter = (key: keyof DashboardFilters, value: string) => setFilters((current) => ({ ...current, [key]: current[key] === value ? "" : value }));
 
+  const productivityLosses = useMemo(() => {
+    if (!data) return [];
+    const grouped = new Map<string, { activity: string; planned: number; actual: number; manDays: number; rows: Array<{ performance: number }> }>();
+    data.gangs.forEach((row) => { const current = grouped.get(row.activity) ?? { activity: row.activity, planned: 0, actual: 0, manDays: 0, rows: [] }; current.planned += row.planned * row.gangSize; current.actual += row.actual * row.gangSize; current.manDays += row.gangSize; current.rows.push(row); grouped.set(row.activity, current); });
+    return [...grouped.values()].map((row) => { const planned = row.manDays ? row.planned / row.manDays : 0, actual = row.manDays ? row.actual / row.manDays : 0; const performance = planned > 0 ? actual / planned * 100 : 0; return { ...row, performance, status: productivityRag(planned, actual) }; }).sort((a, b) => a.performance - b.performance);
+  }, [data]);
+  const deterioratingCount = productivityLosses.filter((row) => row.rows.length > 1 && row.rows.at(-1)!.performance < row.rows[0].performance).length;
+
   if (!selectedDate || !data) return null;
+  const achievement = data.kpis.achievement;
+  const programmeTone = achievement === null ? "neutral" : achievement >= 100 ? "green" : achievement >= 90 ? "amber" : "red";
+  const programmeIcon = programmeTone === "green" ? "●" : programmeTone === "amber" ? "▲" : programmeTone === "red" ? "■" : "◇";
+  const variance = data.kpis.expected !== null && data.kpis.achieved !== null ? data.kpis.achieved - data.kpis.expected : null;
+  const dateLabel = range ? `${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(`${range.start}T12:00:00`))}–${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(`${range.end}T12:00:00`))}` : "";
   return <main className="dashboard-page"><div className="dashboard-shell">
     <header className="dashboard-header"><div><p className="eyebrow">Production control</p><h1>Project Dashboard</h1><p>{project?.name ?? "Project"} · {range?.start} to {range?.end}</p></div><div className="dashboard-header-actions"><span className="dashboard-method">Linear planned production profile</span><button className="secondary-button dashboard-filter-toggle" onClick={() => setFiltersOpen((value) => !value)} aria-expanded={filtersOpen}>Filters {activeFilters.length ? `(${activeFilters.length})` : ""}</button></div></header>
 
@@ -111,7 +125,15 @@ export default function DashboardPage() {
     {error && <div className="dashboard-notice error" role="alert">{error}</div>}
     {data.warnings.map((warning) => <div className="dashboard-notice warning" key={warning}>{warning}</div>)}
 
-    <section className="dashboard-kpi-grid-main" aria-label="Production key performance indicators">
+    <section className={`dashboard-executive-hero ${programmeTone}`} aria-label="Programme performance summary"><div className="dashboard-executive-status"><span aria-hidden="true">{programmeIcon}</span><strong>{format(achievement, "%")} OF PLAN</strong><small>{achievement === null ? "NO PROGRAMME ACTUALS" : achievement >= 100 ? "ON OR ABOVE TARGET" : "BELOW TARGET"}</small></div><div className="dashboard-executive-metrics"><div><span>Plan</span><strong>{format(data.kpis.expected)} {data.unit}</strong></div><div><span>Actual</span><strong>{format(data.kpis.achieved)} {data.unit}</strong></div><div><span>Variance</span><strong>{format(variance)} {data.unit}</strong></div><div><span>Productivity</span><strong>{format(data.kpis.productivityPerformance, "%")}</strong></div></div><p>Programme performance and Productivity RAG are independent measures.</p></section>
+
+    <section className="dashboard-executive-charts" aria-label="Progress and productivity charts"><div><h2>Progress</h2>{data.kpis.expected !== null && data.kpis.achieved !== null ? <PlannedVsActualChart data={data.output} unit={data.unit} onSelect={setDetailWindow} /> : <EmptyChart title="Planned vs Actual" message="A planned baseline and measured quantity are required." />}</div><div><h2>Productivity</h2><ProductivityTrendChart data={data.productivity} unit={data.unit} /></div></section>
+
+    <section className="dashboard-executive-insight"><div><h2>Where are we losing?</h2>{productivityLosses.length ? <ol className="dashboard-loss-list">{productivityLosses.slice(0, 6).map((row) => <li key={row.activity}><ProductivityRagBadge status={row.status} /><strong>{row.activity}</strong><span>{format(row.performance, "%")}</span></li>)}</ol> : <p>No measured productivity exists for {dateLabel}.</p>}</div><div><h2>Why?</h2>{data.blockers.length ? <ol className="dashboard-blocker-bars">{data.blockers.slice(0, 5).map((row) => <li key={row.category}><div><strong>{row.category}</strong><span>{format(row.hours)} man-hours</span></div><i style={{ width: `${row.hours / Math.max(data.blockers[0].hours, 1) * 100}%` }} /></li>)}</ol> : <p>No disruption blockers recorded in this period.</p>}</div></section>
+
+    <section className="dashboard-attention"><h2>Attention required</h2><div><span><strong>{data.productivityRag.counts.red}</strong> Red activit{data.productivityRag.counts.red === 1 ? "y" : "ies"}</span><span><strong>{deterioratingCount}</strong> deteriorating activit{deterioratingCount === 1 ? "y" : "ies"}</span><span><strong>{format(data.kpis.lostHours ?? 0)}</strong> disruption man-hours</span><span><strong>{data.changes.length}</strong> change event{data.changes.length === 1 ? "" : "s"}</span></div><button className="secondary-button" onClick={() => setDetailsOpen((value) => !value)} aria-expanded={detailsOpen}>{detailsOpen ? "Hide detail" : "View detail"}</button></section>
+
+    {detailsOpen && <><section className="dashboard-kpi-grid-main" aria-label="Production key performance indicators">
       <DashboardKpiCard label="Planned Daily Gang Output" value={format(data.kpis.plannedDailyGangOutput, data.unit ? ` ${data.unit}/day` : "")} />
       <DashboardKpiCard label="Actual Daily Gang Output" value={format(data.kpis.actualDailyGangOutput, data.unit ? ` ${data.unit}/day` : "")} />
       <DashboardKpiCard label="Planned Man-Day Productivity" value={format(data.kpis.plannedRate, data.unit ? ` ${data.unit}/man-day` : "")} />
@@ -130,9 +152,7 @@ export default function DashboardPage() {
 
     <section className="dashboard-chart-grid">
       <section className="dashboard-chart"><header><h2>Productivity RAG distribution</h2><p>Productivity only; independent from Programme RAG.</p></header><div style={{ display: "flex", height: 38, borderRadius: 8, overflow: "hidden", border: "1px solid #98a2b3" }} aria-label={`Green ${format(data.productivityRag.percentages.green, "%")}, Amber ${format(data.productivityRag.percentages.amber, "%")}, Red ${format(data.productivityRag.percentages.red, "%")}`}><span style={{ width: `${data.productivityRag.percentages.green}%`, background: "#12b76a" }} title="Green" /><span style={{ width: `${data.productivityRag.percentages.amber}%`, background: "#f79009" }} title="Amber" /><span style={{ width: `${data.productivityRag.percentages.red}%`, background: "#d92d20" }} title="Red" /></div><p>● Green {data.productivityRag.counts.green} ({format(data.productivityRag.percentages.green, "%")}) · ▲ Amber {data.productivityRag.counts.amber} ({format(data.productivityRag.percentages.amber, "%")}) · ■ Red {data.productivityRag.counts.red} ({format(data.productivityRag.percentages.red, "%")})</p><p>Baseline Missing {data.productivityRag.counts["baseline-missing"]} · No Actuals {data.productivityRag.counts["no-actuals"]}</p></section>
-      {data.kpis.expected !== null && data.kpis.achieved !== null ? <PlannedVsActualChart data={data.output} unit={data.unit} onSelect={setDetailWindow} /> : <EmptyChart title="Planned vs achieved output" message="A complete planned baseline and measured actual quantity are required." />}
       {data.kpis.expected !== null ? <CumulativeProgressChart data={data.cumulative} unit={data.unit} /> : <EmptyChart title="Cumulative planned vs actual" message="A complete planned quantity and date baseline is required." />}
-      <ProductivityTrendChart data={data.productivity} unit={data.unit} />
       <GangProductivityChart data={data.gangs} onSelect={(key) => { const row = data.gangs.find((item) => item.key === key); setSelectedGang(key); if (row) setCrossFilter("gang", row.gang); }} />
       {data.kpis.utilisation !== null ? <LabourUtilisationChart data={data.labour} /> : <EmptyChart title="Labour utilisation" message="No classified labour hours exist for this period." />}
       <BlockerParetoChart data={data.blockers} onSelect={(category) => { setSelectedBlocker(category); setCrossFilter("blockerCategory", category); }} />
@@ -147,6 +167,6 @@ export default function DashboardPage() {
 
     <section className="dashboard-detail-table"><h2>Activities behind target detail</h2>{data.behind.length ? <div className="report-table-scroll"><table><thead><tr>{["Activity", "Building", "Elevation", "Level", "Activity ID", "Expected to Date", "Actual to Date", "Variance", "Achievement", "Planned Finish", "Status", "Main Blocker"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{data.behind.map((row) => <tr key={row.id} onClick={() => { setSelectedActivity(row.id); setCrossFilter("activity", row.id); }}><td>{row.activity}</td><td>{row.building || "—"}</td><td>{row.elevation || "—"}</td><td>{row.level || "—"}</td><td>{row.id}</td><td>{format(row.expected)} {row.unit}</td><td>{format(row.actual)} {row.unit}</td><td>{format(row.variance)} {row.unit}</td><td>{format(row.achievement, "%")}</td><td>{row.plannedFinish ?? "—"}</td><td>{row.status}</td><td>{row.mainBlocker}</td></tr>)}</tbody></table></div> : <p>No activities are behind target for the selected filters and period.</p>}</section>
     <section className="dashboard-detail-table"><h2>Red Productivity Activities</h2><p>Productivity RAG is separate from programme progress status.</p>{data.redActivities.length ? <div className="report-table-scroll"><table><thead><tr>{["Productivity RAG", "Activity", "Building", "Elevation", "Level", "Gang", "Product Type", "Planned", "Actual", "Performance", "Main Blocker"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{data.redActivities.map((row) => <tr key={row.id}><td><ProductivityRagBadge status="red" /></td><td>{row.activity}</td><td>{row.building || "—"}</td><td>{row.elevation || "—"}</td><td>{row.level || "—"}</td><td>{row.gang}</td><td>{row.productType}</td><td>{format(row.planned)}</td><td>{format(row.actual)}</td><td>{format(row.performance, "%")}</td><td>{row.mainBlocker}</td></tr>)}</tbody></table></div> : <p>No Red productivity activities match the current filters.</p>}</section>
-    <DashboardDetailTable rows={detailWindow ? data.detailRows.filter((row) => row.date >= detailWindow.start && row.date <= detailWindow.end) : data.detailRows} />
+    <DashboardDetailTable rows={detailWindow ? data.detailRows.filter((row) => row.date >= detailWindow.start && row.date <= detailWindow.end) : data.detailRows} /></>}
   </div></main>;
 }
