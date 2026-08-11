@@ -1,9 +1,10 @@
 import { crewName, eventLabourHours } from "./reporting.ts";
 import { groupGangDayProductivity } from "./manDayProductivity.ts";
+import { productivityPerformance, productivityRag, ragDistribution, type ProductivityRag } from "./productivityRag.ts";
 import type { ProgrammeActivity, SiteDay, TimelineEvent } from "@/types/site";
 
 export type DashboardPeriod = "daily" | "weekly" | "monthly";
-export type DashboardFilters = { building: string; elevation: string; level: string; activity: string; gang: string; unit: string; activityStatus: string; blockerCategory: string };
+export type DashboardFilters = { building: string; elevation: string; level: string; activity: string; gang: string; unit: string; activityStatus: string; blockerCategory: string; productivityRag: string };
 export type DatedDashboardEvent = { date: string; day: SiteDay; event: TimelineEvent };
 export type DashboardBucket = { key: string; label: string; start: string; end: string };
 
@@ -29,6 +30,8 @@ export type DashboardData = {
   blockers: Array<{ category: string; hours: number; events: number; activities: number; cumulative: number }>;
   behind: DashboardActivityVariance[];
   programmeStatus: Array<{ status: string; count: number }>;
+  productivityRag: ReturnType<typeof ragDistribution>;
+  redActivities: Array<{ id: string; activity: string; building: string; elevation: string; level: string; gang: string; productType: string; planned: number; actual: number; performance: number; mainBlocker: string }>;
   changes: Array<{ id: string; date: string; gang: string; activity: string; hours: number; quantity: number | null; status: string; reference: string }>;
   detailRows: DashboardDetailRow[];
   disruptionRows: DatedDashboardEvent[];
@@ -119,14 +122,19 @@ export function buildDashboardData(args: {
   const { period, selectedDate, programme, events, filters } = args;
   const range = dashboardRange(period, selectedDate);
   const activityById = new Map(programme.map((activity) => [activity.programmeActivityId, activity]));
+  const ragForActivity = (activity: ProgrammeActivity): ProductivityRag => {
+    const groups = groupGangDayProductivity(events.filter(({ date, event }) => date <= range.end && event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId).map(({ date, event }) => ({ date, event })));
+    const quantity = groups.reduce((sum, group) => sum + group.quantity, 0), manDays = groups.reduce((sum, group) => sum + group.operatives, 0);
+    return productivityRag(activity.plannedManDayProductivity, manDays > 0 ? quantity / manDays : null);
+  };
   const blockerActivityIds = new Set(events.filter(({ event }) => event.type === "disruption" && (!filters.blockerCategory || classifyDashboardBlocker(event) === filters.blockerCategory)).map(({ event }) => event.programmeActivityId).filter((id): id is string => Boolean(id)));
-  let activities = programme.filter((activity) => selectedActivity(activity, filters, range.end) && (!filters.blockerCategory || blockerActivityIds.has(activity.programmeActivityId)));
+  let activities = programme.filter((activity) => selectedActivity(activity, filters, range.end) && (!filters.blockerCategory || blockerActivityIds.has(activity.programmeActivityId)) && (!filters.productivityRag || ragForActivity(activity) === filters.productivityRag));
   let filteredEvents = events.filter(({ day, event }) => {
     const activity = event.programmeActivityId ? activityById.get(event.programmeActivityId) : undefined;
     if (filters.gang && crewName(day.crews ?? [], event.crewId) !== filters.gang) return false;
     if (filters.blockerCategory && !((event.type === "disruption" && classifyDashboardBlocker(event) === filters.blockerCategory) || (event.programmeActivityId && blockerActivityIds.has(event.programmeActivityId)))) return false;
-    const hasActivityFilter = Boolean(filters.building || filters.elevation || filters.level || filters.activity || filters.unit || filters.activityStatus);
-    if (hasActivityFilter) return Boolean(activity && selectedActivity(activity, filters, range.end));
+    const hasActivityFilter = Boolean(filters.building || filters.elevation || filters.level || filters.activity || filters.unit || filters.activityStatus || filters.productivityRag);
+    if (hasActivityFilter) return Boolean(activity && selectedActivity(activity, filters, range.end) && (!filters.productivityRag || ragForActivity(activity) === filters.productivityRag));
     return event.type !== "work" || Boolean(activity);
   });
 
@@ -189,7 +197,7 @@ export function buildDashboardData(args: {
     const source = gangSource.find(({ date, event }) => date === group.date && event.programmeActivityId === group.activityId && (event.crewId ?? "unassigned") === group.gangId);
     const gang = crewName(source?.day.crews ?? [], group.gangId === "unassigned" ? undefined : group.gangId);
     const performance = group.actualManDayProductivity / planned * 100;
-    return [{ key: group.key, date: group.date, gang, activity: activity.activity, unit: activity.unit, planned, actual: group.actualManDayProductivity, dailyOutput: group.quantity, gangSize: group.operatives, performance, status: performance >= 100 ? "On or Ahead" : performance >= 90 ? "Slightly Behind" : performance >= 75 ? "Behind" : "Critical Performance Variance" }];
+    return [{ key: group.key, date: group.date, gang, activity: activity.activity, unit: activity.unit, planned, actual: group.actualManDayProductivity, dailyOutput: group.quantity, gangSize: group.operatives, performance, status: productivityRag(planned, group.actualManDayProductivity) }];
   }).sort((a, b) => a.performance - b.performance);
   if (period === "daily") productivity = gangs.map((row) => ({ label: `${row.gang} · ${row.activity}`, planned: row.planned, actual: row.actual }));
 
@@ -200,6 +208,13 @@ export function buildDashboardData(args: {
   const blockers = [...blockerMap].map(([category, row]) => ({ category, hours: row.hours, events: row.events, activities: row.activities.size, cumulative: 0 })).sort((a, b) => b.hours - a.hours).map((row) => ({ ...row, cumulative: cumulativePercent += blockerTotal > 0 ? row.hours / blockerTotal * 100 : 0 }));
 
   const allThroughEnd = filteredEvents.filter(({ date, event }) => date <= range.end && event.type === "work" && event.status === "completed");
+  const ragRows = activities.map((activity) => {
+    const groups = groupGangDayProductivity(allThroughEnd.filter(({ event }) => event.programmeActivityId === activity.programmeActivityId).map(({ date, event }) => ({ date, event })));
+    const quantity = groups.reduce((sum, group) => sum + group.quantity, 0), manDays = groups.reduce((sum, group) => sum + group.operatives, 0);
+    const actual = manDays > 0 ? quantity / manDays : null;
+    return { activity, actual, status: productivityRag(activity.plannedManDayProductivity, actual), performance: productivityPerformance(activity.plannedManDayProductivity, actual) };
+  });
+  const productivityRagSummary = ragDistribution(ragRows.map((row) => row.status));
   const behind = validActivities.map((activity) => {
     const expected = expectedThrough(activity, range.end) ?? 0;
     const actual = allThroughEnd.filter(({ event }) => event.programmeActivityId === activity.programmeActivityId).reduce((sum, { event }) => sum + (event.quantity ?? 0), 0);
@@ -213,6 +228,12 @@ export function buildDashboardData(args: {
   activities.forEach((activity) => { const status = dashboardActivityStatus(activity, range.end); statusMap.set(status, (statusMap.get(status) ?? 0) + 1); });
   const programmeStatus = ["Not Started", "In Progress", "Completed", "Overdue", "Missing from Latest Update", "Productivity Baseline Incomplete"].map((status) => ({ status, count: statusMap.get(status) ?? 0 }));
   const changes = filteredEvents.filter(({ date, event }) => date >= range.start && date <= range.end && event.type === "variation").map(({ date, day, event }) => ({ id: event.id, date, gang: crewName(day.crews ?? [], event.crewId), activity: activityById.get(event.programmeActivityId ?? "")?.activity ?? event.title, hours: eventLabourHours(event), quantity: typeof event.quantity === "number" ? event.quantity : null, status: event.status ?? "active", reference: event.instructionReference ?? event.drawingReference ?? "—" }));
+  const redActivities = ragRows.filter((row) => row.status === "red" && row.actual !== null && row.performance !== null).map((row) => {
+    const related = filteredEvents.filter(({ event }) => event.programmeActivityId === row.activity.programmeActivityId);
+    const gangNames = [...new Set(related.map(({ day, event }) => crewName(day.crews ?? [], event.crewId)).filter(Boolean))];
+    const reasons = new Map<string, number>(); related.filter(({ event }) => event.type === "disruption").forEach(({ event }) => { const reason = classifyDashboardBlocker(event); reasons.set(reason, (reasons.get(reason) ?? 0) + (event.lostLabourHours ?? eventLabourHours(event))); });
+    return { id: row.activity.programmeActivityId, activity: row.activity.activity, building: row.activity.building, elevation: row.activity.elevation, level: row.activity.level, gang: gangNames.join(", ") || "—", productType: row.activity.productType || "—", planned: Number(row.activity.plannedManDayProductivity), actual: row.actual!, performance: row.performance!, mainBlocker: [...reasons].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—" };
+  }).sort((a, b) => a.performance - b.performance);
   const detailRows = filteredEvents.filter(({ date }) => date >= range.start && date <= range.end).map(({ date, day, event }) => {
     const activity = activityById.get(event.programmeActivityId ?? "");
     const productiveHours = event.type === "work" ? eventLabourHours(event) : 0;
@@ -241,6 +262,6 @@ export function buildDashboardData(args: {
   if (!validActivities.length) warnings.push("No activities have a complete linear planned production baseline for the selected filters.");
 
   const changeHours = changes.reduce((sum, row) => sum + row.hours, 0);
-  return { unit: dominantUnit, mixedUnits, warnings: [...new Set(warnings)], output, cumulative, productivity, labour, gangs, blockers, behind, programmeStatus, changes, detailRows, disruptionRows: disruptions,
+  return { unit: dominantUnit, mixedUnits, warnings: [...new Set(warnings)], output, cumulative, productivity, labour, gangs, blockers, behind, programmeStatus, productivityRag: productivityRagSummary, redActivities, changes, detailRows, disruptionRows: disruptions,
     kpis: { expected: validActivities.length ? expected : null, achieved: measuredPeriodWork.length ? achieved : null, achievement: expected > 0 && measuredPeriodWork.length ? achieved / expected * 100 : null, plannedDailyGangOutput, actualDailyGangOutput, plannedRate, actualRate: measuredPeriodWork.length ? actualRate : null, productivityPerformance: plannedRate && actualRate !== null && measuredPeriodWork.length ? actualRate / plannedRate * 100 : null, operativesUsed, plannedGangSize, gangSizeVariance: operativesUsed !== null && plannedGangSize !== null ? operativesUsed - plannedGangSize : null, manHourProductivity, productiveHours: productiveHours > 0 ? productiveHours : null, lostHours: disruptions.length ? lostHours : null, changeHours: changes.length ? changeHours : null, behindCount: behind.length, principalBlocker: blockers[0]?.category ?? null, utilisation: totalClassified > 0 ? productiveHours / totalClassified * 100 : null } };
 }

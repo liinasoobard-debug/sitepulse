@@ -2715,3 +2715,24 @@ h1 {
     padding: 10px 8px;
   }
 }
+.productivity-rag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .3rem .65rem;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  background: #fff;
+  color: #475467;
+  font-size: .82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.productivity-rag-badge.green { color: #067647; background: #ecfdf3; }
+.productivity-rag-badge.amber { color: #854a0e; background: #fffaeb; }
+.productivity-rag-badge.red { color: #b42318; background: #fef3f2; }
+.productivity-rag-badge.baseline-missing,
+.productivity-rag-badge.no-actuals { color: #475467; background: #f2f4f7; border-style: dashed; }
+.productivity-rag-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 16px 0; }
+.productivity-rag-summary > div { padding: 12px; border: 1px solid #d0d5dd; border-radius: 12px; background: #fff; }
+.productivity-rag-summary strong { display: block; font-size: 1.35rem; }

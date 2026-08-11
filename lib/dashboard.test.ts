@@ -13,7 +13,7 @@ test("dashboard periods use calendar boundaries", () => {
 
 test("linear profile and measured work use existing labour hours", () => {
   const event = { id: "e1", programmeActivityId: "A1", crewId: "g1", time: "08:00", startTime: "08:00", finishTime: "10:00", duration: 120, title: "Panels", type: "work" as const, status: "completed" as const, quantity: 16, affectedOperativeIds: ["o1", "o2"] };
-  const result = buildDashboardData({ period: "daily", selectedDate: "2026-08-03", programme: [activity], events: [{ date: day.date, day, event }], filters: { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "" } });
+  const result = buildDashboardData({ period: "daily", selectedDate: "2026-08-03", programme: [activity], events: [{ date: day.date, day, event }], filters: { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "" } });
   assert.equal(result.kpis.expected, 20);
   assert.equal(result.kpis.achieved, 16);
   assert.equal(result.kpis.actualRate, 8);
@@ -22,14 +22,14 @@ test("linear profile and measured work use existing labour hours", () => {
 });
 
 test("incomplete baselines warn instead of returning false expected output", () => {
-  const result = buildDashboardData({ period: "weekly", selectedDate: "2026-08-03", programme: [{ ...activity, plannedStart: undefined }], events: [], filters: { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "" } });
+  const result = buildDashboardData({ period: "weekly", selectedDate: "2026-08-03", programme: [{ ...activity, plannedStart: undefined }], events: [], filters: { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "" } });
   assert.equal(result.kpis.expected, null);
   assert.match(result.warnings.join(" "), /complete planned quantity/);
 });
 
 test("programme and change summaries reuse filtered dashboard records", () => {
   const variation = { id: "v1", programmeActivityId: "A1", crewId: "g1", time: "10:00", startTime: "10:00", finishTime: "11:00", duration: 60, title: "Client change", type: "variation" as const, status: "completed" as const, instructionReference: "VO-12", affectedOperativeIds: ["o1", "o2"] };
-  const result = buildDashboardData({ period: "weekly", selectedDate: "2026-08-03", programme: [{ ...activity, actualStart: "2026-08-03" }], events: [{ date: day.date, day, event: variation }], filters: { building: "B1", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "In Progress", blockerCategory: "" } });
+  const result = buildDashboardData({ period: "weekly", selectedDate: "2026-08-03", programme: [{ ...activity, actualStart: "2026-08-03" }], events: [{ date: day.date, day, event: variation }], filters: { building: "B1", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "In Progress", blockerCategory: "", productivityRag: "" } });
   assert.equal(result.programmeStatus.find((row) => row.status === "In Progress")?.count, 1);
   assert.equal(result.changes[0]?.reference, "VO-12");
   assert.equal(result.kpis.changeHours, 2);

@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ProductivityRagBadge from "@/components/ProductivityRagBadge";
+import { productivityPerformance, productivityRag, productivityRagLabels, ragDistribution, type ProductivityRag } from "@/lib/productivityRag";
 import { getActiveProjectId } from "@/lib/storage";
 import {
   loadProgrammeImports,
@@ -81,6 +83,7 @@ export default function ProgrammePage() {
     status: "",
     completion: "",
     activityType: "",
+    productivityRag: "",
   });
   const [edit, setEdit] = useState<ProgrammeActivity | null>(null);
   const [crewSize, setCrewSize] = useState("");
@@ -259,9 +262,16 @@ export default function ProgrammePage() {
   const publishedImport = imports.find((row) => row.status === "published");
   const publishedSource = publishedImport?.source_type as ImportSource | undefined;
 
+  const productivityRows = useMemo(() => activities.map((item) => {
+    const actual = actualProductivity[item.programmeActivityId];
+    const rag = productivityRag(item.plannedManDayProductivity, actual);
+    return { item, actual, rag, performance: productivityPerformance(item.plannedManDayProductivity, actual) };
+  }), [activities, actualProductivity]);
+  const ragSummary = useMemo(() => ragDistribution(productivityRows.map((row) => row.rag)), [productivityRows]);
+
   const filtered = useMemo(
     () =>
-      activities.filter((item) => {
+      productivityRows.filter(({ item, rag }) => {
         const query = search.toLowerCase();
         const name = `${item.activityName} ${item.programmeActivityId}`.toLowerCase();
         const typeName = `${item.activityName} ${item.workActivity}`.toLowerCase();
@@ -278,10 +288,11 @@ export default function ProgrammePage() {
           (!filters.activityType ||
             (activityTypeKeywords[filters.activityType] || []).some((keyword) =>
               typeName.includes(keyword)
-            ))
+            )) &&
+          (!filters.productivityRag || rag === filters.productivityRag)
         );
       }),
-    [activities, filters, search]
+    [filters, productivityRows, search]
   );
 
   return (
@@ -426,6 +437,9 @@ export default function ProgrammePage() {
           <strong>{loading ? "Loading programme…" : `${activities.length} published activities`}</strong>
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search activity" />
         </div>
+        <section className="productivity-rag-summary" aria-label="Productivity RAG summary">
+          <div><strong>{ragSummary.counts.green}</strong><span>Green activities</span></div><div><strong>{ragSummary.counts.amber}</strong><span>Amber activities</span></div><div><strong>{ragSummary.counts.red}</strong><span>Red activities</span></div><div><strong>{ragSummary.counts["baseline-missing"]}</strong><span>Baseline Missing</span></div><div><strong>{ragSummary.counts["no-actuals"]}</strong><span>No Actuals</span></div><div><strong>{formatNumber(ragSummary.percentages.green)}%</strong><span>% Green</span></div><div><strong>{formatNumber(ragSummary.percentages.amber)}%</strong><span>% Amber</span></div><div><strong>{formatNumber(ragSummary.percentages.red)}%</strong><span>% Red</span></div>
+        </section>
         <div className="programme-filters" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 10, padding: 12 }}>
           {(["building", "elevation", "level", "gridline", "status"] as const).map((field) => (
             <label className="attendance-field" key={field}>
@@ -438,28 +452,30 @@ export default function ProgrammePage() {
           ))}
           <label className="attendance-field"><span>Completion</span><select value={filters.completion} onChange={(event) => setFilters((current) => ({ ...current, completion: event.target.value }))}><option value="">All</option><option value="non-completed">Non-completed</option><option value="completed">Completed</option></select></label>
           <label className="attendance-field"><span>Activity type</span><select value={filters.activityType} onChange={(event) => setFilters((current) => ({ ...current, activityType: event.target.value }))}><option value="">All</option>{Object.keys(activityTypeKeywords).map((key) => <option value={key} key={key}>{key.replaceAll("-", " ")}</option>)}</select></label>
+          <label className="attendance-field"><span>Productivity RAG</span><select value={filters.productivityRag} onChange={(event) => setFilters((current) => ({ ...current, productivityRag: event.target.value }))}><option value="">All</option>{(Object.entries(productivityRagLabels) as Array<[ProductivityRag, string]>).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
         </div>
 
         <div className="programme-desktop-table" style={{ overflowX: "auto" }}>
           <table className="programme-grid" style={{ width: "100%", minWidth: 1900, borderCollapse: "collapse" }}>
-            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Product Type", "Labour Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "Assumed Gang Size", "Planned Man-Day Productivity", "Actual Man-Day Productivity"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Product Type", "Labour Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "Assumed Gang Size", "Productivity RAG", "Planned Man-Day Productivity", "Actual Man-Day Productivity", "Productivity Performance %"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
-              {filtered.map((item) => (
+              {filtered.map(({ item, actual, rag, performance }) => (
                 <tr key={item.id}>
                   <td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td>
                   <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small></td><td>{item.productType || "—"}</td>
                   <td>{item.labourResourceNames?.join(", ") || "—"}</td><td>{item.materialResourceNames?.join(", ") || "—"}</td>
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
                   <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.assumedGangSize)}</td>
+                  <td><ProductivityRagBadge status={rag} /></td>
                   <td>{item.plannedManDayProductivity ? <>{formatNumber(item.plannedManDayProductivity)} {item.unit}/man-day{item.assumedGangSize ? <small style={{ display: "block" }}>Daily Gang Output: {formatNumber(item.plannedGangDailyOutput ?? item.plannedManDayProductivity * item.assumedGangSize)} {item.unit}/day</small> : null}{canManage && <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? "")); }}>Edit baseline</button>}</> : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); setCrewSize(String(item.assumedGangSize ?? "")); }}>Complete baseline</button> : "Man-day productivity baseline required"}</td>
-                  <td>{actualProductivity[item.programmeActivityId] === undefined ? "—" : `${formatNumber(actualProductivity[item.programmeActivityId])} ${item.unit}/man-day`}</td>
+                  <td>{actual === undefined ? "—" : `${formatNumber(actual)} ${item.unit}/man-day`}</td><td>{performance === null ? "—" : `${formatNumber(performance)}%`}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <div className="programme-mobile-list">
-          {filtered.map((item) => {
+          {filtered.map(({ item, actual, rag, performance }) => {
             const baselineComplete = Boolean(item.unit && item.plannedManDayProductivity && item.assumedGangSize);
             return <article className="programme-activity-card" key={item.id}>
               <div className="programme-activity-card-header">
@@ -471,6 +487,9 @@ export default function ProgrammePage() {
                 <div><dt>Elevation</dt><dd>{item.elevation || "—"}</dd></div>
                 <div><dt>Level</dt><dd>{item.level || "—"}</dd></div>
                 <div><dt>Planned quantity</dt><dd>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</dd></div>
+                <div><dt>Productivity RAG</dt><dd><ProductivityRagBadge status={rag} /></dd></div>
+                <div><dt>Actual Man-Day Productivity</dt><dd>{actual === undefined ? "—" : `${formatNumber(actual)} ${item.unit}/man-day`}</dd></div>
+                <div><dt>Productivity Performance</dt><dd>{performance === null ? "—" : `${formatNumber(performance)}%`}</dd></div>
                   <div><dt>Product type</dt><dd>{item.productType || "—"}</dd></div>
                   <div><dt>Labour resources</dt><dd>{item.labourResourceNames?.join(", ") || "—"}</dd></div>
                   <div><dt>Material resources</dt><dd>{item.materialResourceNames?.join(", ") || "—"}</dd></div>
