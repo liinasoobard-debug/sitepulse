@@ -235,6 +235,7 @@ export interface TimelineEvent {
   crewId?: string;
 
   programmeActivityId?: string;
+  programmeActivityDatabaseId?: string;
   programmeImportId?: string;
   programmeVersion?: string;
   activityDescription?: string;
