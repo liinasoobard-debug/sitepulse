@@ -5,6 +5,7 @@ import type {
   ProgrammeResource,
   ProgrammeResourceAssignment,
 } from "@/types/site";
+import { plannedWorkingDaysBetween } from "./manDayProductivity.ts";
 
 export type WorkbookRow = Record<string, unknown>;
 export type WorkbookSheets = Record<string, WorkbookRow[]>;
@@ -194,7 +195,7 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     const plannedCrewSize = number(value(row, aliases.plannedCrewSize));
     let plannedManDayProductivity = number(value(row, aliases.manDayRate));
     const assumedGangSize = number(value(row, aliases.assumedGangSize)) ?? plannedCrewSize;
-    const plannedDurationDays = number(value(row, aliases.plannedDurationDays));
+    const plannedDurationDays = number(value(row, aliases.plannedDurationDays)) ?? plannedWorkingDaysBetween(date(value(row, aliases.plannedStart)), date(value(row, aliases.plannedFinish)));
     if (!plannedManDayProductivity && plannedQuantity > 0 && plannedDurationDays && plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0) {
       plannedManDayProductivity = plannedQuantity / (plannedDurationDays * assumedGangSize);
     }

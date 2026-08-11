@@ -11,6 +11,19 @@ export type ManDayBaseline = {
   requiredRemainingGangSize: number | null;
 };
 
+export function plannedWorkingDaysBetween(start?: string, finish?: string): number | undefined {
+  if (!start || !finish) return undefined;
+  const first = new Date(`${start.slice(0, 10)}T00:00:00Z`);
+  const last = new Date(`${finish.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime()) || last < first) return undefined;
+  let days = 0;
+  for (const cursor = new Date(first); cursor <= last; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    const weekday = cursor.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) days += 1;
+  }
+  return days || undefined;
+}
+
 export function calculateManDayBaseline(
   activity: Pick<ProgrammeActivity, "plannedQuantity" | "plannedManDayProductivity" | "assumedGangSize" | "plannedDurationDays">,
   completedQuantity = 0,

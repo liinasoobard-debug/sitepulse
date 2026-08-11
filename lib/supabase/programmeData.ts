@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { plannedWorkingDaysBetween } from "@/lib/manDayProductivity";
 import type { ProgrammeActivity } from "@/types/site";
 
 type DbActivity = {
@@ -81,7 +82,8 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const plannedCrewSize = activity.plannedCrewSize || assignedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
     const assumedGangSize = activity.assumedGangSize || plannedCrewSize;
     const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
-    const plannedManDayProductivity = activity.plannedManDayProductivity || (plannedQuantity > 0 && activity.plannedDurationDays && activity.plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0 ? plannedQuantity / (activity.plannedDurationDays * assumedGangSize) : undefined);
+    const plannedDurationDays = activity.plannedDurationDays ?? plannedWorkingDaysBetween(activity.plannedStart, activity.plannedFinish);
+    const plannedManDayProductivity = activity.plannedManDayProductivity || (plannedQuantity > 0 && plannedDurationDays && plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0 ? plannedQuantity / (plannedDurationDays * assumedGangSize) : undefined);
     const plannedGangDailyOutput = activity.plannedGangDailyOutput || (plannedManDayProductivity && assumedGangSize ? plannedManDayProductivity * assumedGangSize : undefined);
     const plannedManDays = activity.plannedManDays || (plannedManDayProductivity ? plannedQuantity / plannedManDayProductivity : undefined);
     return {
@@ -90,6 +92,7 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
       budgetLabourHours,
       plannedCrewSize,
       assumedGangSize,
+      plannedDurationDays,
       plannedManDayProductivity,
       plannedGangDailyOutput,
       plannedManDays,

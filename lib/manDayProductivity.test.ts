@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { actualManDayProductivity, calculateManDayBaseline, groupGangDayProductivity } from "./manDayProductivity.ts";
+import { actualManDayProductivity, calculateManDayBaseline, groupGangDayProductivity, plannedWorkingDaysBetween } from "./manDayProductivity.ts";
 import type { TimelineEvent } from "../types/site.ts";
 
 const work = (id: string, activity: string, gang: string, quantity: number, operatives: string[], duration = 480): TimelineEvent => ({ id, programmeActivityId: activity, crewId: gang, time: "08:00", duration, title: activity, type: "work", status: "completed", quantity, affectedOperativeIds: operatives });
@@ -32,4 +32,8 @@ test("baseline formulas do not assume working-day hours", () => {
     plannedGangDailyOutput: 30, plannedManDays: 20, requiredAverageGangSize: 2, remainingQuantity: 90, remainingManDays: 15, requiredRemainingGangSize: 3,
   });
   assert.equal(calculateManDayBaseline({ plannedQuantity: 120 }, 0).plannedManDays, null);
+});
+test("programme date fallback counts inclusive weekdays without assuming shift hours", () => {
+  assert.equal(plannedWorkingDaysBetween("2026-08-10", "2026-08-20"), 9);
+  assert.equal(plannedWorkingDaysBetween("2026-08-15", "2026-08-16"), undefined);
 });

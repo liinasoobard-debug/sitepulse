@@ -193,3 +193,9 @@ test("explicit duration days and gang size calculate a man-day baseline without 
   assert.equal(result.activities[0].plannedGangDailyOutput, 24);
   assert.equal(result.activities[0].plannedManDays, 20);
 });
+
+test("programme dates calculate a baseline when an older upload has no duration-days column", () => {
+  const result = parseSitePulseTemplate({ Programme: [{ "Programme Activity ID": "A-2", Building: "B1", Elevation: "North", Level: "01", Activity: "Panels", "Product Type": "Composite Panels", Unit: "m2", "Planned Quantity": 108, "Planned Start": "2026-08-10", "Planned Finish": "2026-08-20", "Assumed Gang Size": 4 }] }, "project", "import");
+  assert.equal(result.activities[0].plannedDurationDays, 9);
+  assert.equal(result.activities[0].plannedManDayProductivity, 3);
+});

@@ -1,4 +1,5 @@
 import type { ProgrammeActivity } from "@/types/site";
+import { plannedWorkingDaysBetween } from "./manDayProductivity.ts";
 import type { CanonicalProgrammeImport, ImportIssue, WorkbookRow, WorkbookSheets } from "./programmeImport.ts";
 
 export type ProgrammeImportSource = "sitepulse-template" | "p6-xlsx" | "asta-xlsx";
@@ -70,7 +71,7 @@ export function mapToCanonicalProgramme(sheets: WorkbookSheets, projectId: strin
     const assumedGangSize = numeric(cell(row, fields.assumedGangSize)) ?? plannedCrewSize;
     if (plannedCrewSize !== undefined && plannedCrewSize <= 0) add("error", "Planned Crew Size must be greater than zero.");
     if (sourceType === "sitepulse-template" && (!assumedGangSize || assumedGangSize <= 0)) add("warning", "Assumed Gang Size is required for a complete measured-work baseline.");
-    const plannedDurationDays = numeric(cell(row, fields.durationDays));
+    const plannedDurationDays = numeric(cell(row, fields.durationDays)) ?? plannedWorkingDaysBetween(plannedStart, plannedFinish);
     if (!plannedManDayProductivity && plannedQuantity && plannedDurationDays && plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0) {
       plannedManDayProductivity = plannedQuantity / (plannedDurationDays * assumedGangSize);
     }
