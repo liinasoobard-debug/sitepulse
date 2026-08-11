@@ -4,6 +4,15 @@ import { createClient } from "@/lib/supabase/client";
 import type { TimelineEvent } from "@/types/site";
 
 type DbEvent = Record<string, unknown>;
+function supabaseError(error: unknown, fallback: string): Error {
+  if (error instanceof Error) return error;
+  if (error && typeof error === "object") {
+    const value = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const parts = [value.message, value.details, value.hint].filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+    if (parts.length) return new Error(`${parts.join(" ")}${value.code ? ` (${String(value.code)})` : ""}`);
+  }
+  return new Error(fallback);
+}
 export function timelineEventFromDb(row: DbEvent): TimelineEvent {
   const labour = Array.isArray(row.timeline_event_labour) ? row.timeline_event_labour as Array<{ operative_id?: unknown }> : [];
   return { id: String(row.id), crewId: row.crew_id ? String(row.crew_id) : undefined, programmeActivityId: row.external_activity_id ? String(row.external_activity_id) : undefined, programmeImportId: row.programme_import_id ? String(row.programme_import_id) : undefined, programmeVersion: row.programme_import_id ? String(row.programme_import_id) : undefined, time: String(row.start_time).slice(0,5), startTime: String(row.start_time).slice(0,5), finishTime: row.finish_time ? String(row.finish_time).slice(0,5) : undefined, duration: row.labour_hours && row.operative_count ? Number(row.labour_hours) / Number(row.operative_count) * 60 : undefined, title: String(row.activity_name_snapshot), type: String(row.event_type) as TimelineEvent["type"], status: String(row.status || "completed") as TimelineEvent["status"], location: row.location_snapshot ? String(row.location_snapshot) : undefined, unit: row.unit_snapshot ? String(row.unit_snapshot) : undefined, productivityTarget: row.productivity_target_snapshot ? Number(row.productivity_target_snapshot) : undefined, quantity: row.actual_quantity === null ? undefined : Number(row.actual_quantity), numberOfOperatives: row.operative_count === null ? undefined : Number(row.operative_count), affectedOperativeIds: labour.flatMap((item) => item.operative_id ? [String(item.operative_id)] : []), reason: row.change_category ? String(row.change_category) : undefined, notes: row.note ? String(row.note) : undefined, photoIds: [] };
@@ -20,8 +29,8 @@ export async function createTimelineEvent(projectId: string, date: string, event
   if (!userData.user) throw new Error("You must be signed in.");
   let activity:Record<string,unknown>|null=null; if(activityDatabaseId){const {data,error}=await supabase.from("programme_activities").select("id,programme_import_id,external_activity_id,activity_name,building,area,level,location,unit,productivity_target").eq("id",activityDatabaseId).single();if(error)throw error;activity=data;}
   const durationHours = (event.duration ?? 0) / 60;
-  const { data, error } = await supabase.from("timeline_events").insert({ project_id: projectId, programme_activity_id: activityDatabaseId || null, programme_import_id: activity?.programme_import_id || event.programmeImportId || null, external_activity_id: activity?.external_activity_id || event.programmeActivityId || null, event_type: event.type, activity_name_snapshot: event.type === "variation" ? event.title : activity?.activity_name || event.title, building_snapshot: activity?.building || null, area_snapshot: activity?.area || null, level_snapshot: activity?.level || null, location_snapshot: activity?.location || event.location || null, unit_snapshot: activity?.unit || event.unit || null, productivity_target_snapshot: activity?.productivity_target || event.productivityTarget || null, event_date: date, start_time: event.startTime || event.time, finish_time: event.finishTime || null, actual_quantity: event.quantity ?? null, operative_count: event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? null, labour_hours: durationHours * (event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? 0), change_category: event.type === "variation" ? event.reason || null : null, note: event.notes || null, crew_id: event.crewId || null, status: event.status || "completed", created_by: userData.user.id }).select("*").single();
-  if (error) throw error;
+  const { data, error } = await supabase.from("timeline_events").insert({ project_id: projectId, programme_activity_id: activityDatabaseId || null, programme_import_id: activity?.programme_import_id || event.programmeImportId || null, external_activity_id: activity?.external_activity_id || event.programmeActivityId || null, event_type: event.type, activity_name_snapshot: event.type === "variation" ? event.title : activity?.activity_name || event.title, building_snapshot: activity?.building || null, area_snapshot: activity?.area || null, level_snapshot: activity?.level || null, location_snapshot: activity?.location || event.location || null, unit_snapshot: activity?.unit || event.unit || null, productivity_target_snapshot: activity?.productivity_target || event.productivityTarget || null, event_date: date, start_time: event.startTime || event.time, finish_time: event.finishTime || null, actual_quantity: event.quantity ?? null, operative_count: event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? null, labour_hours: durationHours * (event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? 0), ...(event.type === "variation" ? { change_category: event.reason || null } : {}), note: event.notes || null, crew_id: event.crewId || null, status: event.status || "completed", created_by: userData.user.id }).select("*").single();
+  if (error) throw supabaseError(error, "Unable to save timeline event.");
   const labour=(event.affectedOperativeIds??[]).map(operativeId=>({timeline_event_id:data.id,operative_id:operativeId,gang_id:event.crewId||null,hours:durationHours,normal_hours:durationHours,overtime_hours:0}));if(labour.length){const {error:labourError}=await supabase.from("timeline_event_labour").insert(labour);if(labourError)throw labourError;}
   const created = timelineEventFromDb(data as DbEvent);
   created.affectedOperativeIds = event.affectedOperativeIds ?? [];
@@ -44,10 +53,10 @@ export async function updateTimelineEvent(event: TimelineEvent, date?: string): 
     labour_hours: durationHours * operativeCount,
     note: event.notes || null,
     status: event.status || "completed",
-    change_category: event.type === "variation" ? event.reason || null : null,
+    ...(event.type === "variation" ? { change_category: event.reason || null } : {}),
     updated_at: new Date().toISOString(),
   }).eq("id", event.id).select("*").single();
-  if (error) throw error;
+  if (error) throw supabaseError(error, "Unable to update timeline event.");
   const { error: labourError } = await supabase.from("timeline_event_labour").update({ hours: durationHours, normal_hours: durationHours }).eq("timeline_event_id", event.id);
   if (labourError) throw labourError;
   const updated = timelineEventFromDb(data as DbEvent);

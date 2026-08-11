@@ -182,7 +182,7 @@ export default function TimelinePage() {
     const activity=programmeActivities.find(item=>item.programmeActivityId===record.programmeActivityId);
     let newEvent:TimelineEvent;
     try { newEvent=await createTimelineEvent(getActiveProjectId(),getActiveDate(),record,activity?.id); if(photos.length)await uploadTimelinePhotos(getActiveProjectId(),newEvent.id,photos); }
-    catch(error){window.alert(error instanceof Error?error.message:"Unable to save timeline event.");return;}
+    catch(error){const message=error instanceof Error?error.message:error&&typeof error==="object"&&"message" in error?String(error.message):"Unable to save timeline event.";window.alert(message);return;}
 
     if (activity && record.type === "work") {
       try {
