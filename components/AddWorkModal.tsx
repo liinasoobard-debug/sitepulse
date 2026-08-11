@@ -120,6 +120,8 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const [time, setTime] = useState(getCurrentTime());
   const [finishTime, setFinishTime] = useState(getCurrentTime());
   const [actualQuantity, setActualQuantity] = useState("");
+  const [cumulativeQuantity, setCumulativeQuantity] = useState<number | null>(null);
+  const [remainingQuantity, setRemainingQuantity] = useState<number | null>(null);
   const [percentComplete, setPercentComplete] = useState("");
   const [activitySearch, setActivitySearch] = useState("");
   const [numberOfOperatives, setNumberOfOperatives] = useState("");
@@ -247,6 +249,8 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     setSelectedProgrammeActivityId("");
     setTitle(type === "break" ? "Break" : "");
     setActualQuantity("");
+    setCumulativeQuantity(null);
+    setRemainingQuantity(null);
     setPercentComplete("");
     setActivitySearch("");
     setNumberOfOperatives(assignmentMode === "crew" && selectedCrew ? String(selectedCrew.operativeIds.length) : assignmentMode === "individuals" ? String(selectedOperativeIds.length) : "0");
@@ -301,6 +305,19 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     setBaselineRate(activity?.plannedManDayProductivity ? String(activity.plannedManDayProductivity) : "");
     setBaselineCrewSize(activity?.assumedGangSize ? String(activity.assumedGangSize) : "");
     setPercentComplete(activity?.physicalPercentComplete === undefined ? "" : String(activity.physicalPercentComplete));
+    setCumulativeQuantity(null);
+    setRemainingQuantity(null);
+    if (selectedType === "work" && activity) {
+      void loadActivityInstalledQuantity(getActiveProjectId(), activity.programmeActivityId)
+        .then((installed) => {
+          const remaining = Math.max(activity.plannedQuantity - installed, 0);
+          setCumulativeQuantity(installed);
+          setRemainingQuantity(remaining);
+          setPercentComplete(String(installedCompletionPercent(installed, activity.plannedQuantity)));
+          setActualQuantity(String(remaining));
+        })
+        .catch((error) => setValidationMessage(error instanceof Error ? error.message : "Unable to load activity quantities."));
+    }
     setValidationMessage("");
   }
 
@@ -640,6 +657,11 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned dates</span><strong>{selectedProgrammeActivity.plannedStart || "—"} → {selectedProgrammeActivity.plannedFinish || "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned duration</span><strong>{selectedProgrammeActivity.originalDuration ?? "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned quantity</span><strong>{selectedProgrammeActivity.plannedQuantity || "—"} {selectedProgrammeActivity.unit}</strong></div>
+          {selectedType === "work" && <>
+            <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Actual quantity to date</span><strong>{cumulativeQuantity === null ? "Loading…" : cumulativeQuantity} {selectedProgrammeActivity.unit}</strong></div>
+            <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>% Complete</span><strong>{percentComplete ? `${percentComplete}%` : "0%"}</strong></div>
+            <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Remaining quantity</span><strong>{remainingQuantity === null ? "Loading…" : remainingQuantity} {selectedProgrammeActivity.unit}</strong></div>
+          </>}
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Planned Man-Day Productivity</span><strong>{selectedProgrammeActivity.plannedManDayProductivity ? `${selectedProgrammeActivity.plannedManDayProductivity} ${selectedProgrammeActivity.unit}/man-day` : "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Baseline men</span><strong>{selectedProgrammeActivity.plannedCrewSize ?? "—"}</strong></div>
           <div><span style={{ display: "block", fontSize: 12, color: "#5f6b76" }}>Resource / assignment</span><strong>{selectedResources.join(", ") || assignmentLabel}</strong></div>
@@ -649,7 +671,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>{canEditProgramme ? "Complete the missing baseline to record measured work. These values will also be saved against the programme activity." : importedBaselineValidation}</p>{canEditProgramme && <><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned Man-Day Productivity *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per operative per day" /></label><label className="attendance-field"><span>Assumed Gang Size *</span><input type="number" min="1" step="1" value={baselineCrewSize} onChange={(event) => { setBaselineCrewSize(event.target.value); setValidationMessage(""); }} /></label></>}</div>}
 
       {selectedType === "work" && <>
-        <label className="attendance-field"><span>Actual quantity completed</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /></label>
+        <label className="attendance-field"><span>Daily actual quantity completed</span><input type="number" min="0" max={remainingQuantity ?? undefined} step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /><small>{remainingQuantity === null ? "Loading remaining quantity…" : `Maximum available against this activity: ${remainingQuantity} ${selectedProgrammeActivity?.unit ?? ""}.`}</small></label>
         <label className="attendance-field"><span>Physical % complete</span><input value={percentComplete ? `${percentComplete}%` : "Calculated on save"} readOnly /><small>Automatically calculated from cumulative installed quantity against planned quantity.</small></label>
         {assignmentMode === "crew" && <label className="attendance-field"><span>Number of operatives</span><input type="number" min="1" max={selectedCrew?.operativeIds.length} step="1" value={numberOfOperatives} onChange={(event) => setNumberOfOperatives(event.target.value)} /></label>}
         {assignmentMode !== "crew" && <div className="evidence-placeholder"><strong>{assignmentMode === "individuals" ? `${selectedOperativeIds.length} operative${selectedOperativeIds.length === 1 ? "" : "s"} selected` : "No operatives assigned"}</strong></div>}
