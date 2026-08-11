@@ -81,15 +81,21 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const plannedCrewSize = activity.plannedCrewSize || assignedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
     const assumedGangSize = activity.assumedGangSize || plannedCrewSize;
     const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
+    const plannedManDayProductivity = activity.plannedManDayProductivity || (plannedQuantity > 0 && activity.plannedDurationDays && activity.plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0 ? plannedQuantity / (activity.plannedDurationDays * assumedGangSize) : undefined);
+    const plannedGangDailyOutput = activity.plannedGangDailyOutput || (plannedManDayProductivity && assumedGangSize ? plannedManDayProductivity * assumedGangSize : undefined);
+    const plannedManDays = activity.plannedManDays || (plannedManDayProductivity ? plannedQuantity / plannedManDayProductivity : undefined);
     return {
       ...activity,
       plannedQuantity,
       budgetLabourHours,
       plannedCrewSize,
       assumedGangSize,
+      plannedManDayProductivity,
+      plannedGangDailyOutput,
+      plannedManDays,
       plannedProductionRate,
       unit,
-      productivityBaselineComplete: Boolean(plannedQuantity > 0 && activity.plannedManDayProductivity && assumedGangSize && unit),
+      productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedManDayProductivity && assumedGangSize && unit),
       resourceNames: uniqueNames(activityResources),
       labourResourceNames: uniqueNames(labourResources),
       materialResourceNames: uniqueNames(materialResources),

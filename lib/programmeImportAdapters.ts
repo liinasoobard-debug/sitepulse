@@ -64,14 +64,17 @@ export function mapToCanonicalProgramme(sheets: WorkbookSheets, projectId: strin
     if (text(rateRaw) && (plannedProductionRate === undefined || plannedProductionRate <= 0)) add("error", "Planned Production Rate must be greater than zero.");
     if (plannedQuantity && budgetLabourHours && !plannedProductionRate) plannedProductionRate = plannedQuantity / budgetLabourHours;
     if (plannedQuantity && plannedProductionRate && !budgetLabourHours) budgetLabourHours = plannedQuantity / plannedProductionRate;
-    const plannedManDayProductivity = numeric(manDayRaw);
+    let plannedManDayProductivity = numeric(manDayRaw);
     if (text(manDayRaw) && (!plannedManDayProductivity || plannedManDayProductivity <= 0)) add("error", "Planned Man-Day Productivity must be greater than zero.");
-    if (sourceType === "sitepulse-template" && !plannedManDayProductivity) add("warning", "Man-day productivity baseline required.");
     const plannedCrewSize = numeric(cell(row, fields.crewSize));
     const assumedGangSize = numeric(cell(row, fields.assumedGangSize)) ?? plannedCrewSize;
     if (plannedCrewSize !== undefined && plannedCrewSize <= 0) add("error", "Planned Crew Size must be greater than zero.");
     if (sourceType === "sitepulse-template" && (!assumedGangSize || assumedGangSize <= 0)) add("warning", "Assumed Gang Size is required for a complete measured-work baseline.");
     const plannedDurationDays = numeric(cell(row, fields.durationDays));
+    if (!plannedManDayProductivity && plannedQuantity && plannedDurationDays && plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0) {
+      plannedManDayProductivity = plannedQuantity / (plannedDurationDays * assumedGangSize);
+    }
+    if (sourceType === "sitepulse-template" && !plannedManDayProductivity) add("warning", "Man-day productivity baseline required.");
     const plannedGangDailyOutput = plannedManDayProductivity && assumedGangSize ? plannedManDayProductivity * assumedGangSize : numeric(cell(row, fields.gangDailyOutput));
     const plannedManDays = plannedManDayProductivity && plannedQuantity ? plannedQuantity / plannedManDayProductivity : numeric(cell(row, fields.plannedManDays));
     if (!activityId || !activity) return [];

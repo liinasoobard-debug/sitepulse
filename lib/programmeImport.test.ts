@@ -186,3 +186,10 @@ test("standard template returns row-level hierarchy and baseline validation", ()
   assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Product Type")));
   assert.ok(result.issues.some((issue) => issue.rowNumber === 2 && issue.message.includes("Man-day productivity baseline required")));
 });
+
+test("explicit duration days and gang size calculate a man-day baseline without shift-hour assumptions", () => {
+  const result = parseSitePulseTemplate({ Programme: [{ "Programme Activity ID": "A-1", Building: "B1", Elevation: "North", Level: "01", Activity: "Panels", "Product Type": "Composite Panels", Unit: "m2", "Planned Quantity": 120, "Planned Start": "2026-08-10", "Planned Finish": "2026-08-20", "Planned Duration Days": 5, "Assumed Gang Size": 4 }] }, "project", "import");
+  assert.equal(result.activities[0].plannedManDayProductivity, 6);
+  assert.equal(result.activities[0].plannedGangDailyOutput, 24);
+  assert.equal(result.activities[0].plannedManDays, 20);
+});
