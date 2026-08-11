@@ -16,6 +16,15 @@ import type {
 
 type NewSiteRecord = Omit<TimelineEvent, "id">;
 type AssignmentMode = "crew" | "individuals" | "unassigned";
+type ChangeCategory = "additional_quantum" | "return_visit" | "replacement" | "remedial" | "other";
+
+const changeLabels: Record<ChangeCategory, string> = {
+  additional_quantum: "Additional quantum",
+  return_visit: "Return visit",
+  replacement: "Replacement work",
+  remedial: "Remedial work",
+  other: "Other change work",
+};
 
 type Props = {
   onAdd: (record: NewSiteRecord, photos: File[]) => void | Promise<void>;
@@ -120,6 +129,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const [baselineRate, setBaselineRate] = useState("");
   const [baselineCrewSize, setBaselineCrewSize] = useState("");
   const [notes, setNotes] = useState("");
+  const [changeCategory, setChangeCategory] = useState<ChangeCategory>("additional_quantum");
 
   useEffect(() => {
     let cancelled = false;
@@ -230,6 +240,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     setSelectedType(type);
     setSelectedProgrammeVersion(programmeVersions[0]?.id ?? LEGACY_PROGRAMME_VERSION);
     setNotes("");
+    setChangeCategory("additional_quantum");
     setSelectedBuilding("");
     setSelectedElevation("");
     setSelectedLevel("");
@@ -314,6 +325,10 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       return;
     }
     if (selectedType === "work" && !selectedProgrammeActivityId) return;
+    if (selectedType === "variation" && actualQuantity.trim() && (!Number.isFinite(Number(actualQuantity)) || Number(actualQuantity) < 0)) {
+      setValidationMessage("Enter a valid change quantity of zero or more.");
+      return;
+    }
     let calculatedPercentComplete: number | undefined;
     if (selectedType === "work") {
       if (baselineValidation) { setValidationMessage(baselineValidation); return; }
@@ -325,8 +340,15 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       if (selectedProgrammeActivity) {
         try {
           const installed = await loadActivityInstalledQuantity(getActiveProjectId(), selectedProgrammeActivity.programmeActivityId);
+          if (installed >= selectedProgrammeActivity.plannedQuantity) {
+            setValidationMessage(`This activity is 100% complete. Record additional quantum, a return visit, replacement, or remedial work as Variation / Additional Work.`);
+            return;
+          }
           const projected = installed + quantity;
-          if (projected > selectedProgrammeActivity.plannedQuantity && !window.confirm(`This entry takes installed quantity to ${projected} ${selectedProgrammeActivity.unit}, above the planned ${selectedProgrammeActivity.plannedQuantity} ${selectedProgrammeActivity.unit}. Save it anyway?`)) return;
+          if (projected > selectedProgrammeActivity.plannedQuantity) {
+            setValidationMessage(`Only ${selectedProgrammeActivity.plannedQuantity - installed} ${selectedProgrammeActivity.unit} remains. Measured work cannot exceed the planned quantity; record the excess as Variation / Additional Work.`);
+            return;
+          }
           calculatedPercentComplete = installedCompletionPercent(projected, selectedProgrammeActivity.plannedQuantity);
         } catch (error) {
           setValidationMessage(error instanceof Error ? error.message : "Unable to verify installed quantity.");
@@ -351,7 +373,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     await onAdd({
       crewId: assignmentMode === "crew" ? selectedCrewId : undefined,
       programmeActivityId:
-        selectedType === "work" || selectedType === "disruption"
+        selectedType === "work" || selectedType === "disruption" || selectedType === "variation"
           ? selectedProgrammeActivity?.programmeActivityId
           : undefined,
       programmeImportId: selectedProgrammeActivity?.sourceImportId,
@@ -373,10 +395,11 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       productivityTarget: selectedProgrammeActivity?.plannedProductionRate,
       resourceNames: selectedResources,
       numberOfOperatives: operativeCount,
-      quantity: selectedType === "work" ? Number(actualQuantity) : undefined,
+      quantity: selectedType === "work" || selectedType === "variation" ? (actualQuantity.trim() ? Number(actualQuantity) : undefined) : undefined,
       percentComplete: selectedType === "work" ? calculatedPercentComplete : undefined,
       affectedOperativeIds: selectedOperatives,
       notes: notes.trim() || undefined,
+      reason: selectedType === "variation" ? changeLabels[changeCategory] : undefined,
     }, photos);
   }
 
@@ -480,7 +503,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
         </button>
       </div>
 
-      {(selectedType === "work" || selectedType === "disruption") && (
+      {(selectedType === "work" || selectedType === "disruption" || selectedType === "variation") && (
         <>
           {programmeLoading ? (
             <div className="evidence-placeholder"><strong>Loading programme activities…</strong></div>
@@ -552,7 +575,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
                   <option value="">Select an activity</option>
                   {availableProgrammeActivities.map((programmeActivity) => (
                     <option key={programmeActivity.id} value={programmeActivity.programmeActivityId}>
-                      {programmeActivity.activity}{!programmeActivity.unit || !programmeActivity.plannedProductionRate ? " — baseline incomplete" : ""}
+                      {programmeActivity.activity}{!programmeActivity.unit || !programmeActivity.plannedManDayProductivity || !programmeActivity.assumedGangSize ? " — baseline incomplete" : ""}
                     </option>
                   ))}
                 </select>
@@ -585,6 +608,13 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
           }
         />
       </label>
+
+      {selectedType === "variation" && <>
+        <label className="attendance-field"><span>Change type</span><select value={changeCategory} onChange={(event) => { const category = event.target.value as ChangeCategory; setChangeCategory(category); if (!title.trim() || Object.values(changeLabels).includes(title)) setTitle(changeLabels[category]); }}>
+          {(Object.entries(changeLabels) as Array<[ChangeCategory, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select></label>
+        <label className="attendance-field"><span>Change quantity (optional)</span><input type="number" min="0" step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /><small>This quantity is reported separately and does not increase the original programme activity percentage.</small></label>
+      </>}
 
       {selectedProgrammeActivity && (
         <div

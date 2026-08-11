@@ -207,7 +207,10 @@ export default function TimelinePage() {
     if (activity && updatedEvent.type === "work" && typeof updatedEvent.quantity === "number") {
       const installed = await loadActivityInstalledQuantity(getActiveProjectId(), activity.programmeActivityId);
       const projected = installed - (editingEvent?.quantity ?? 0) + updatedEvent.quantity;
-      if (projected > activity.plannedQuantity && !window.confirm(`This change takes installed quantity to ${projected} ${activity.unit}, above the planned ${activity.plannedQuantity} ${activity.unit}. Save it anyway?`)) return;
+      if (projected > activity.plannedQuantity) {
+        window.alert(`Only ${Math.max(activity.plannedQuantity - (installed - (editingEvent?.quantity ?? 0)), 0)} ${activity.unit} can be recorded against the original planned quantity. Record excess work as Variation / Additional Work.`);
+        return;
+      }
     }
     const saved = await updateTimelineEvent(updatedEvent, date);
     if (activity && saved.type === "work") {
