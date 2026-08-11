@@ -462,7 +462,7 @@ export default function ProgrammePage() {
               {filtered.map(({ item, actual, rag, performance }) => (
                 <tr key={item.id}>
                   <td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td>
-                  <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small><Link href={`/scenarios?activity=${encodeURIComponent(item.programmeActivityId)}`}>Explore Scenario</Link></td><td>{item.productType || "—"}</td>
+                  <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small><Link href={`/forecast?activity=${encodeURIComponent(item.programmeActivityId)}`}>View Forecast &amp; Recovery</Link></td><td>{item.productType || "—"}</td>
                   <td>{item.labourResourceNames?.join(", ") || "—"}</td><td>{item.materialResourceNames?.join(", ") || "—"}</td>
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
                   <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.assumedGangSize)}</td>
@@ -508,7 +508,7 @@ export default function ProgrammePage() {
                 </dl>
               </details>
               {canManage && <button className="secondary-button programme-baseline-action" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? "")); }}>{baselineComplete ? "Edit baseline" : "Complete baseline"}</button>}
-              <Link className="secondary-button programme-baseline-action" href={`/scenarios?activity=${encodeURIComponent(item.programmeActivityId)}`}>Explore Scenario</Link>
+              <Link className="secondary-button programme-baseline-action" href={`/forecast?activity=${encodeURIComponent(item.programmeActivityId)}`}>View Forecast &amp; Recovery</Link>
             </article>;
           })}
         </div>

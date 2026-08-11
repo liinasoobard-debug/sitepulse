@@ -10,7 +10,7 @@ const items = [
   { href: "/programme", label: "Programme", icon: "📋" },
   { href: "/timeline", label: "Timeline", icon: "◷" },
   { href: "/reports", label: "Reports", icon: "▤" },
-  { href: "/scenarios", label: "Scenarios", icon: "↗" },
+  { href: "/forecast", label: "Forecast", icon: "↗" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
