@@ -139,6 +139,38 @@ export function materialRiskSuggestion(
     last_detected_date: today,
   };
 }
+export function plantRiskSuggestion(
+  input: {
+    activityId: string;
+    requiredDate?: string | null;
+    reason: string;
+    sourceId: string;
+  },
+  today: string,
+): ConstraintSuggestion {
+  return {
+    programme_activity_external_id: input.activityId,
+    category: "Plant",
+    description: input.reason,
+    source: "PLANT",
+    source_record_id: input.sourceId,
+    source_condition_key: suggestionKey(
+      input.activityId,
+      "Plant",
+      input.sourceId,
+    ),
+    first_detected_date: today,
+    calculated_required_date: input.requiredDate ?? null,
+    rag: "RED",
+    programme_forecast_impact:
+      "Plant readiness exposure recorded against the linked programme activity.",
+    action_required: "Confirm plant booking and availability.",
+    latest_update: input.reason,
+    evidence_notes: input.reason,
+    occurrence_count: 1,
+    last_detected_date: today,
+  };
+}
 export function recurringDisruptionSuggestions(
   events: Array<{ date: string; event: TimelineEvent }>,
   activities: ProgrammeActivity[],

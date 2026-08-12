@@ -7,6 +7,7 @@ import {
   daysOpen,
   materialRiskSuggestion,
   mergeSuggestions,
+  plantRiskSuggestion,
   recurringDisruptionSuggestions,
   type ConstraintRecord,
   type ConstraintRag,
@@ -27,6 +28,8 @@ import {
 import { loadMaterialData } from "@/lib/supabase/materialData";
 import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
 import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
+import { loadPlant } from "@/lib/supabase/plantData";
+import { plantReadiness, plantRiskReason } from "@/lib/plantReadiness";
 import type { ProgrammeActivity } from "@/types/site";
 const dateLabel = (value?: string | null) =>
   value
@@ -47,12 +50,14 @@ export default function ConstraintsPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [programme, constraints, materials, timeline] = await Promise.all([
-        loadPublishedProgramme(projectId),
-        loadConstraints(projectId),
-        loadMaterialData(projectId),
-        loadTimelineEventsBetween(projectId, "1000-01-01", today),
-      ]);
+      const [programme, constraints, materials, timeline, plant] =
+        await Promise.all([
+          loadPublishedProgramme(projectId),
+          loadConstraints(projectId),
+          loadMaterialData(projectId),
+          loadTimelineEventsBetween(projectId, "1000-01-01", today),
+          loadPlant(projectId),
+        ]);
       const byId = new Map(
         programme.activities.map((row) => [row.programmeActivityId, row]),
       );
@@ -110,9 +115,49 @@ export default function ConstraintsPage() {
           return suggestion ? [suggestion] : [];
         },
       );
+      const plantSuggestions = plant.flatMap((record) => {
+        const activity = record.programme_activity_external_id
+          ? byId.get(record.programme_activity_external_id)
+          : undefined;
+        if (!activity) return [];
+        const result = plantReadiness(
+          {
+            requiredFromDate:
+              record.required_from_date ?? activity.plannedStart,
+            requiredToDate: record.required_to_date,
+            onHireDate: record.on_hire_date,
+            offHireRequestedDate: record.off_hire_requested_date,
+            actualOffHireDate: record.actual_off_hire_date,
+            explicitStatus: record.explicit_status,
+            activeIssue: record.active_issue,
+            activityComplete: Number(activity.physicalPercentComplete) >= 100,
+          },
+          today,
+        );
+        const reason = plantRiskReason({
+          description: record.description || record.plant_type,
+          activityName: activity.activity,
+          result,
+        });
+        return reason
+          ? [
+              plantRiskSuggestion(
+                {
+                  activityId: activity.programmeActivityId,
+                  requiredDate:
+                    record.required_from_date || activity.plannedStart,
+                  reason,
+                  sourceId: record.id,
+                },
+                today,
+              ),
+            ]
+          : [];
+      });
       const suggestions = mergeSuggestions(
         [
           ...materialSuggestions,
+          ...plantSuggestions,
           ...recurringDisruptionSuggestions(
             timeline,
             programme.activities,
