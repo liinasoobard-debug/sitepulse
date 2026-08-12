@@ -1,9 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
-import { getActiveProjectId, loadDay, loadOperatives } from "@/lib/storage";
+import {
+  getActiveDate,
+  getActiveProjectId,
+  loadDay,
+  loadOperatives,
+} from "@/lib/storage";
 import { loadActivityInstalledQuantity, updateProgrammeBaseline } from "@/lib/supabase/programmeData";
 import { installedCompletionPercent } from "@/lib/progress";
+import { loadPlant, type PlantRecord } from "@/lib/supabase/plantData";
+import { plantReadiness } from "@/lib/plantReadiness";
 import { LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
@@ -132,6 +139,9 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const [baselineCrewSize, setBaselineCrewSize] = useState("");
   const [notes, setNotes] = useState("");
   const [changeCategory, setChangeCategory] = useState<ChangeCategory>("additional_quantum");
+  const [onSitePlant, setOnSitePlant] = useState<PlantRecord[]>([]);
+  const [plantRecords, setPlantRecords] = useState<PlantRecord[]>([]);
+  const [selectedPlantIds, setSelectedPlantIds] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +171,30 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       } catch (error) { console.error("Unable to load site day:", error); }
     });
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadPlant(getActiveProjectId())
+      .then((plant) => {
+        if (!cancelled) {
+          setPlantRecords(plant);
+          setOnSitePlant(
+            plant.filter(
+              (item) =>
+                item.record_kind !== "REQUIREMENT" &&
+                Boolean(item.on_hire_date || item.arrival_date) &&
+                !item.actual_off_hire_date,
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setOnSitePlant([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const availableCrews = useMemo(
@@ -193,6 +227,38 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const selectedProgrammeActivity = programmeActivities.find(
     (activity) => activity.programmeActivityId === selectedProgrammeActivityId
   );
+  const selectedPlantRequirements = plantRecords
+    .filter(
+      (plant) =>
+        plant.record_kind === "REQUIREMENT" &&
+        plant.programme_activity_external_id === selectedProgrammeActivityId,
+    )
+    .map((plant) => ({
+      plant,
+      readiness: plantReadiness(
+        {
+          requiredFromDate: plant.required_from_date,
+          onHireDate:
+            plant.confirmed_delivery_date &&
+            ["CONFIRMED", "DELIVERED / ON SITE"].includes(
+              plant.explicit_status || "",
+            )
+              ? plant.confirmed_delivery_date
+              : null,
+          explicitStatus:
+            plant.actual_booking_date ||
+            ["CALLED OFF / BOOKED", "CONFIRMED"].includes(
+              plant.explicit_status || "",
+            )
+              ? "BOOKED"
+              : plant.explicit_status === "ISSUE"
+                ? "ISSUE / AT RISK"
+                : "PLANNED",
+          activeIssue: plant.explicit_status === "ISSUE",
+        },
+        getActiveDate(),
+      ),
+    }));
 
   const programmeVersions: Array<{id:string;sourceFilename:string;importedAt:string}> = [];
   const versionActivities = programmeActivities;
@@ -243,6 +309,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     setSelectedProgrammeVersion(programmeVersions[0]?.id ?? LEGACY_PROGRAMME_VERSION);
     setNotes("");
     setChangeCategory("additional_quantum");
+    setSelectedPlantIds([]);
     setSelectedBuilding("");
     setSelectedElevation("");
     setSelectedLevel("");
@@ -415,6 +482,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       quantity: selectedType === "work" || selectedType === "variation" ? (actualQuantity.trim() ? Number(actualQuantity) : undefined) : undefined,
       percentComplete: selectedType === "work" ? calculatedPercentComplete : undefined,
       affectedOperativeIds: selectedOperatives,
+      plantIds: selectedType === "work" ? selectedPlantIds : [],
       notes: notes.trim() || undefined,
       reason: selectedType === "variation" ? changeLabels[changeCategory] : undefined,
     }, photos);
@@ -671,6 +739,50 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>{canEditProgramme ? "Complete the missing baseline to record measured work. These values will also be saved against the programme activity." : importedBaselineValidation}</p>{canEditProgramme && <><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned Man-Day Productivity *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per operative per day" /></label><label className="attendance-field"><span>Assumed Gang Size *</span><input type="number" min="1" step="1" value={baselineCrewSize} onChange={(event) => { setBaselineCrewSize(event.target.value); setValidationMessage(""); }} /></label></>}</div>}
 
       {selectedType === "work" && <>
+        <div className="timeline-plant-readiness">
+          <strong>Plant readiness</strong>
+          {selectedPlantRequirements.map(({ plant, readiness }) => (
+            <span key={plant.id}>
+              <b className={`calloff-rag ${readiness.rag.toLowerCase()}`}>
+                {readiness.rag}
+              </b>{" "}
+              {plant.quantity} × {plant.description || plant.plant_type} —{" "}
+              {plant.explicit_status || "REQUIRED"}
+            </span>
+          ))}
+          {!selectedPlantRequirements.length && (
+            <span>No plant requirement is linked to this activity.</span>
+          )}
+        </div>
+        <fieldset className="plant-used-fieldset">
+          <legend>Plant used</legend>
+          <small>
+            Select only plant actually used for this Timeline work event.
+            Allocation alone is not usage.
+          </small>
+          {onSitePlant.map((plant) => (
+            <label key={plant.id}>
+              <input
+                type="checkbox"
+                checked={selectedPlantIds.includes(plant.id)}
+                onChange={(event) =>
+                  setSelectedPlantIds((current) =>
+                    event.target.checked
+                      ? [...current, plant.id]
+                      : current.filter((id) => id !== plant.id),
+                  )
+                }
+              />
+              <span>
+                {plant.description || plant.plant_type} —{" "}
+                {plant.asset_number || plant.hire_reference || "No reference"}
+              </span>
+            </label>
+          ))}
+          {!onSitePlant.length && (
+            <span>No on-site plant is available to select.</span>
+          )}
+        </fieldset>
         <label className="attendance-field"><span>Daily actual quantity completed</span><input type="number" min="0" max={remainingQuantity ?? undefined} step="any" value={actualQuantity} onChange={(event) => setActualQuantity(event.target.value)} /><small>{remainingQuantity === null ? "Loading remaining quantity…" : `Maximum available against this activity: ${remainingQuantity} ${selectedProgrammeActivity?.unit ?? ""}.`}</small></label>
         <label className="attendance-field"><span>Physical % complete</span><input value={percentComplete ? `${percentComplete}%` : "Calculated on save"} readOnly /><small>Automatically calculated from cumulative installed quantity against planned quantity.</small></label>
         {assignmentMode === "crew" && <label className="attendance-field"><span>Number of operatives</span><input type="number" min="1" max={selectedCrew?.operativeIds.length} step="1" value={numberOfOperatives} onChange={(event) => setNumberOfOperatives(event.target.value)} /></label>}

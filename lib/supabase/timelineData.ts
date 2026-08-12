@@ -25,6 +25,9 @@ function supabaseError(error: unknown, fallback: string): Error {
 }
 export function timelineEventFromDb(row: DbEvent): TimelineEvent {
   const labour = Array.isArray(row.timeline_event_labour) ? (row.timeline_event_labour as Array<{ operative_id?: unknown }>) : [];
+  const plantUsage = Array.isArray(row.plant_usage)
+    ? (row.plant_usage as Array<{ plant_hire_record_id?: unknown }>)
+    : [];
   const note = row.note ? String(row.note) : "";
   const encodedChangeType = note.match(CHANGE_TYPE_PREFIX)?.[1];
   return {
@@ -47,6 +50,9 @@ export function timelineEventFromDb(row: DbEvent): TimelineEvent {
     quantity: row.actual_quantity === null ? undefined : Number(row.actual_quantity),
     numberOfOperatives: row.operative_count === null ? undefined : Number(row.operative_count),
     affectedOperativeIds: labour.flatMap((item) => (item.operative_id ? [String(item.operative_id)] : [])),
+    plantIds: plantUsage.flatMap((item) =>
+      item.plant_hire_record_id ? [String(item.plant_hire_record_id)] : [],
+    ),
     reason: row.change_category ? String(row.change_category) : encodedChangeType,
     notes: note.replace(CHANGE_TYPE_PREFIX, "").trim() || undefined,
     photoIds: [],
@@ -54,7 +60,7 @@ export function timelineEventFromDb(row: DbEvent): TimelineEvent {
 }
 export async function loadTimelineEvents(projectId: string, date: string): Promise<TimelineEvent[]> {
   const supabase = createClient();
-  const { data, error } = await supabase.from("timeline_events").select("*,timeline_event_photos(storage_path),timeline_event_labour(operative_id)").eq("project_id", projectId).eq("event_date", date).is("deleted_at", null).order("start_time");
+  const { data, error } = await supabase.from("timeline_events").select("*,timeline_event_photos(storage_path),timeline_event_labour(operative_id),plant_usage(plant_hire_record_id)").eq("project_id", projectId).eq("event_date", date).is("deleted_at", null).order("start_time");
   if (error) throw error;
   return Promise.all(
     (data ?? []).map(async (row) => {
@@ -68,7 +74,7 @@ export async function loadTimelineEvents(projectId: string, date: string): Promi
   );
 }
 export async function loadTimelineEventsBetween(projectId: string, start: string, end: string) {
-  const { data, error } = await createClient().from("timeline_events").select("*,timeline_event_labour(operative_id)").eq("project_id", projectId).gte("event_date", start).lte("event_date", end).is("deleted_at", null).order("event_date");
+  const { data, error } = await createClient().from("timeline_events").select("*,timeline_event_labour(operative_id),plant_usage(plant_hire_record_id)").eq("project_id", projectId).gte("event_date", start).lte("event_date", end).is("deleted_at", null).order("event_date");
   if (error) throw error;
   return (data ?? []).map((row) => ({
     date: String(row.event_date),
@@ -127,9 +133,29 @@ export async function createTimelineEvent(projectId: string, date: string, event
     const { error: labourError } = await supabase.from("timeline_event_labour").insert(labour);
     if (labourError) throw labourError;
   }
+  const plantUsage = (event.plantIds ?? []).map((plantId) => ({
+    project_id: projectId,
+    plant_hire_record_id: plantId,
+    timeline_event_id: data.id,
+    usage_date: date,
+    gang_id: event.crewId || null,
+    programme_activity_external_id:
+      (activity?.external_activity_id as string | undefined) ||
+      event.programmeActivityId ||
+      null,
+    duration_hours: durationHours,
+    created_by: userData.user.id,
+  }));
+  if (plantUsage.length) {
+    const { error: plantError } = await supabase
+      .from("plant_usage")
+      .insert(plantUsage);
+    if (plantError) throw plantError;
+  }
   const created = timelineEventFromDb(data as DbEvent);
   created.affectedOperativeIds = event.affectedOperativeIds ?? [];
   created.percentComplete = event.percentComplete;
+  created.plantIds = event.plantIds ?? [];
   return created;
 }
 export async function updateTimelineEvent(event: TimelineEvent, date?: string): Promise<TimelineEvent> {

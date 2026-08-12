@@ -44,6 +44,9 @@ export default function ConstraintsPage() {
     today = getActiveDate();
   const [rows, setRows] = useState<ConstraintRecord[]>([]),
     [activities, setActivities] = useState<ProgrammeActivity[]>([]),
+    [trackerStatus, setTrackerStatus] = useState<"ALL" | "OPEN" | "CLOSED">(
+      "OPEN",
+    ),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -125,11 +128,27 @@ export default function ConstraintsPage() {
             requiredFromDate:
               record.required_from_date ?? activity.plannedStart,
             requiredToDate: record.required_to_date,
-            onHireDate: record.on_hire_date,
+            onHireDate:
+              record.on_hire_date ||
+              (record.confirmed_delivery_date &&
+              ["CONFIRMED", "DELIVERED / ON SITE"].includes(
+                record.explicit_status || "",
+              )
+                ? record.confirmed_delivery_date
+                : null),
             offHireRequestedDate: record.off_hire_requested_date,
             actualOffHireDate: record.actual_off_hire_date,
-            explicitStatus: record.explicit_status,
-            activeIssue: record.active_issue,
+            explicitStatus:
+              record.actual_booking_date ||
+              ["CALLED OFF / BOOKED", "CONFIRMED"].includes(
+                record.explicit_status || "",
+              )
+                ? "BOOKED"
+                : record.explicit_status === "ISSUE"
+                  ? "ISSUE / AT RISK"
+                  : record.explicit_status,
+            activeIssue:
+              record.active_issue || record.explicit_status === "ISSUE",
             activityComplete: Number(activity.physicalPercentComplete) >= 100,
           },
           today,
@@ -200,11 +219,22 @@ export default function ConstraintsPage() {
     start.toISOString().slice(0, 10),
     today,
   );
-  const ranked = [...open].sort(
-    (a, b) =>
-      ({ RED: 0, AMBER: 1, GREEN: 2, GREY: 3 })[a.rag] -
-      { RED: 0, AMBER: 1, GREEN: 2, GREY: 3 }[b.rag],
-  );
+  const trackerRows = rows
+    .filter((row) => !["SUGGESTED", "DISMISSED"].includes(row.status))
+    .filter((row) =>
+      trackerStatus === "ALL"
+        ? true
+        : trackerStatus === "CLOSED"
+          ? row.status === "CLOSED"
+          : ["OPEN", "ACTIONED / MONITORING"].includes(row.status),
+    )
+    .sort((a, b) => {
+      const statusOrder =
+        Number(a.status === "CLOSED") - Number(b.status === "CLOSED");
+      if (statusOrder) return statusOrder;
+      const ragOrder = { RED: 0, AMBER: 1, GREEN: 2, GREY: 3 };
+      return ragOrder[a.rag] - ragOrder[b.rag];
+    });
   async function act(row: ConstraintRecord, status: ConstraintStatus) {
     await updateConstraint(row, {
       status,
@@ -284,7 +314,7 @@ export default function ConstraintsPage() {
               Raise Constraint
             </button>
             <button className="secondary-button" onClick={() => window.print()}>
-              Print Report
+              Print Tracker
             </button>
           </div>
         </header>
@@ -294,7 +324,7 @@ export default function ConstraintsPage() {
             {error}
           </p>
         )}
-        <section className="constraint-kpis">
+        <section className="constraint-kpis no-print">
           <article>
             <strong>{open.length}</strong>
             <span>Open</span>
@@ -320,7 +350,7 @@ export default function ConstraintsPage() {
             <span>Closed this week</span>
           </article>
         </section>
-        <section>
+        <section className="no-print">
           <h2>Suggested Constraints</h2>
           <p>
             Detected risks require confirmation; they are not automatically
@@ -353,10 +383,32 @@ export default function ConstraintsPage() {
             {!suggested.length && <p>No new suggested constraints.</p>}
           </div>
         </section>
-        <section>
-          <h2>Open Constraints — Next 2 Weeks</h2>
+        <section className="constraint-tracker">
+          <div className="constraint-tracker-heading">
+            <div>
+              <p className="eyebrow">Printable register</p>
+              <h2>Constraints Tracker</h2>
+              <p className="print-only">
+                {getActiveProject()?.name ?? "Project"} · Status: {trackerStatus}
+                {" · "}Printed {dateLabel(today)}
+              </p>
+            </div>
+            <label className="constraint-status-filter no-print">
+              Status
+              <select
+                value={trackerStatus}
+                onChange={(event) =>
+                  setTrackerStatus(event.target.value as "ALL" | "OPEN" | "CLOSED")
+                }
+              >
+                <option value="ALL">All</option>
+                <option value="OPEN">Open</option>
+                <option value="CLOSED">Closed</option>
+              </select>
+            </label>
+          </div>
           <div className="report-table-scroll">
-            <table>
+            <table className="constraint-tracker-table">
               <thead>
                 <tr>
                   {[
@@ -366,11 +418,11 @@ export default function ConstraintsPage() {
                     "Constraint",
                     "Category",
                     "Owner",
-                    "First Detected",
+                    "Opened",
                     "Required Resolution",
                     "Days Open",
                     "Status",
-                    "Forecast / Programme Exposure",
+                    "Closed",
                     "Latest Action",
                   ].map((h) => (
                     <th key={h}>{h}</th>
@@ -378,7 +430,7 @@ export default function ConstraintsPage() {
                 </tr>
               </thead>
               <tbody>
-                {ranked.map((row) => {
+                {trackerRows.map((row) => {
                   const activity = byId.get(
                     row.programme_activity_external_id ?? "",
                   );
@@ -408,7 +460,9 @@ export default function ConstraintsPage() {
                       </td>
                       <td>{row.category}</td>
                       <td>{row.owner || "Unassigned"}</td>
-                      <td>{dateLabel(row.first_detected_date)}</td>
+                      <td>
+                        {dateLabel(row.raised_date || row.first_detected_date)}
+                      </td>
                       <td>
                         {dateLabel(
                           row.overridden_required_date ||
@@ -416,11 +470,14 @@ export default function ConstraintsPage() {
                         )}
                       </td>
                       <td>{daysOpen(row, today)}</td>
-                      <td>{row.status}</td>
                       <td>
-                        {row.programme_forecast_impact ||
-                          "Evidence only; no quantified delay conclusion."}
+                        <span
+                          className={`constraint-status ${row.status === "CLOSED" ? "closed" : "open"}`}
+                        >
+                          {row.status === "CLOSED" ? "● Closed" : "◆ Open"}
+                        </span>
                       </td>
+                      <td>{dateLabel(row.closed_date)}</td>
                       <td>
                         {row.action_required || "—"}
                         <button
@@ -429,16 +486,30 @@ export default function ConstraintsPage() {
                         >
                           Update
                         </button>
-                        <button
-                          className="table-action"
-                          onClick={() => act(row, "CLOSED")}
-                        >
-                          Close
-                        </button>
+                        {row.status === "CLOSED" ? (
+                          <button
+                            className="table-action"
+                            onClick={() => act(row, "OPEN")}
+                          >
+                            Reopen
+                          </button>
+                        ) : (
+                          <button
+                            className="table-action"
+                            onClick={() => act(row, "CLOSED")}
+                          >
+                            Close
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
+                {!trackerRows.length && (
+                  <tr>
+                    <td colSpan={12}>No {trackerStatus.toLowerCase()} constraints.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

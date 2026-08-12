@@ -250,6 +250,7 @@ export interface TimelineEvent {
   productivityTarget?: number;
   resourceNames?: string[];
   numberOfOperatives?: number;
+  plantIds?: string[];
 
   time: string;
 

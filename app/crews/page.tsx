@@ -6,8 +6,15 @@ import {
   loadDay,
   loadOperatives,
   getActiveDate,
+  getActiveProjectId,
   saveDay,
 } from "@/lib/storage";
+import {
+  loadPlant,
+  loadPlantOperations,
+  type PlantRecord,
+  type PlantUsage,
+} from "@/lib/supabase/plantData";
 import type {
   AttendanceRecord,
   Crew,
@@ -72,6 +79,8 @@ export default function CrewsPage() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [crews, setCrews] = useState<Crew[]>([]);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [plantRecords, setPlantRecords] = useState<PlantRecord[]>([]);
+  const [plantUsage, setPlantUsage] = useState<PlantUsage[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
@@ -91,6 +100,26 @@ export default function CrewsPage() {
       setHasLoaded(true);
     });
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const projectId = getActiveProjectId();
+    void Promise.all([loadPlant(projectId), loadPlantOperations(projectId)])
+      .then(([plant, operations]) => {
+        if (cancelled) return;
+        setPlantRecords(plant);
+        setPlantUsage(operations.usage);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPlantRecords([]);
+          setPlantUsage([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -473,6 +502,36 @@ export default function CrewsPage() {
                   Delete
                 </button>
               </div>
+
+              <section className="gang-plant-summary">
+                <strong>Current / Recent Plant</strong>
+                <div>
+                  {Array.from(
+                    new Set(
+                      plantUsage
+                        .filter((row) => row.gang_id === crew.id)
+                        .slice(0, 10)
+                        .map((row) => row.plant_hire_record_id),
+                    ),
+                  ).slice(0, 4).map((plantId) => {
+                    const plant = plantRecords.find((row) => row.id === plantId);
+                    return plant ? (
+                      <span key={plantId}>
+                        {plant.description || plant.plant_type}
+                        <small>
+                          {plant.asset_number || plant.hire_reference || "No reference"}
+                        </small>
+                      </span>
+                    ) : null;
+                  })}
+                  {!plantUsage.some((row) => row.gang_id === crew.id) && (
+                    <span>No recent Timeline plant usage.</span>
+                  )}
+                </div>
+                <small>
+                  This is verified Timeline usage, not a permanent gang allocation.
+                </small>
+              </section>
 
               {attendedOperatives.length === 0 ? (
                 <p style={{ margin: 0 }}>

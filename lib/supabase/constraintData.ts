@@ -56,7 +56,12 @@ export async function updateConstraint(
     ...changes,
     raised_date:
       changes.status === "OPEN" && !row.raised_date ? today : row.raised_date,
-    closed_date: changes.status === "CLOSED" ? today : row.closed_date,
+    closed_date:
+      changes.status === "CLOSED"
+        ? today
+        : changes.status === "OPEN"
+          ? null
+          : row.closed_date,
     closed_by: changes.status === "CLOSED" ? user.user?.id : null,
     updated_at: new Date().toISOString(),
   };
