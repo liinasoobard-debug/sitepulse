@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateCallOff, resolveLeadTime } from "./materialCallOff.ts";
+import { calculateCallOff, materialStage, resolveLeadTime } from "./materialCallOff.ts";
 
 test("uses required-on-site date or programme start and subtracts working days", () => {
   assert.equal(
@@ -100,4 +100,11 @@ test("late confirmation is red, delivery is green, and override preserves calcul
   );
   assert.equal(result.calculatedDate, "2026-05-13");
   assert.equal(result.recommendedDate, "2026-05-10");
+});
+test("order, call-off, confirmation and delivery remain distinct stages", () => {
+  assert.equal(materialStage({}), "NOT ORDERED");
+  assert.equal(materialStage({ orderDate: "2026-05-01" }), "NOT CALLED OFF");
+  assert.equal(materialStage({ actualCallOffDate: "2026-05-02" }), "CALLED OFF");
+  assert.equal(materialStage({ confirmedDeliveryDate: "2026-05-10" }), "DELIVERY CONFIRMED");
+  assert.equal(materialStage({ actualDeliveryDate: "2026-05-09" }), "DELIVERED");
 });

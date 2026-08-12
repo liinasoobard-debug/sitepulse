@@ -18,6 +18,8 @@ import { buildDashboardData, classifyDashboardBlocker, dashboardRange, type Dash
 import { getActiveDate, getActiveProject, getActiveProjectId, getLocalDate, loadSiteDaysBetween } from "@/lib/storage";
 import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
 import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
+import { loadConstraints } from "@/lib/supabase/constraintData";
+import type { ConstraintRecord } from "@/lib/constraints";
 import { productivityRag, productivityRagLabels, type ProductivityRag } from "@/lib/productivityRag";
 import { buildEvidenceForecast } from "@/lib/forecastRecovery";
 import type { ProgrammeActivity, Project, SiteDay } from "@/types/site";
@@ -47,6 +49,7 @@ export default function DashboardPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailWindow, setDetailWindow] = useState<{ label: string; start: string; end: string } | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
 
   useEffect(() => { queueMicrotask(() => setSelectedDate(getActiveDate())); }, []);
   useEffect(() => {
@@ -55,13 +58,14 @@ export default function DashboardPage() {
       setLoading(true); setError("");
       const projectId = getActiveProjectId(); setProject(getActiveProject());
       try {
-        const [published, timeline] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31")]);
+        const [published, timeline, projectConstraints] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadConstraints(projectId)]);
         if (cancelled) return;
         const localDays = loadSiteDaysBetween("1000-01-01", "9999-12-31", projectId);
         const days = new Map<string, SiteDay>(localDays.map((day) => [day.date, day]));
         timeline.forEach(({ date }) => { if (!days.has(date)) days.set(date, { date, attendance: [], crews: [], events: [] }); });
         setProgramme(published.activities);
         setEvents(timeline.map(({ date, event }) => ({ date, event, day: days.get(date) ?? { date, attendance: [], crews: [], events: [] } })));
+        setConstraints(projectConstraints);
       } catch (caught) { if (!cancelled) setError(caught instanceof Error ? caught.message : "Unable to load dashboard data."); }
       finally { if (!cancelled) setLoading(false); }
     }
@@ -142,6 +146,8 @@ export default function DashboardPage() {
     <section className="dashboard-attention"><h2>Attention required</h2><div><span><strong>{data.productivityRag.counts.red}</strong> Red activit{data.productivityRag.counts.red === 1 ? "y" : "ies"}</span><span><strong>{deterioratingCount}</strong> deteriorating activit{deterioratingCount === 1 ? "y" : "ies"}</span><span><strong>{format(data.kpis.lostHours ?? 0)}</strong> disruption man-hours</span><span><strong>{data.changes.length}</strong> change event{data.changes.length === 1 ? "" : "s"}</span></div><div style={{ display: "flex", gap: 8 }}><Link href={`/forecast${filters.activity ? `?activity=${encodeURIComponent(filters.activity)}` : ""}`} className="secondary-button">Forecast &amp; Recovery</Link><button className="secondary-button" onClick={() => setDetailsOpen((value) => !value)} aria-expanded={detailsOpen}>{detailsOpen ? "Hide detail" : "View detail"}</button></div></section>
 
     <section className="dashboard-forecast-panel"><header><div><p className="eyebrow">Forecast &amp; Recovery</p><h2>{forecastLate.length} activit{forecastLate.length === 1 ? "y" : "ies"} forecast late</h2></div><Link href="/forecast" className="secondary-button">View Forecast &amp; Recovery</Link></header>{forecastLate.length ? <div>{forecastLate.slice(0, 3).map(({ activity, forecast }) => <article key={activity.id}><span className={`forecast-rag ${forecast.forecastRag}`}>{forecast.forecastRag.toUpperCase()}</span><div><strong>{activity.activity}</strong><small>Likely +{format(forecast.likely.variance)} working days · Recovery requires {format(forecast.requiredImprovementPercent, "% output")}</small><small>Previously demonstrated: {forecast.recoveryStatus === "demonstrated" || forecast.recoveryStatus === "on-track" ? "YES" : forecast.recoveryStatus === "not-yet-demonstrated" ? "NOT YET" : "INSUFFICIENT DATA"}</small></div><Link href={`/forecast?activity=${encodeURIComponent(activity.programmeActivityId)}`}>View</Link></article>)}</div> : <p>No activities have a late evidence-led Likely forecast.</p>}</section>
+
+    <section className="dashboard-attention"><h2>Constraints</h2><div><span><strong>{constraints.filter((row) => ["OPEN", "ACTIONED / MONITORING"].includes(row.status)).length}</strong> Open</span><span><strong>{constraints.filter((row) => row.status !== "CLOSED" && row.rag === "RED").length}</strong> Red</span><span><strong>{constraints.filter((row) => row.status !== "CLOSED" && row.rag === "AMBER").length}</strong> Amber</span><span><strong>{constraints.filter((row) => row.status !== "CLOSED" && row.rag === "GREEN").length}</strong> Green</span></div><Link href="/constraints" className="secondary-button">View Constraints</Link></section>
 
     {detailsOpen && <><section className="dashboard-kpi-grid-main" aria-label="Production key performance indicators">
       <DashboardKpiCard label="Planned Daily Gang Output" value={format(data.kpis.plannedDailyGangOutput, data.unit ? ` ${data.unit}/day` : "")} />

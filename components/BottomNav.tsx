@@ -12,6 +12,7 @@ const items = [
   { href: "/reports", label: "Reports", icon: "▤" },
   { href: "/forecast", label: "Forecast", icon: "↗" },
   { href: "/materials", label: "Materials", icon: "▧" },
+  { href: "/constraints", label: "Constraints", icon: "⚠" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 

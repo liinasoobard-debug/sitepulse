@@ -1,6 +1,7 @@
 "use client";
 
 import { calculateCallOff } from "@/lib/materialCallOff";
+import { classifyMaterialImport, mapMaterialRow, materialStableKey, type MaterialColumnMapping, type MaterialImportRow } from "@/lib/materialImport";
 import { createClient } from "@/lib/supabase/client";
 import type { ProgrammeActivity } from "@/types/site";
 
@@ -25,6 +26,17 @@ export type MaterialRequirement = {
   actual_call_off_date?: string | null;
   confirmed_delivery_date?: string | null;
   actual_delivery_date?: string | null;
+  material_code?: string | null;
+  package?: string | null;
+  order_reference?: string | null;
+  po_number?: string | null;
+  order_date?: string | null;
+  explicit_status?: string | null;
+  notes?: string | null;
+  site_notes?: string | null;
+  material_issue?: boolean;
+  import_source?: string | null;
+  import_row_key?: string | null;
 };
 export type MaterialSettings = {
   project_default_lead_time?: number | null;
@@ -235,4 +247,18 @@ export async function saveSupplierProduct(
       { onConflict: "project_id,supplier,material" },
     );
   if (error) throw error;
+}
+
+export async function importMaterialSchedule(projectId: string, sourceName: string, sourceRows: MaterialImportRow[], mapping: MaterialColumnMapping, activities: ProgrammeActivity[]) {
+  const db = createClient();
+  const currentData = await loadMaterialData(projectId);
+  const activityIds = new Set(activities.map((row) => row.programmeActivityId));
+  const existingByKey = new Map(currentData.requirements.map((row) => [row.import_row_key ?? "", row]));
+  const results = sourceRows.map((source, index) => {
+    const mapped = mapMaterialRow(source, mapping), key = materialStableKey(mapped), current = existingByKey.get(key);
+    return { row: index + 2, mapped, key, current, classification: classifyMaterialImport(mapped, current as unknown as Record<string, unknown> | undefined, !mapped.programme_activity_external_id || activityIds.has(mapped.programme_activity_external_id)) };
+  });
+  const valid = results.filter((row) => ["NEW", "UPDATED", "UNCHANGED"].includes(row.classification) && row.key).map(({ mapped, key, current }) => ({ ...mapped, project_id: projectId, import_source: sourceName, import_row_key: key, site_notes: current?.site_notes ?? null, actual_delivery_date: current?.actual_delivery_date ?? mapped.actual_delivery_date, updated_at: new Date().toISOString() }));
+  if (valid.length) { const { error } = await db.from("material_requirements").upsert(valid, { onConflict: "project_id,import_source,import_row_key" }); if (error) throw error; }
+  return results;
 }

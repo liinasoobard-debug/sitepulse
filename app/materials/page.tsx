@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { calculateCallOff } from "@/lib/materialCallOff";
+import { calculateCallOff, materialStage } from "@/lib/materialCallOff";
+import { suggestMaterialMapping } from "@/lib/materialImport";
+import * as XLSX from "xlsx";
 import {
   getActiveDate,
   getActiveProject,
@@ -13,6 +15,7 @@ import {
 } from "@/lib/supabase/programmeData";
 import {
   generateCallOffSchedule,
+  importMaterialSchedule,
   loadMaterialData,
   saveMaterialSettings,
   saveProductDefault,
@@ -55,7 +58,8 @@ export default function MaterialsPage() {
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [productType, setProductType] = useState(""),
-    [productLead, setProductLead] = useState("");
+    [productLead, setProductLead] = useState(""),
+    [importSummary, setImportSummary] = useState<Record<string, number> | null>(null);
   const canManage = ["admin", "planner", "commercial"].includes(role ?? "");
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -123,6 +127,7 @@ export default function MaterialsPage() {
           today,
           settings.warning_period,
         ),
+        stage: materialStage({ orderDate: requirement.order_date ?? undefined, actualCallOffDate: requirement.actual_call_off_date ?? undefined, confirmedDeliveryDate: requirement.confirmed_delivery_date ?? undefined, actualDeliveryDate: requirement.actual_delivery_date ?? undefined, materialIssue: requirement.material_issue }),
       };
     })
     .sort(
@@ -155,6 +160,21 @@ export default function MaterialsPage() {
     } finally {
       setBusy(false);
     }
+  }
+  async function importSchedule(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: false });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const sourceRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      const mapping = suggestMaterialMapping(sourceRows[0] ? Object.keys(sourceRows[0]) : []);
+      if (!mapping.description || (!mapping.materialCode && !mapping.programmeActivityId && !mapping.poNumber && !mapping.orderReference)) throw new Error("Unable to map this schedule automatically. Include Description plus Programme Activity ID, Material Code, PO Number or Order Reference.");
+      const result = await importMaterialSchedule(projectId, file.name, sourceRows, mapping, activities);
+      setImportSummary(result.reduce<Record<string, number>>((total, row) => ({ ...total, [row.classification]: (total[row.classification] ?? 0) + 1 }), {}));
+      await refresh(); setMessage("Material schedule imported. Unmatched and invalid rows are reported and not silently discarded.");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to import material schedule."); }
+    finally { setBusy(false); }
   }
   async function editDate(
     row: MaterialRequirement,
@@ -242,13 +262,10 @@ export default function MaterialsPage() {
             </p>
           </div>
           {canManage && (
-            <button
-              className="primary-button"
-              disabled={busy}
-              onClick={generate}
-            >
-              Generate Call-Off Schedule
-            </button>
+            <div>
+              <label className="secondary-button">Import Order Schedule<input hidden type="file" accept=".xlsx,.xls,.csv" onChange={(event) => void importSchedule(event.target.files?.[0])} /></label>
+              <button className="primary-button" disabled={busy} onClick={generate}>Generate Call-Off Schedule</button>
+            </div>
           )}
         </header>
         {message && (
@@ -256,6 +273,7 @@ export default function MaterialsPage() {
             {message}
           </p>
         )}
+        {importSummary && <p className="dashboard-notice">Import: {Object.entries(importSummary).map(([key, value]) => `${key} ${value}`).join(" · ")}</p>}
         {error && (
           <p className="dashboard-notice error" role="alert">
             {error}
@@ -412,7 +430,7 @@ export default function MaterialsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ requirement, activity, result }) => (
+                {rows.map(({ requirement, activity, result, stage }) => (
                   <tr key={requirement.id}>
                     <td>
                       <span
@@ -430,7 +448,7 @@ export default function MaterialsPage() {
                         {result.rag}
                       </span>
                     </td>
-                    <td>{result.status}</td>
+                  <td>{stage}<small>Call-off: {result.status}</small></td>
                     <td>
                       <strong>
                         {activity?.activity ??

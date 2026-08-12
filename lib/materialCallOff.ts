@@ -21,6 +21,15 @@ export type CallOffStatus =
   | "DELIVERED"
   | "INCOMPLETE";
 export type CallOffRag = "GREEN" | "AMBER" | "RED" | "GREY";
+export type MaterialStage = "NOT ORDERED" | "ORDERED" | "NOT CALLED OFF" | "CALLED OFF" | "DELIVERY CONFIRMED" | "DELIVERED" | "ISSUE / AT RISK";
+export function materialStage(input: CallOffInput & { orderDate?: string; materialIssue?: boolean }): MaterialStage {
+  if (input.materialIssue) return "ISSUE / AT RISK";
+  if (input.actualDeliveryDate) return "DELIVERED";
+  if (input.confirmedDeliveryDate) return "DELIVERY CONFIRMED";
+  if (input.actualCallOffDate) return "CALLED OFF";
+  if (input.orderDate) return "NOT CALLED OFF";
+  return "NOT ORDERED";
+}
 
 const parse = (value: string) => new Date(`${value}T12:00:00Z`);
 const iso = (value: Date) => value.toISOString().slice(0, 10);

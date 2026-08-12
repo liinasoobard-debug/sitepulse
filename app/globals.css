@@ -2923,3 +2923,15 @@ h1 {
 .calloff-change { color: #8a4b00; font-weight: 700; }
 .table-action { display: block; margin-top: 6px; border: 0; padding: 0; color: #08778a; background: none; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 @media (max-width: 760px) { .materials-shell { padding: 18px; } .materials-header { flex-direction: column; } .materials-lookahead { grid-template-columns: 1fr 1fr; } }
+.constraints-page { padding: 24px 18px 120px; background: #eef3f5; min-height: 100vh; }
+.constraints-shell { max-width: 1480px; margin: auto; background: white; padding: 28px; border-radius: 24px; box-shadow: 0 12px 40px rgba(20,42,53,.08); }
+.constraints-header { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
+.constraints-header>div:last-child { display:flex; flex-wrap:wrap; gap:10px; }
+.constraint-kpis { display:grid; grid-template-columns:repeat(6,minmax(110px,1fr)); gap:12px; margin:24px 0; }
+.constraint-kpis article { display:grid; gap:4px; border:1px solid #d1dde3; border-radius:14px; padding:15px; }
+.constraint-kpis strong { font-size:1.75rem; }.constraint-kpis .red{border-top:5px solid #b42318}.constraint-kpis .amber{border-top:5px solid #d08a00}.constraint-kpis .green{border-top:5px solid #188451}
+.constraint-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin-bottom:28px; }
+.constraint-cards article { border:1px solid #cedbe1; border-radius:16px; padding:16px; }.constraint-cards article>div{display:flex;gap:10px;flex-wrap:wrap}
+.constraint-summary { margin-top:24px; padding:18px; background:#f2f7f8; border-radius:16px; }
+@media(max-width:760px){.constraints-shell{padding:18px}.constraints-header{display:grid}.constraint-kpis{grid-template-columns:1fr 1fr}.constraints-page table{display:none}.constraints-page .constraint-cards{grid-template-columns:1fr}}
+@media print {.bottom-nav,.context-controls,.constraints-header button,.table-action{display:none!important}.constraints-page{padding:0;background:#fff}.constraints-shell{box-shadow:none;padding:0}}

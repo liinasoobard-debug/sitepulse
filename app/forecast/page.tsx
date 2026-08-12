@@ -11,6 +11,8 @@ import { productivityRag } from "@/lib/productivityRag";
 import { getActiveDate, getActiveProject, getActiveProjectId } from "@/lib/storage";
 import { loadPublishedProgramme, loadPublishedProgrammeRelationships } from "@/lib/supabase/programmeData";
 import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
+import { loadConstraints } from "@/lib/supabase/constraintData";
+import type { ConstraintRecord } from "@/lib/constraints";
 import type { ProgrammeActivity, TimelineEvent } from "@/types/site";
 
 type DatedEvent = { date: string; event: TimelineEvent };
@@ -52,6 +54,7 @@ export default function ForecastPage() {
     [saved, setSaved] = useState(""),
     [dataDate, setDataDate] = useState(""),
     [activityType, setActivityType] = useState<ForecastActivityType | "all">("production");
+  const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
   const [filters, setFilters] = useState({
     building: "",
     elevation: "",
@@ -62,11 +65,12 @@ export default function ForecastPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [programme, timeline, logic] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadPublishedProgrammeRelationships(projectId)]);
+        const [programme, timeline, logic, projectConstraints] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadPublishedProgrammeRelationships(projectId), loadConstraints(projectId)]);
         if (cancelled) return;
         setActivities(programme.activities);
         setEvents(timeline);
         setRelationships(logic);
+        setConstraints(projectConstraints);
         const resolvedDataDate = latestRecordedDataDate(timeline, params.get("dataDate")) || getActiveDate();
         setDataDate(resolvedDataDate);
         console.info("Forecast published-programme integration diagnostic", forecastDiagnostics(programme.activities, timeline));
@@ -541,6 +545,9 @@ export default function ForecastPage() {
           </article>
           <article>
             <h2>Potential downstream impact</h2>
+            <h3>Open Constraints</h3>
+            {constraints.filter((row) => row.programme_activity_external_id === activity.programmeActivityId && ["OPEN", "ACTIONED / MONITORING"].includes(row.status)).map((row) => <div className="forecast-stat" key={row.id}><strong>{row.category}</strong><span>{row.description}</span><small>{row.rag} · Evidence/context only; delay is not automatically quantified.</small></div>)}
+            {!constraints.some((row) => row.programme_activity_external_id === activity.programmeActivityId && ["OPEN", "ACTIONED / MONITORING"].includes(row.status)) && <p>No open constraints linked to this activity.</p>}
             {downstream.length ? (
               downstream.map((row) => (
                 <div className="forecast-stat" key={row.successorId}>
