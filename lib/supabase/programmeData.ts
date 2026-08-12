@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { plannedWorkingDaysBetween } from "@/lib/manDayProductivity";
+import { deriveProgrammeActualDates, type ProgrammeActualRecord } from "@/lib/programmeActuals";
 import type { ProgrammeActivity } from "@/types/site";
 
 type DbActivity = {
@@ -46,14 +47,22 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
   const { data: published, error: importError } = await supabase.from("programme_imports").select("id,source_type,source_filename,imported_at,imported_by").eq("project_id", projectId).eq("status", "published").maybeSingle();
   if (importError) throw importError;
   if (!published) return { importId: "", activities: [] };
-  const [activityResult, resourceResult, assignmentResult] = await Promise.all([
+  const [activityResult, resourceResult, assignmentResult, actualResult] = await Promise.all([
     supabase.from("programme_activities").select("*").eq("project_id", projectId).eq("programme_import_id", published.id).order("activity_name"),
     supabase.from("programme_resources").select("external_resource_id,resource_name,resource_type,unit").eq("project_id", projectId).eq("programme_import_id", published.id),
     supabase.from("programme_assignments").select("activity_external_id,resource_external_id,budgeted_units").eq("project_id", projectId).eq("programme_import_id", published.id),
+    supabase.from("timeline_events").select("external_activity_id,event_date,actual_quantity,status").eq("project_id", projectId).eq("event_type", "work").is("deleted_at", null).order("event_date"),
   ]);
   if (activityResult.error) throw activityResult.error;
   if (resourceResult.error) throw resourceResult.error;
   if (assignmentResult.error) throw assignmentResult.error;
+  if (actualResult.error) throw actualResult.error;
+  const actuals = new Map<string, ProgrammeActualRecord[]>();
+  for (const row of actualResult.data ?? []) {
+    if (!row.external_activity_id) continue;
+    const key = String(row.external_activity_id);
+    actuals.set(key, [...(actuals.get(key) ?? []), { date: String(row.event_date), quantity: Math.max(0, Number(row.actual_quantity ?? 0)), completed: row.status === "completed" }]);
+  }
   const resources = new Map((resourceResult.data ?? []).map((row) => [String(row.external_resource_id), { name: String(row.resource_name), type: String(row.resource_type ?? ""), unit: String(row.unit ?? "") }]));
   const assigned = new Map<string, Array<{ name: string; type: string; unit: string; budgetedUnits: number }>>();
   for (const row of assignmentResult.data ?? []) {
@@ -86,6 +95,11 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const plannedManDayProductivity = activity.plannedManDayProductivity || (plannedQuantity > 0 && plannedDurationDays && plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0 ? plannedQuantity / (plannedDurationDays * assumedGangSize) : undefined);
     const plannedGangDailyOutput = activity.plannedGangDailyOutput || (plannedManDayProductivity && assumedGangSize ? plannedManDayProductivity * assumedGangSize : undefined);
     const plannedManDays = activity.plannedManDays || (plannedManDayProductivity ? plannedQuantity / plannedManDayProductivity : undefined);
+    const activityActuals = actuals.get(activity.programmeActivityId) ?? [];
+    const derivedActuals = deriveProgrammeActualDates(activityActuals, plannedQuantity);
+    const actualStart = derivedActuals.actualStart ?? activity.actualStart;
+    const actualFinish = activityActuals.length ? derivedActuals.actualFinish : activity.actualFinish;
+    const physicalPercentComplete = activityActuals.length && plannedQuantity > 0 ? derivedActuals.percentComplete : activity.physicalPercentComplete;
     return {
       ...activity,
       plannedQuantity,
@@ -97,6 +111,9 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
       plannedGangDailyOutput,
       plannedManDays,
       plannedProductionRate,
+      actualStart,
+      actualFinish,
+      physicalPercentComplete,
       unit,
       productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedManDayProductivity && assumedGangSize && unit),
       resourceNames: uniqueNames(activityResources),
