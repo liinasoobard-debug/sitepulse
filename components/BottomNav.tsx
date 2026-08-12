@@ -11,6 +11,7 @@ const items = [
   { href: "/timeline", label: "Timeline", icon: "◷" },
   { href: "/reports", label: "Reports", icon: "▤" },
   { href: "/forecast", label: "Forecast", icon: "↗" },
+  { href: "/materials", label: "Materials", icon: "▧" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 

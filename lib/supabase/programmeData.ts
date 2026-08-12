@@ -150,7 +150,7 @@ export async function loadActualProductivity(projectId: string): Promise<Record<
     )
   );
 }
-export async function loadProjectRole(projectId: string): Promise<"planner" | "admin" | "site_team" | undefined> {
+export async function loadProjectRole(projectId: string): Promise<"planner" | "admin" | "commercial" | "site_team" | undefined> {
   const supabase = createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError) throw authError;
@@ -163,7 +163,7 @@ export async function loadProjectRole(projectId: string): Promise<"planner" | "a
     .maybeSingle();
   if (error) throw error;
   console.info("Programme project authorization", { userId: user.id, projectId, membership: data });
-  return data?.role as "planner" | "admin" | "site_team" | undefined;
+  return data?.role as "planner" | "admin" | "commercial" | "site_team" | undefined;
 }
 
 export async function updateProgrammeBaseline(activityId: string, unit: string, plannedManDayProductivity: number, assumedGangSize: number) {
