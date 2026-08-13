@@ -11,6 +11,8 @@ import { loadActivityInstalledQuantity, updateProgrammeBaseline } from "@/lib/su
 import { installedCompletionPercent } from "@/lib/progress";
 import { loadPlant, type PlantRecord } from "@/lib/supabase/plantData";
 import { plantReadiness } from "@/lib/plantReadiness";
+import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
+import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import { LEGACY_PROGRAMME_VERSION, locationLabel, locationValue, measuredWorkValidation, uniqueLocations } from "@/lib/programmeSelection";
 import type {
   Crew,
@@ -40,6 +42,7 @@ type Props = {
   programmeLoading?: boolean;
   programmeError?: string;
   canEditProgramme?: boolean;
+  initialAllocation?: { gangId: string; activityId: string; plannedOperatives: number; targetQuantity: number; areaZone?: string | null };
 };
 
 const recordChoices: Array<{
@@ -107,7 +110,7 @@ function normaliseCrews(records: Crew[] | undefined): Crew[] {
   }));
 }
 
-export default function AddWorkModal({ onAdd, onClose, programmeActivities, programmeLoading = false, programmeError = "", canEditProgramme = false }: Props) {
+export default function AddWorkModal({ onAdd, onClose, programmeActivities, programmeLoading = false, programmeError = "", canEditProgramme = false, initialAllocation }: Props) {
   const [crews, setCrews] = useState<Crew[]>([]);
   const [operatives, setOperatives] = useState<Operative[]>([]);
   const [attendedOperativeIds, setAttendedOperativeIds] = useState<string[]>([]);
@@ -142,6 +145,19 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
   const [onSitePlant, setOnSitePlant] = useState<PlantRecord[]>([]);
   const [plantRecords, setPlantRecords] = useState<PlantRecord[]>([]);
   const [selectedPlantIds, setSelectedPlantIds] = useState<string[]>([]);
+  const [openConstraints, setOpenConstraints] = useState<ConstraintRecord[]>([]);
+  const [constraintLinks, setConstraintLinks] = useState<ConstraintActivityLink[]>([]);
+
+  useEffect(() => {
+    if (!initialAllocation || !programmeActivities.length) return;
+    const activity = programmeActivities.find((row) => row.programmeActivityId === initialAllocation.activityId);
+    if (!activity) return;
+    setSelectedType("work"); setAssignmentMode("crew"); setSelectedCrewId(initialAllocation.gangId);
+    setSelectedBuilding(locationValue(activity.building)); setSelectedElevation(locationValue(activity.elevation)); setSelectedLevel(locationValue(activity.level));
+    setSelectedProgrammeActivityId(activity.programmeActivityId); setTitle(activity.activity); setNumberOfOperatives(String(initialAllocation.plannedOperatives));
+    setNotes(`Daily Plan target: ${initialAllocation.targetQuantity} ${activity.unit}${initialAllocation.areaZone ? ` · Area ${initialAllocation.areaZone}` : ""}`);
+    setBaselineUnit(activity.unit); setBaselineRate(String(activity.plannedManDayProductivity ?? "")); setBaselineCrewSize(String(activity.assumedGangSize ?? ""));
+  }, [initialAllocation, programmeActivities]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,6 +187,16 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       } catch (error) { console.error("Unable to load site day:", error); }
     });
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const projectId = getActiveProjectId();
+    void Promise.all([loadConstraints(projectId), loadConstraintLinks(projectId)])
+      .then(([constraints, links]) => {
+        setOpenConstraints(constraints.filter((row) => ["OPEN", "ACTIONED / MONITORING"].includes(row.status)));
+        setConstraintLinks(links);
+      })
+      .catch(() => { setOpenConstraints([]); setConstraintLinks([]); });
   }, []);
 
   useEffect(() => {
@@ -259,6 +285,13 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
         getActiveDate(),
       ),
     }));
+  const selectedConstraints = openConstraints.filter((row) =>
+    constraintLinks.some(
+      (link) =>
+        link.constraint_id === row.id &&
+        link.programme_activity_external_id === selectedProgrammeActivityId,
+    ),
+  );
 
   const programmeVersions: Array<{id:string;sourceFilename:string;importedAt:string}> = [];
   const versionActivities = programmeActivities;
@@ -739,6 +772,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
       {importedBaselineValidation && <div style={{ display: "grid", gap: 10, padding: 12, borderRadius: 10, background: "#fff4e5" }}><p role="alert" style={{ color: "#8a3b00", fontWeight: 700, margin: 0 }}>{canEditProgramme ? "Complete the missing baseline to record measured work. These values will also be saved against the programme activity." : importedBaselineValidation}</p>{canEditProgramme && <><label className="attendance-field"><span>Unit of measure *</span><input value={baselineUnit} onChange={(event) => { setBaselineUnit(event.target.value); setValidationMessage(""); }} placeholder="e.g. m², nr, lm" /></label><label className="attendance-field"><span>Planned Man-Day Productivity *</span><input type="number" min="0.000001" step="any" value={baselineRate} onChange={(event) => { setBaselineRate(event.target.value); setValidationMessage(""); }} placeholder="Quantity per operative per day" /></label><label className="attendance-field"><span>Assumed Gang Size *</span><input type="number" min="1" step="1" value={baselineCrewSize} onChange={(event) => { setBaselineCrewSize(event.target.value); setValidationMessage(""); }} /></label></>}</div>}
 
       {selectedType === "work" && <>
+        {selectedConstraints.length > 0 && <div className="timeline-constraint-warning"><strong>Known open constraints</strong>{selectedConstraints.map((row) => <span key={row.id}><b>{row.rag} CONSTRAINT</b> — {row.description}</span>)}<small>You may proceed; this warning preserves that the constraint was visible during planning/entry.</small></div>}
         <div className="timeline-plant-readiness">
           <strong>Plant readiness</strong>
           {selectedPlantRequirements.map(({ plant, readiness }) => (

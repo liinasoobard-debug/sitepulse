@@ -9,5 +9,13 @@ import SharedDataSync from "@/components/SharedDataSync";
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const isLogin = usePathname() === "/login";
   if (isLogin) return children;
-  return <SharedDataSync><div className="context-controls"><ProjectSelector /><DateSelector /></div>{children}<BottomNav /></SharedDataSync>;
+  return <SharedDataSync>
+    <header className="sitepulse-app-header">
+      <a className="sitepulse-brand" href="/dashboard">SitePulse</a>
+      <span>Construction production control</span>
+    </header>
+    <BottomNav />
+    <div className="context-controls"><ProjectSelector /><DateSelector /></div>
+    <div className="sitepulse-page-content">{children}</div>
+  </SharedDataSync>;
 }

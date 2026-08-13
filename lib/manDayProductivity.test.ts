@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { actualManDayProductivity, calculateManDayBaseline, groupGangDayProductivity, plannedWorkingDaysBetween } from "./manDayProductivity.ts";
+import { actualManDayProductivity, aggregateProductivityFactors, calculateManDayBaseline, calculateProductivityFactor, groupGangDayProductivity, plannedWorkingDaysBetween } from "./manDayProductivity.ts";
 import type { TimelineEvent } from "../types/site.ts";
 
 const work = (id: string, activity: string, gang: string, quantity: number, operatives: string[], duration = 480): TimelineEvent => ({ id, programmeActivityId: activity, crewId: gang, time: "08:00", duration, title: activity, type: "work", status: "completed", quantity, affectedOperativeIds: operatives });
@@ -36,4 +36,19 @@ test("baseline formulas do not assume working-day hours", () => {
 test("programme date fallback counts inclusive weekdays without assuming shift hours", () => {
   assert.equal(plannedWorkingDaysBetween("2026-08-10", "2026-08-20"), 9);
   assert.equal(plannedWorkingDaysBetween("2026-08-15", "2026-08-16"), undefined);
+});
+test("productivity factor uses actual man-days divided by earned man-days", () => {
+  assert.deepEqual([100, 85, 120].map((actual) => calculateProductivityFactor(1000, 10, actual).productivityFactor), [1, .85, 1.2]);
+  assert.deepEqual([100, 85, 120].map((actual) => calculateProductivityFactor(1000, 10, actual).rag), ["green", "green", "red"]);
+});
+test("multiple activities aggregate totals instead of averaging factors", () => {
+  const first = calculateProductivityFactor(1000, 10, 120);
+  const second = calculateProductivityFactor(500, 10, 40);
+  const total = aggregateProductivityFactors([first, second]);
+  assert.equal(total.earnedManDays, 150);
+  assert.equal(total.actualManDays, 160);
+  assert.equal(total.productivityFactor, 160 / 150);
+});
+test("productivity factor thresholds are configurable", () => {
+  assert.equal(calculateProductivityFactor(1000, 10, 115, { greenMax: 1.05, amberMax: 1.2 }).rag, "amber");
 });

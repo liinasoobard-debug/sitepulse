@@ -2,187 +2,120 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import ActivitiesBehindChart from "@/components/dashboard/ActivitiesBehindChart";
-import BlockerParetoChart from "@/components/dashboard/BlockerParetoChart";
-import CumulativeProgressChart from "@/components/dashboard/CumulativeProgressChart";
-import DashboardKpiCard from "@/components/dashboard/DashboardKpiCard";
-import ChangeWorkSummary from "@/components/dashboard/ChangeWorkSummary";
-import DashboardDetailTable from "@/components/dashboard/DashboardDetailTable";
-import GangProductivityChart from "@/components/dashboard/GangProductivityChart";
-import LabourUtilisationChart from "@/components/dashboard/LabourUtilisationChart";
 import PlannedVsActualChart from "@/components/dashboard/PlannedVsActualChart";
 import ProductivityTrendChart from "@/components/dashboard/ProductivityTrendChart";
-import ProgrammeStatusChart from "@/components/dashboard/ProgrammeStatusChart";
-import ProductivityRagBadge from "@/components/ProductivityRagBadge";
-import { buildDashboardData, classifyDashboardBlocker, dashboardRange, type DashboardFilters, type DashboardPeriod, type DatedDashboardEvent } from "@/lib/dashboard";
-import { getActiveDate, getActiveProject, getActiveProjectId, getLocalDate, loadSiteDaysBetween } from "@/lib/storage";
+import { buildDashboardData, classifyDashboardBlocker, dashboardRange, dashboardStartDate, type DashboardFilters, type DashboardPeriod, type DatedDashboardEvent } from "@/lib/dashboard";
+import { effectiveConstraintRag, type ConstraintActivityLink, type ConstraintRecord } from "@/lib/constraints";
+import { buildEvidenceForecast } from "@/lib/forecastRecovery";
+import { getActiveDate, getActiveProject, getActiveProjectId, loadSiteDaysBetween } from "@/lib/storage";
+import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
 import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
 import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
-import { loadConstraints } from "@/lib/supabase/constraintData";
-import type { ConstraintRecord } from "@/lib/constraints";
-import { productivityRag, productivityRagLabels, type ProductivityRag } from "@/lib/productivityRag";
-import { buildEvidenceForecast } from "@/lib/forecastRecovery";
+import { loadDailyPlan } from "@/lib/supabase/dailyPlanData";
+import type { DailyPlanAllocation } from "@/lib/dailyPlan";
 import type { ProgrammeActivity, Project, SiteDay } from "@/types/site";
 
-const emptyFilters: DashboardFilters = { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "" };
-const activityStatuses = ["Not Started", "In Progress", "Completed", "Overdue", "Missing from Latest Update", "Productivity Baseline Incomplete"];
-const savedViews: Record<string, Partial<DashboardFilters>> = { "Project Director": {}, Planner: { activityStatus: "Overdue" }, Commercial: {}, "Site Operations": { activityStatus: "In Progress" } };
-const format = (value: number | null, suffix = "") => value === null ? "—" : `${value.toLocaleString("en-GB", { maximumFractionDigits: 1 })}${suffix}`;
-const unique = (values: string[]) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
-const EmptyChart = ({ title, message }: { title: string; message: string }) => <section className="dashboard-chart dashboard-empty-chart"><header><h2>{title}</h2></header><p>{message}</p></section>;
+type Tone = "green" | "amber" | "red" | "neutral";
+type Attention = { tone: "red" | "amber"; text: string; href: string; priority: number };
+const blankFilters: DashboardFilters = { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "", productType: "" };
+const format = (value: number, digits = 1) => value.toLocaleString("en-GB", { maximumFractionDigits: digits });
+const icon: Record<Tone, string> = { green: "●", amber: "▲", red: "■", neutral: "◇" };
+const label: Record<Tone, string> = { green: "Green", amber: "Amber", red: "Red", neutral: "Unavailable" };
+const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
 
-function mondayFor(date: string): string { const value = new Date(`${date}T12:00:00`); const day = value.getDay(); value.setDate(value.getDate() - (day === 0 ? 6 : day - 1)); return getLocalDate(value); }
-function performanceTone(value: number | null): "neutral" | "good" | "warning" | "bad" { return value === null ? "neutral" : value >= 100 ? "good" : value >= 90 ? "warning" : "bad"; }
+function StatusCard({ title, value, detail, tone, href }: { title: string; value: string; detail: string; tone: Tone; href: string }) {
+  return <Link href={href} className={`health-status-card ${tone}`}><header><span>{title}</span><b>{icon[tone]} {label[tone]}</b></header><strong>{value}</strong><small>{detail}</small></Link>;
+}
 
 export default function DashboardPage() {
-  const [period, setPeriod] = useState<DashboardPeriod>("weekly");
+  const [period, setPeriod] = useState<DashboardPeriod>("overall");
   const [selectedDate, setSelectedDate] = useState("");
+  const [filters, setFilters] = useState<DashboardFilters>(blankFilters);
   const [programme, setProgramme] = useState<ProgrammeActivity[]>([]);
   const [events, setEvents] = useState<DatedDashboardEvent[]>([]);
+  const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
+  const [constraintLinks, setConstraintLinks] = useState<ConstraintActivityLink[]>([]);
   const [project, setProject] = useState<Project | null>(null);
-  const [filters, setFilters] = useState<DashboardFilters>(emptyFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selectedBlocker, setSelectedBlocker] = useState("");
-  const [selectedGang, setSelectedGang] = useState("");
-  const [selectedActivity, setSelectedActivity] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [detailWindow, setDetailWindow] = useState<{ label: string; start: string; end: string } | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
+  const [todayPlan, setTodayPlan] = useState<DailyPlanAllocation[]>([]);
 
   useEffect(() => { queueMicrotask(() => setSelectedDate(getActiveDate())); }, []);
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      setLoading(true); setError("");
-      const projectId = getActiveProjectId(); setProject(getActiveProject());
+      setLoading(true); setError(""); const projectId = getActiveProjectId(); setProject(getActiveProject());
       try {
-        const [published, timeline, projectConstraints] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadConstraints(projectId)]);
+        const [published, timeline, constraintRows, links, dailyPlan] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadConstraints(projectId), loadConstraintLinks(projectId), loadDailyPlan(projectId, getActiveDate())]);
         if (cancelled) return;
-        const localDays = loadSiteDaysBetween("1000-01-01", "9999-12-31", projectId);
-        const days = new Map<string, SiteDay>(localDays.map((day) => [day.date, day]));
+        const days = new Map<string, SiteDay>(loadSiteDaysBetween("1000-01-01", "9999-12-31", projectId).map((day) => [day.date, day]));
         timeline.forEach(({ date }) => { if (!days.has(date)) days.set(date, { date, attendance: [], crews: [], events: [] }); });
-        setProgramme(published.activities);
-        setEvents(timeline.map(({ date, event }) => ({ date, event, day: days.get(date) ?? { date, attendance: [], crews: [], events: [] } })));
-        setConstraints(projectConstraints);
+        setProgramme(published.activities); setEvents(timeline.map(({ date, event }) => ({ date, event, day: days.get(date)! }))); setConstraints(constraintRows); setConstraintLinks(links); setTodayPlan(dailyPlan.allocations);
       } catch (caught) { if (!cancelled) setError(caught instanceof Error ? caught.message : "Unable to load dashboard data."); }
       finally { if (!cancelled) setLoading(false); }
     }
-    void load();
-    const refresh = () => void load();
-    window.addEventListener("sitepulse-project-changed", refresh); window.addEventListener("sitepulse-day-changed", refresh);
+    void load(); const refresh = () => void load(); window.addEventListener("sitepulse-project-changed", refresh); window.addEventListener("sitepulse-day-changed", refresh);
     return () => { cancelled = true; window.removeEventListener("sitepulse-project-changed", refresh); window.removeEventListener("sitepulse-day-changed", refresh); };
   }, []);
 
-  const filteredForOptions = useMemo(() => programme.filter((activity) => (!filters.building || activity.building === filters.building) && (!filters.elevation || activity.elevation === filters.elevation) && (!filters.level || activity.level === filters.level)), [filters.building, filters.elevation, filters.level, programme]);
-  const options = useMemo(() => ({
-    buildings: unique(programme.map((item) => item.building)),
-    elevations: unique(programme.filter((item) => !filters.building || item.building === filters.building).map((item) => item.elevation)),
-    levels: unique(programme.filter((item) => (!filters.building || item.building === filters.building) && (!filters.elevation || item.elevation === filters.elevation)).map((item) => item.level)),
-    activities: filteredForOptions,
-    gangs: unique(events.map(({ day, event }) => day.crews?.find((crew) => crew.id === event.crewId)?.name ?? (event.crewId ? "Unknown gang" : "Unassigned gang"))),
-    units: unique(programme.map((item) => item.unit)),
-    blockers: unique(events.filter(({ event }) => event.type === "disruption").map(({ event }) => classifyDashboardBlocker(event))),
-  }), [events, filteredForOptions, filters.building, filters.elevation, programme]);
-  const data = useMemo(() => selectedDate ? buildDashboardData({ period, selectedDate, programme, events, filters }) : null, [events, filters, period, programme, selectedDate]);
-  const range = selectedDate ? dashboardRange(period, selectedDate) : null;
-  const mostFrequent = data?.blockers.slice().sort((a, b) => b.events - a.events)[0];
-  const selectedBlockerRows = data?.disruptionRows.filter(({ event }) => !selectedBlocker || classifyDashboardBlocker(event) === selectedBlocker) ?? [];
-  const selectedGangRow = data?.gangs.find((row) => row.key === selectedGang);
-  const selectedActivityRow = data?.behind.find((row) => row.id === selectedActivity);
-  const activeFilters = (Object.entries(filters) as Array<[keyof DashboardFilters, string]>).filter(([, value]) => value);
-  const setCrossFilter = (key: keyof DashboardFilters, value: string) => setFilters((current) => ({ ...current, [key]: current[key] === value ? "" : value }));
-
-  const productivityLosses = useMemo(() => {
-    if (!data) return [];
-    const grouped = new Map<string, { activity: string; planned: number; actual: number; manDays: number; rows: Array<{ performance: number }> }>();
-    data.gangs.forEach((row) => { const current = grouped.get(row.activity) ?? { activity: row.activity, planned: 0, actual: 0, manDays: 0, rows: [] }; current.planned += row.planned * row.gangSize; current.actual += row.actual * row.gangSize; current.manDays += row.gangSize; current.rows.push(row); grouped.set(row.activity, current); });
-    return [...grouped.values()].map((row) => { const planned = row.manDays ? row.planned / row.manDays : 0, actual = row.manDays ? row.actual / row.manDays : 0; const performance = planned > 0 ? actual / planned * 100 : 0; return { ...row, performance, status: productivityRag(planned, actual) }; }).sort((a, b) => a.performance - b.performance);
-  }, [data]);
-  const deterioratingCount = productivityLosses.filter((row) => row.rows.length > 1 && row.rows.at(-1)!.performance < row.rows[0].performance).length;
-  const forecastLate = useMemo(() => programme.map((activity) => {
-    const disruptions = events.filter(({ event }) => event.type === "disruption" && event.programmeActivityId === activity.programmeActivityId), disruptedDates = new Set(disruptions.map((row) => row.date));
-    const production = events.filter(({ event }) => event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId && typeof event.quantity === "number").map(({ date, event }) => ({ date, quantity: Number(event.quantity), operatives: new Set(event.affectedOperativeIds ?? []).size || Number(event.numberOfOperatives ?? 0), disrupted: disruptedDates.has(date) }));
-    const forecast = buildEvidenceForecast({ id: activity.programmeActivityId, name: activity.activity, plannedQuantity: activity.plannedQuantity, plannedFinish: activity.plannedFinish, plannedManDayProductivity: activity.plannedManDayProductivity }, selectedDate, production, disruptions.map(({ date, event }) => ({ date, category: classifyDashboardBlocker(event), lostLabourHours: Number(event.lostLabourHours ?? 0) })));
-    return { activity, forecast };
-  }).filter((row) => (row.forecast.likely.variance ?? 0) > 0).sort((a, b) => (b.forecast.likely.variance ?? 0) - (a.forecast.likely.variance ?? 0)), [events, programme, selectedDate]);
+  const productTypes = useMemo(() => unique(programme.map((row) => row.productType)), [programme]);
+  const areas = useMemo(() => unique(programme.filter((row) => !filters.productType || row.productType === filters.productType).map((row) => row.elevation)), [filters.productType, programme]);
+  const gangs = useMemo(() => unique(events.map(({ day, event }) => day.crews?.find((crew) => crew.id === event.crewId)?.name)), [events]);
+  const selectedActivities = useMemo(() => programme.filter((row) => (!filters.productType || row.productType === filters.productType) && (!filters.elevation || row.elevation === filters.elevation)), [filters.elevation, filters.productType, programme]);
+  const selectedProductTypes = unique(selectedActivities.map((row) => row.productType));
+  const data = useMemo(() => selectedDate ? buildDashboardData({ period, selectedDate, programme, events, filters, productivityFactorThresholds: project?.productivityFactorThresholds }) : null, [events, filters, period, programme, project?.productivityFactorThresholds, selectedDate]);
+  const forecasts = useMemo(() => !selectedDate ? [] : selectedActivities.map((activity) => {
+    const disruptions = events.filter(({ event }) => event.type === "disruption" && event.programmeActivityId === activity.programmeActivityId);
+    const disrupted = new Set(disruptions.map((row) => row.date));
+    const production = events.filter(({ event }) => event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId && typeof event.quantity === "number").map(({ date, event }) => ({ date, quantity: Number(event.quantity), operatives: new Set(event.affectedOperativeIds ?? []).size || Number(event.numberOfOperatives ?? 0), disrupted: disrupted.has(date) }));
+    return { activity, forecast: buildEvidenceForecast({ id: activity.programmeActivityId, name: activity.activity, plannedQuantity: activity.plannedQuantity, plannedFinish: activity.plannedFinish, plannedManDayProductivity: activity.plannedManDayProductivity }, selectedDate, production, disruptions.map(({ date, event }) => ({ date, category: classifyDashboardBlocker(event), lostLabourHours: Number(event.lostLabourHours ?? 0) }))) };
+  }).filter(({ forecast }) => forecast.likely.variance !== null), [events, selectedActivities, selectedDate]);
 
   if (!selectedDate || !data) return null;
-  const achievement = data.kpis.achievement;
-  const programmeTone = achievement === null ? "neutral" : achievement >= 100 ? "green" : achievement >= 90 ? "amber" : "red";
-  const programmeIcon = programmeTone === "green" ? "●" : programmeTone === "amber" ? "▲" : programmeTone === "red" ? "■" : "◇";
-  const variance = data.kpis.expected !== null && data.kpis.achieved !== null ? data.kpis.achieved - data.kpis.expected : null;
-  const dateLabel = range ? `${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(`${range.start}T12:00:00`))}–${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(`${range.end}T12:00:00`))}` : "";
-  return <main className="dashboard-page"><div className="dashboard-shell">
-    <header className="dashboard-header"><div><p className="eyebrow">Production control</p><h1>Project Dashboard</h1><p>{project?.name ?? "Project"} · {range?.start} to {range?.end}</p></div><div className="dashboard-header-actions"><span className="dashboard-method">Linear planned production profile</span><button className="secondary-button dashboard-filter-toggle" onClick={() => setFiltersOpen((value) => !value)} aria-expanded={filtersOpen}>Filters {activeFilters.length ? `(${activeFilters.length})` : ""}</button></div></header>
+  const range = dashboardRange(period, selectedDate, dashboardStartDate(programme, events, selectedDate));
+  const reliableQuantity = !data.mixedUnits;
+  const reliableProductivity = reliableQuantity && selectedProductTypes.length <= 1;
+  const progress = reliableQuantity ? data.kpis.achievement : null;
+  const progressTone: Tone = progress === null ? "neutral" : progress >= 100 ? "green" : progress >= 90 ? "amber" : "red";
+  const productivity = reliableProductivity ? data.kpis.productivityFactor : null;
+  const productivityTone: Tone = productivity === null ? "neutral" : data.kpis.productivityFactorRag === "green" ? "green" : data.kpis.productivityFactorRag === "amber" ? "amber" : data.kpis.productivityFactorRag === "red" ? "red" : "neutral";
+  const lateForecasts = forecasts.filter(({ forecast }) => (forecast.likely.variance ?? 0) > 0).sort((a, b) => (b.forecast.likely.variance ?? 0) - (a.forecast.likely.variance ?? 0));
+  const programmeTone: Tone = programme.length ? (data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0) > 0 ? "red" : "green" : "neutral";
+  const openConstraints = constraints.filter((row) => ["OPEN", "ACTIONED / MONITORING"].includes(row.status));
+  const redConstraints = openConstraints.filter((row) => effectiveConstraintRag(row, selectedDate).effective === "RED");
+  const blockingIds = new Set(constraintLinks.filter((row) => ["Blocking Start", "Blocking Progress", "Blocking Completion"].includes(row.blocking_relationship)).map((row) => row.constraint_id));
+  const blocking = openConstraints.filter((row) => blockingIds.has(row.id));
+  const constraintTone: Tone = redConstraints.length ? "red" : openConstraints.length || blocking.length ? "amber" : "green";
+  const recordedHours = (data.kpis.productiveHours ?? 0) + (data.kpis.lostHours ?? 0);
+  const disruptionPercent = data.kpis.lostHours !== null && recordedHours ? data.kpis.lostHours / recordedHours * 100 : null;
+  const disruptionTone: Tone = data.kpis.lostHours === null ? "green" : disruptionPercent === null ? "neutral" : disruptionPercent >= 10 ? "red" : "amber";
+  const activeChanges = data.changes.filter((row) => !["closed", "completed"].includes(row.status.toLowerCase()));
 
-    <section className={`dashboard-controls ${filtersOpen ? "open" : ""}`} aria-label="Dashboard period and filters">
-      <label><span>Project</span><input value={project?.name ?? "No project selected"} disabled /></label>
-      <div className="dashboard-period-tabs">{(["daily", "weekly", "monthly"] as DashboardPeriod[]).map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => { setPeriod(item); setSelectedBlocker(""); setSelectedGang(""); setSelectedActivity(""); setDetailWindow(null); }}>{item[0].toUpperCase() + item.slice(1)}</button>)}</div>
-      <label><span>{period === "monthly" ? "Calendar month" : period === "weekly" ? "Week commencing" : "Date"}</span><input type={period === "monthly" ? "month" : "date"} value={period === "monthly" ? selectedDate.slice(0, 7) : period === "weekly" ? mondayFor(selectedDate) : selectedDate} onChange={(event) => setSelectedDate(period === "monthly" ? `${event.target.value}-01` : period === "weekly" ? mondayFor(event.target.value) : event.target.value)} /></label>
-      {([ ["building", "Building", options.buildings], ["elevation", "Elevation", options.elevations], ["level", "Level", options.levels], ["gang", "Gang", options.gangs], ["unit", "Unit", options.units] ] as Array<[keyof DashboardFilters, string, string[]]>).map(([key, label, values]) => <label key={key}><span>{label}</span><select value={filters[key]} onChange={(event) => setFilters((current) => ({ ...current, [key]: event.target.value, ...(key === "building" ? { elevation: "", level: "", activity: "" } : key === "elevation" ? { level: "", activity: "" } : key === "level" ? { activity: "" } : {}) }))}><option value="">All</option>{values.map((value) => <option key={value}>{value}</option>)}</select></label>)}
-      <label><span>Activity</span><select value={filters.activity} onChange={(event) => setFilters((current) => ({ ...current, activity: event.target.value }))}><option value="">All</option>{options.activities.map((activity) => <option key={activity.programmeActivityId} value={activity.programmeActivityId}>{activity.activity}</option>)}</select></label>
-      <label><span>Activity Status</span><select value={filters.activityStatus} onChange={(event) => setFilters((current) => ({ ...current, activityStatus: event.target.value }))}><option value="">All</option>{activityStatuses.map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label><span>Blocker Category</span><select value={filters.blockerCategory} onChange={(event) => setFilters((current) => ({ ...current, blockerCategory: event.target.value }))}><option value="">All</option>{options.blockers.map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label><span>Productivity RAG</span><select value={filters.productivityRag} onChange={(event) => setFilters((current) => ({ ...current, productivityRag: event.target.value }))}><option value="">All</option>{(Object.entries(productivityRagLabels) as Array<[ProductivityRag, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      <label><span>Saved View</span><select defaultValue="" onChange={(event) => { setFilters({ ...emptyFilters, ...savedViews[event.target.value] }); setDetailWindow(null); }}><option value="">Select view</option>{Object.keys(savedViews).map((view) => <option key={view}>{view}</option>)}</select></label>
-      <div className="dashboard-filter-actions"><button className="secondary-button dashboard-clear" onClick={() => { setFilters(emptyFilters); setDetailWindow(null); }}>Clear Filters</button><button className="secondary-button dashboard-clear" onClick={() => { setFilters(emptyFilters); setPeriod("weekly"); setSelectedDate(getActiveDate()); setDetailWindow(null); }}>Reset to Project View</button></div>
-    </section>
+  const cards = [
+    { title: "Programme", value: programmeTone === "neutral" ? "Status unavailable" : programmeTone === "red" ? `${data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0} overdue activities` : "On programme dates", detail: "Published programme status", tone: programmeTone, href: "/programme" },
+    { title: "Productivity Factor", value: productivity === null ? (selectedProductTypes.length > 1 ? "Select one interface / product type" : "No productivity actuals") : format(productivity, 2), detail: productivity === null ? "Actual man-days ÷ earned man-days" : `${format(Math.abs(productivity-1)*100)}% ${productivity <= 1 ? "fewer" : "more"} man-days consumed than earned`, tone: productivityTone, href: "/reports" },
+    { title: "Constraints", value: `${openConstraints.length} Open · ${blocking.length} Blocking`, detail: `${redConstraints.length} Red constraint${redConstraints.length === 1 ? "" : "s"}`, tone: constraintTone, href: "/constraints" },
+    { title: "Disruption", value: data.kpis.lostHours === null ? "No disruption recorded" : `${format(data.kpis.lostHours)} labour hrs`, detail: disruptionPercent === null ? "Recorded labour share unavailable" : `${format(disruptionPercent)}% of recorded productive + lost hours`, tone: disruptionTone, href: "/timeline" },
+    { title: "Forecast", value: forecasts.length ? `${lateForecasts.length} activities forecast late` : "Forecast unavailable", detail: lateForecasts[0] ? `Worst: +${format(lateForecasts[0].forecast.likely.variance ?? 0, 0)} working days` : "No evidence-led late forecast", tone: !forecasts.length ? "neutral" as Tone : lateForecasts.length ? "red" as Tone : "green" as Tone, href: "/forecast" },
+    { title: "Change", value: activeChanges.length ? `${activeChanges.length} active changes` : "Exposure not yet available", detail: activeChanges.length ? "Commercial value not recorded" : "No supported commercial exposure", tone: activeChanges.length ? "amber" as Tone : "neutral" as Tone, href: "/reports" },
+  ];
+  const attention: Attention[] = [];
+  if (productivity !== null && productivityTone === "red") attention.push({ tone: "red", text: `${filters.productType || "Selected work"} Productivity Factor is ${format(productivity, 2)} — ${format((productivity-1)*100)}% more man-days consumed than earned.`, href: "/reports", priority: 100 });
+  if (lateForecasts[0]) attention.push({ tone: "red", text: `${lateForecasts[0].activity.productType || lateForecasts[0].activity.activity} likely forecast is +${format(lateForecasts[0].forecast.likely.variance ?? 0, 0)} working days.`, href: `/forecast?activity=${encodeURIComponent(lateForecasts[0].activity.programmeActivityId)}`, priority: 95 });
+  if (redConstraints[0]) attention.push({ tone: "red", text: `${redConstraints[0].description}`, href: "/constraints", priority: 92 });
+  else if (blocking.length) attention.push({ tone: "amber", text: `${blocking.length} blocking constraint${blocking.length === 1 ? "" : "s"} affect planned activities.`, href: "/constraints", priority: 85 });
+  if (data.kpis.lostHours) attention.push({ tone: disruptionTone === "red" ? "red" : "amber", text: `${format(data.kpis.lostHours)} disruption labour hours recorded this period.`, href: "/timeline", priority: 70 });
+  if (activeChanges.length) attention.push({ tone: "amber", text: `${activeChanges.length} active change${activeChanges.length === 1 ? "" : "s"} recorded this period.`, href: "/reports", priority: 60 });
+  const ranked = attention.sort((a, b) => b.priority - a.priority).slice(0, 5);
 
-    <nav className="dashboard-breadcrumb" aria-label="Dashboard drill-down"><button onClick={() => setFilters(emptyFilters)}>{project?.name ?? "Project"}</button>{filters.building && <><span>/</span><button onClick={() => setFilters((current) => ({ ...current, elevation: "", level: "", activity: "" }))}>{filters.building}</button></>}{filters.elevation && <><span>/</span><button onClick={() => setFilters((current) => ({ ...current, level: "", activity: "" }))}>{filters.elevation}</button></>}{filters.level && <><span>/</span><button onClick={() => setFilters((current) => ({ ...current, activity: "" }))}>{filters.level}</button></>}{filters.activity && <><span>/</span><strong>{programme.find((item) => item.programmeActivityId === filters.activity)?.activity}</strong></>}</nav>
-    {(activeFilters.length > 0 || detailWindow) && <div className="dashboard-active-filters"><strong>Active filters</strong>{activeFilters.map(([key, value]) => <button key={key} onClick={() => setCrossFilter(key, value)}>{key.replace(/([A-Z])/g, " $1")}: {key === "activity" ? programme.find((item) => item.programmeActivityId === value)?.activity : value} ×</button>)}{detailWindow && <button onClick={() => setDetailWindow(null)}>Detail period: {detailWindow.label} ×</button>}</div>}
-
-    {loading && <div className="dashboard-notice">Loading dashboard data…</div>}
-    {error && <div className="dashboard-notice error" role="alert">{error}</div>}
-    {data.warnings.map((warning) => <div className="dashboard-notice warning" key={warning}>{warning}</div>)}
-
-    <section className={`dashboard-executive-hero ${programmeTone}`} aria-label="Programme performance summary"><div className="dashboard-executive-status"><span aria-hidden="true">{programmeIcon}</span><strong>{format(achievement, "%")} OF PLAN</strong><small>{achievement === null ? "NO PROGRAMME ACTUALS" : achievement >= 100 ? "ON OR ABOVE TARGET" : "BELOW TARGET"}</small></div><div className="dashboard-executive-metrics"><div><span>Plan</span><strong>{format(data.kpis.expected)} {data.unit}</strong></div><div><span>Actual</span><strong>{format(data.kpis.achieved)} {data.unit}</strong></div><div><span>Variance</span><strong>{format(variance)} {data.unit}</strong></div><div><span>Productivity</span><strong>{format(data.kpis.productivityPerformance, "%")}</strong></div></div><p>Programme performance and Productivity RAG are independent measures.</p></section>
-
-    <section className="dashboard-executive-charts" aria-label="Progress and productivity charts"><div><h2>Progress</h2>{data.kpis.expected !== null && data.kpis.achieved !== null ? <PlannedVsActualChart data={data.output} unit={data.unit} onSelect={setDetailWindow} /> : <EmptyChart title="Planned vs Actual" message="A planned baseline and measured quantity are required." />}</div><div><h2>Productivity</h2><ProductivityTrendChart data={data.productivity} unit={data.unit} /></div></section>
-
-    <section className="dashboard-executive-insight"><div><h2>Where are we losing?</h2>{productivityLosses.length ? <ol className="dashboard-loss-list">{productivityLosses.slice(0, 6).map((row) => <li key={row.activity}><ProductivityRagBadge status={row.status} /><strong>{row.activity}</strong><span>{format(row.performance, "%")}</span></li>)}</ol> : <p>No measured productivity exists for {dateLabel}.</p>}</div><div><h2>Why?</h2>{data.blockers.length ? <ol className="dashboard-blocker-bars">{data.blockers.slice(0, 5).map((row) => <li key={row.category}><div><strong>{row.category}</strong><span>{format(row.hours)} man-hours</span></div><i style={{ width: `${row.hours / Math.max(data.blockers[0].hours, 1) * 100}%` }} /></li>)}</ol> : <p>No disruption blockers recorded in this period.</p>}</div></section>
-
-    <section className="dashboard-attention"><h2>Attention required</h2><div><span><strong>{data.productivityRag.counts.red}</strong> Red activit{data.productivityRag.counts.red === 1 ? "y" : "ies"}</span><span><strong>{deterioratingCount}</strong> deteriorating activit{deterioratingCount === 1 ? "y" : "ies"}</span><span><strong>{format(data.kpis.lostHours ?? 0)}</strong> disruption man-hours</span><span><strong>{data.changes.length}</strong> change event{data.changes.length === 1 ? "" : "s"}</span></div><div style={{ display: "flex", gap: 8 }}><Link href={`/forecast${filters.activity ? `?activity=${encodeURIComponent(filters.activity)}` : ""}`} className="secondary-button">Forecast &amp; Recovery</Link><button className="secondary-button" onClick={() => setDetailsOpen((value) => !value)} aria-expanded={detailsOpen}>{detailsOpen ? "Hide detail" : "View detail"}</button></div></section>
-
-    <section className="dashboard-forecast-panel"><header><div><p className="eyebrow">Forecast &amp; Recovery</p><h2>{forecastLate.length} activit{forecastLate.length === 1 ? "y" : "ies"} forecast late</h2></div><Link href="/forecast" className="secondary-button">View Forecast &amp; Recovery</Link></header>{forecastLate.length ? <div>{forecastLate.slice(0, 3).map(({ activity, forecast }) => <article key={activity.id}><span className={`forecast-rag ${forecast.forecastRag}`}>{forecast.forecastRag.toUpperCase()}</span><div><strong>{activity.activity}</strong><small>Likely +{format(forecast.likely.variance)} working days · Recovery requires {format(forecast.requiredImprovementPercent, "% output")}</small><small>Previously demonstrated: {forecast.recoveryStatus === "demonstrated" || forecast.recoveryStatus === "on-track" ? "YES" : forecast.recoveryStatus === "not-yet-demonstrated" ? "NOT YET" : "INSUFFICIENT DATA"}</small></div><Link href={`/forecast?activity=${encodeURIComponent(activity.programmeActivityId)}`}>View</Link></article>)}</div> : <p>No activities have a late evidence-led Likely forecast.</p>}</section>
-
-    <section className="dashboard-attention"><h2>Constraints</h2><div><span><strong>{constraints.filter((row) => ["OPEN", "ACTIONED / MONITORING"].includes(row.status)).length}</strong> Open</span><span><strong>{constraints.filter((row) => row.status !== "CLOSED" && row.rag === "RED").length}</strong> Red</span><span><strong>{constraints.filter((row) => row.status !== "CLOSED" && row.rag === "AMBER").length}</strong> Amber</span><span><strong>{constraints.filter((row) => row.status !== "CLOSED" && row.rag === "GREEN").length}</strong> Green</span></div><Link href="/constraints" className="secondary-button">View Constraints</Link></section>
-
-    {detailsOpen && <><section className="dashboard-kpi-grid-main" aria-label="Production key performance indicators">
-      <DashboardKpiCard label="Planned Daily Gang Output" value={format(data.kpis.plannedDailyGangOutput, data.unit ? ` ${data.unit}/day` : "")} />
-      <DashboardKpiCard label="Actual Daily Gang Output" value={format(data.kpis.actualDailyGangOutput, data.unit ? ` ${data.unit}/day` : "")} />
-      <DashboardKpiCard label="Planned Man-Day Productivity" value={format(data.kpis.plannedRate, data.unit ? ` ${data.unit}/man-day` : "")} />
-      <DashboardKpiCard label="Actual Man-Day Productivity" value={format(data.kpis.actualRate, data.unit ? ` ${data.unit}/man-day` : "")} />
-      <DashboardKpiCard label="Productivity Performance" value={format(data.kpis.productivityPerformance, "%")} tone={performanceTone(data.kpis.productivityPerformance)} />
-      <DashboardKpiCard label="Operatives Used" value={format(data.kpis.operativesUsed)} detail="Average contributing operatives per working day" />
-      <DashboardKpiCard label="Planned Gang Size" value={format(data.kpis.plannedGangSize)} />
-      <DashboardKpiCard label="Gang Size Variance" value={format(data.kpis.gangSizeVariance)} />
-      <DashboardKpiCard label="Disruption Labour Hours" value={format(data.kpis.lostHours, " hr")} tone={data.kpis.lostHours ? "bad" : "neutral"} />
-      <DashboardKpiCard label="Productive Labour Hours" value={format(data.kpis.productiveHours, " hr")} detail="Advanced detail" />
-      <DashboardKpiCard label="Man-Hour Productivity" value={format(data.kpis.manHourProductivity, data.unit ? ` ${data.unit}/labour hr` : "")} detail="Advanced detail" />
-      <DashboardKpiCard label="VO / Change Labour Hours" value={format(data.kpis.changeHours, " hr")} />
-      <DashboardKpiCard label="Activities Behind Target" value={String(data.kpis.behindCount)} tone={data.kpis.behindCount ? "bad" : "good"} />
-      <DashboardKpiCard label="Principal Blocker" value={data.kpis.principalBlocker ?? "—"} detail={mostFrequent ? `Most frequent: ${mostFrequent.category} (${mostFrequent.events})` : undefined} />
-    </section>
-
-    <section className="dashboard-chart-grid">
-      <section className="dashboard-chart"><header><h2>Productivity RAG distribution</h2><p>Productivity only; independent from Programme RAG.</p></header><div style={{ display: "flex", height: 38, borderRadius: 8, overflow: "hidden", border: "1px solid #98a2b3" }} aria-label={`Green ${format(data.productivityRag.percentages.green, "%")}, Amber ${format(data.productivityRag.percentages.amber, "%")}, Red ${format(data.productivityRag.percentages.red, "%")}`}><span style={{ width: `${data.productivityRag.percentages.green}%`, background: "#12b76a" }} title="Green" /><span style={{ width: `${data.productivityRag.percentages.amber}%`, background: "#f79009" }} title="Amber" /><span style={{ width: `${data.productivityRag.percentages.red}%`, background: "#d92d20" }} title="Red" /></div><p>● Green {data.productivityRag.counts.green} ({format(data.productivityRag.percentages.green, "%")}) · ▲ Amber {data.productivityRag.counts.amber} ({format(data.productivityRag.percentages.amber, "%")}) · ■ Red {data.productivityRag.counts.red} ({format(data.productivityRag.percentages.red, "%")})</p><p>Baseline Missing {data.productivityRag.counts["baseline-missing"]} · No Actuals {data.productivityRag.counts["no-actuals"]}</p></section>
-      {data.kpis.expected !== null ? <CumulativeProgressChart data={data.cumulative} unit={data.unit} /> : <EmptyChart title="Cumulative planned vs actual" message="A complete planned quantity and date baseline is required." />}
-      <GangProductivityChart data={data.gangs} onSelect={(key) => { const row = data.gangs.find((item) => item.key === key); setSelectedGang(key); if (row) setCrossFilter("gang", row.gang); }} />
-      {data.kpis.utilisation !== null ? <LabourUtilisationChart data={data.labour} /> : <EmptyChart title="Labour utilisation" message="No classified labour hours exist for this period." />}
-      <BlockerParetoChart data={data.blockers} onSelect={(category) => { setSelectedBlocker(category); setCrossFilter("blockerCategory", category); }} />
-      <ActivitiesBehindChart data={data.behind} onSelect={(id) => { setSelectedActivity(id); setCrossFilter("activity", id); }} />
-      <ProgrammeStatusChart data={data.programmeStatus} onSelect={(status) => setCrossFilter("activityStatus", status)} />
-      <ChangeWorkSummary data={data.changes} />
-    </section>
-
-    {selectedGangRow && <section className="dashboard-drilldown"><h2>Gang drill-down</h2><p><strong>{selectedGangRow.gang}</strong> · {selectedGangRow.activity} · {selectedGangRow.date} · <ProductivityRagBadge status={selectedGangRow.status as ProductivityRag} /></p><p>Planned {format(selectedGangRow.planned)} vs actual {format(selectedGangRow.actual)} {selectedGangRow.unit}/man-day ({format(selectedGangRow.performance, "%")}). Daily Gang Output {format(selectedGangRow.dailyOutput)} {selectedGangRow.unit}; Gang Size {selectedGangRow.gangSize}.</p></section>}
-    {selectedBlocker && <section className="dashboard-drilldown"><h2>{selectedBlocker} disruption events</h2><div className="report-table-scroll"><table><thead><tr><th>Date</th><th>Activity</th><th>Reason</th><th>Lost hours</th></tr></thead><tbody>{selectedBlockerRows.map(({ date, event }) => <tr key={event.id}><td>{date}</td><td>{programme.find((item) => item.programmeActivityId === event.programmeActivityId)?.activity ?? event.title}</td><td>{event.reason ?? event.title}</td><td>{format(event.lostLabourHours ?? 0)}</td></tr>)}</tbody></table></div></section>}
-    {selectedActivityRow && <section className="dashboard-drilldown"><h2>Activity detail</h2><p><strong>{selectedActivityRow.activity}</strong> · {selectedActivityRow.building} / {selectedActivityRow.elevation} / {selectedActivityRow.level}</p><p>Expected {format(selectedActivityRow.expected)} {selectedActivityRow.unit}; actual {format(selectedActivityRow.actual)}; variance {format(selectedActivityRow.variance)}. Planned finish {selectedActivityRow.plannedFinish ?? "—"}. Main blocker {selectedActivityRow.mainBlocker}.</p></section>}
-
-    <section className="dashboard-detail-table"><h2>Activities behind target detail</h2>{data.behind.length ? <div className="report-table-scroll"><table><thead><tr>{["Activity", "Building", "Elevation", "Level", "Activity ID", "Expected to Date", "Actual to Date", "Variance", "Achievement", "Planned Finish", "Status", "Main Blocker", "Forecast"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{data.behind.map((row) => <tr key={row.id} onClick={() => { setSelectedActivity(row.id); setCrossFilter("activity", row.id); }}><td>{row.activity}</td><td>{row.building || "—"}</td><td>{row.elevation || "—"}</td><td>{row.level || "—"}</td><td>{row.id}</td><td>{format(row.expected)} {row.unit}</td><td>{format(row.actual)} {row.unit}</td><td>{format(row.variance)} {row.unit}</td><td>{format(row.achievement, "%")}</td><td>{row.plannedFinish ?? "—"}</td><td>{row.status}</td><td>{row.mainBlocker}</td><td><Link href={`/forecast?activity=${encodeURIComponent(row.id)}`} className="secondary-button" onClick={(event) => event.stopPropagation()}>View Forecast</Link></td></tr>)}</tbody></table></div> : <p>No activities are behind target for the selected filters and period.</p>}</section>
-    <section className="dashboard-detail-table"><h2>Red Productivity Activities</h2><p>Productivity RAG is separate from programme progress status.</p>{data.redActivities.length ? <div className="report-table-scroll"><table><thead><tr>{["Productivity RAG", "Activity", "Building", "Elevation", "Level", "Gang", "Product Type", "Planned", "Actual", "Performance", "Main Blocker"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{data.redActivities.map((row) => <tr key={row.id}><td><ProductivityRagBadge status="red" /></td><td>{row.activity}</td><td>{row.building || "—"}</td><td>{row.elevation || "—"}</td><td>{row.level || "—"}</td><td>{row.gang}</td><td>{row.productType}</td><td>{format(row.planned)}</td><td>{format(row.actual)}</td><td>{format(row.performance, "%")}</td><td>{row.mainBlocker}</td></tr>)}</tbody></table></div> : <p>No Red productivity activities match the current filters.</p>}</section>
-    <DashboardDetailTable rows={detailWindow ? data.detailRows.filter((row) => row.date >= detailWindow.start && row.date <= detailWindow.end) : data.detailRows} /></>}
+  return <main className="dashboard-page health-dashboard"><div className="dashboard-shell">
+    <header className="health-header"><div><p className="eyebrow">Project health</p><h1>Project Health</h1><p>{project?.name ?? "Project"} · {range.start} to {range.end}</p></div></header>
+    {loading && <p className="dashboard-notice">Loading project health…</p>}{error && <p className="dashboard-notice error" role="alert">{error}</p>}
+    <Link href="/daily-plan" className="daily-plan-health"><div><p className="eyebrow">Today&apos;s plan</p><strong>{todayPlan.length} activities</strong></div><span>{todayPlan.filter(row=>row.readiness_rag==="GREEN").length} Ready · {todayPlan.filter(row=>row.readiness_rag==="AMBER").length} Amber · {todayPlan.filter(row=>row.readiness_rag==="RED").length} Red</span><span>Target: {todayPlan.length?format(todayPlan.reduce((sum,row)=>sum+row.target_quantity,0)):0} planned output</span><b>Open →</b></Link>
+    <section className="health-status-grid" aria-label="Independent project health measures">{cards.map((card) => <StatusCard key={card.title} {...card} />)}</section>
+    <section className="period-progress"><header><div><p className="eyebrow">Period progress</p><h2>Plan / Actual / Variance</h2></div><span className={`health-rag ${progressTone}`}>{icon[progressTone]} {progressTone === "neutral" ? "Unavailable" : `${format(progress!)}% of period plan`}</span></header>{reliableQuantity ? <div className="period-progress-values"><dl><dt>Plan</dt><dd>{data.kpis.expected === null ? "—" : `${format(data.kpis.expected)} ${data.unit}`}</dd></dl><dl><dt>Actual</dt><dd>{data.kpis.achieved === null ? "—" : `${format(data.kpis.achieved)} ${data.unit}`}</dd></dl><dl><dt>Variance</dt><dd>{data.kpis.expected === null || data.kpis.achieved === null ? "—" : `${data.kpis.achieved-data.kpis.expected >= 0 ? "+" : ""}${format(data.kpis.achieved-data.kpis.expected)} ${data.unit}`}</dd></dl></div> : <p className="health-neutral-state">Mixed units cannot be summed. Select an Interface / Product Type or unit-compatible Area.</p>}{reliableProductivity && <div className="productivity-factor-kpis"><dl><dt>Earned Man-Days</dt><dd>{data.kpis.earnedManDays === null ? "—" : format(data.kpis.earnedManDays,2)}</dd></dl><dl><dt>Actual Man-Days</dt><dd>{data.kpis.actualManDays === null ? "—" : format(data.kpis.actualManDays,2)}</dd></dl><dl><dt>Man-Day Variance</dt><dd>{data.kpis.manDayVariance === null ? "—" : `${data.kpis.manDayVariance >= 0 ? "+" : ""}${format(data.kpis.manDayVariance,2)} MD`}</dd></dl><dl><dt>Productivity Factor</dt><dd>{productivity === null ? "—" : format(productivity,2)}</dd></dl></div>}</section>
+    <section className="health-compact-filters" aria-label="Production performance filters"><strong>Production performance</strong><label>Date range<select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}><option value="overall">From Start</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label><label>{period === "overall" ? "To date" : period === "weekly" ? "Week containing" : period === "monthly" ? "Month" : "Date"}<input type={period === "monthly" ? "month" : "date"} value={period === "monthly" ? selectedDate.slice(0,7) : selectedDate} onChange={(event) => setSelectedDate(period === "monthly" ? `${event.target.value}-01` : event.target.value)} /></label><label>Interface / Product Type<select value={filters.productType} onChange={(event) => setFilters((current) => ({ ...current, productType: event.target.value, elevation: "" }))}><option value="">All interfaces / product types</option>{productTypes.map((value) => <option key={value}>{value}</option>)}</select></label><label>Area<select value={filters.elevation} onChange={(event) => setFilters((current) => ({ ...current, elevation: event.target.value }))}><option value="">All</option>{areas.map((value) => <option key={value}>{value}</option>)}</select></label><label>Gang<select value={filters.gang} onChange={(event) => setFilters((current) => ({ ...current, gang: event.target.value }))}><option value="">All</option>{gangs.map((value) => <option key={value}>{value}</option>)}</select></label>{(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}</section>
+    <section className="health-chart-grid">{reliableQuantity ? <PlannedVsActualChart data={data.output} unit={data.unit} /> : <div className="health-chart-empty"><h2>Daily output — planned vs achieved</h2><p>Select an Interface / Product Type so incompatible quantity units are not combined.</p></div>}{reliableProductivity ? <ProductivityTrendChart data={data.productivity} unit={data.unit} /> : <div className="health-chart-empty"><h2>Man-Day Productivity</h2><p>{data.mixedUnits ? "Select an Interface / Product Type with one unit." : "Select one Interface / Product Type before comparing productivity baselines."}</p></div>}</section>
+    <section className="health-attention"><header><p className="eyebrow">Exceptions</p><h2>Needs Attention</h2><p>Only supported, material exceptions for the current selection.</p></header>{ranked.length ? <ol>{ranked.map((item, index) => <li key={`${item.href}-${index}`}><Link href={item.href}><span className={`health-attention-rag ${item.tone}`}>{icon[item.tone]} {label[item.tone]}</span><strong>{item.text}</strong><span>→</span></Link></li>)}</ol> : <div className="health-all-clear"><span>●</span><div><strong>No current supported exceptions.</strong><p>No Red or Amber issue is evidenced for this selection.</p></div></div>}</section>
   </div></main>;
 }

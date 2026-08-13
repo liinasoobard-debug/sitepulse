@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildDashboardData, dashboardRange } from "./dashboard.ts";
+import { buildDashboardData, dashboardRange, dashboardStartDate } from "./dashboard.ts";
 import type { ProgrammeActivity, SiteDay } from "../types/site.ts";
 
 const activity = { id: "1", programmeActivityId: "A1", activity: "Panels", activityName: "Panels", building: "B1", elevation: "North", level: "01", unit: "m2", plannedQuantity: 100, plannedStart: "2026-08-03", plannedFinish: "2026-08-07", plannedManDayProductivity: 5, assumedGangSize: 4, plannedGangDailyOutput: 20, createdAt: "now" } satisfies ProgrammeActivity;
@@ -9,6 +9,11 @@ const day: SiteDay = { date: "2026-08-03", attendance: [], crews: [{ id: "g1", n
 test("dashboard periods use calendar boundaries", () => {
   assert.deepEqual(dashboardRange("weekly", "2026-08-06"), { start: "2026-08-03", end: "2026-08-09" });
   assert.deepEqual(dashboardRange("monthly", "2026-08-06"), { start: "2026-08-01", end: "2026-08-31" });
+  assert.deepEqual(dashboardRange("overall", "2026-08-06", "2026-05-04"), { start: "2026-05-04", end: "2026-08-06" });
+});
+
+test("from-start range uses the earliest programme or recorded date", () => {
+  assert.equal(dashboardStartDate([{ ...activity, plannedStart: "2026-08-03" }], [{ date: "2026-07-30", day, event: { id: "note", time: "08:00", duration: 0, title: "Record", type: "non_measured_work" } }], "2026-08-06"), "2026-07-30");
 });
 
 test("linear profile and measured work use existing labour hours", () => {
@@ -34,4 +39,20 @@ test("programme and change summaries reuse filtered dashboard records", () => {
   assert.equal(result.changes[0]?.reference, "VO-12");
   assert.equal(result.kpis.changeHours, 2);
   assert.equal(result.detailRows[0]?.activityId, "A1");
+});
+
+test("progress and productivity remain independent measures", () => {
+  const event = { id: "e2", programmeActivityId: "A1", crewId: "g1", time: "08:00", startTime: "08:00", finishTime: "16:00", duration: 480, title: "Panels", type: "work" as const, status: "completed" as const, quantity: 40, affectedOperativeIds: Array.from({ length: 20 }, (_, index) => `o${index}`) };
+  const result = buildDashboardData({ period: "daily", selectedDate: "2026-08-03", programme: [{ ...activity, productType: "Curtain Wall" }], events: [{ date: day.date, day, event }], filters: { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "", productType: "Curtain Wall" } });
+  assert.equal(result.kpis.achievement, 200);
+  assert.equal(result.kpis.productivityPerformance, 40);
+});
+
+test("product type and gang filters narrow both plan and actual data", () => {
+  const second = { ...activity, id: "2", programmeActivityId: "A2", activity: "Windows", productType: "Windows", plannedQuantity: 50 };
+  const event = { id: "e3", programmeActivityId: "A1", crewId: "g1", time: "08:00", duration: 480, title: "Panels", type: "work" as const, status: "completed" as const, quantity: 20, affectedOperativeIds: ["o1", "o2"] };
+  const result = buildDashboardData({ period: "weekly", selectedDate: "2026-08-03", programme: [{ ...activity, productType: "Curtain Wall" }, second], events: [{ date: day.date, day, event }], filters: { building: "", elevation: "", level: "", activity: "", gang: "Gang 1", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "", productType: "Curtain Wall" } });
+  assert.equal(result.kpis.expected, 100);
+  assert.equal(result.kpis.achieved, 20);
+  assert.equal(result.output.length, 5);
 });

@@ -7,7 +7,7 @@ export const SHARED_SYNC_EVENT = "sitepulse-shared-data-changed";
 
 const SHARED_KEY_PREFIXES = [
   "sitepulse-projects",
-  "sitepulse-operatives",
+  "sitepulse-operatives-project-",
   "sitepulse-day-project-",
 ];
 const CLIENT_ID_KEY = "sitepulse-sync-client-id";
@@ -34,11 +34,12 @@ export function getSyncClientId(): string {
   return id;
 }
 
-export function getLocalSharedRecords(): Map<string, unknown> {
+export function getLocalSharedRecords(projectId?: string): Map<string, unknown> {
   const records = new Map<string, unknown>();
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
     if (!key || !isSharedStorageKey(key)) continue;
+    if (projectId && key !== "sitepulse-projects" && !key.includes(projectId)) continue;
     const value = localStorage.getItem(key);
     if (value === null) continue;
     try {

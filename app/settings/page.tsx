@@ -10,6 +10,7 @@ import {
   updateProject,
 } from "@/lib/storage";
 import { DEFAULT_LABOUR_RATE_SETTINGS, normaliseLabourRateSettings } from "@/lib/labourRates";
+import { DEFAULT_PRODUCTIVITY_FACTOR_THRESHOLDS, normaliseProductivityFactorThresholds, type ProductivityFactorThresholds } from "@/lib/manDayProductivity";
 import {
   PROJECT_BACKUP_SCHEMA_VERSION,
   type BackupPreview,
@@ -62,6 +63,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
   const [working, setWorking] = useState(false);
   const [rateSettings, setRateSettings] = useState<LabourRateSettings>(DEFAULT_LABOUR_RATE_SETTINGS);
+  const [factorThresholds, setFactorThresholds] = useState<ProductivityFactorThresholds>(DEFAULT_PRODUCTIVITY_FACTOR_THRESHOLDS);
   const [companies, setCompanies] = useState<string[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -72,6 +74,7 @@ export default function SettingsPage() {
         const activeProject = getActiveProject();
         setProject(activeProject);
         setRateSettings(normaliseLabourRateSettings(activeProject?.labourRateSettings));
+        setFactorThresholds(normaliseProductivityFactorThresholds(activeProject?.productivityFactorThresholds));
         setCompanies([...new Set(loadOperatives().map((operative) => operative.company.trim()).filter(Boolean))].sort());
       }
     });
@@ -100,6 +103,16 @@ export default function SettingsPage() {
         ? [...current.companyRules, { company, backshiftStart: current.backshiftStart, backshiftMultiplier: current.backshiftMultiplier }]
         : current.companyRules.filter((rule) => rule.company !== company),
     }));
+  }
+
+  function saveFactorThresholds(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!project || !(factorThresholds.greenMax > 0) || factorThresholds.amberMax < factorThresholds.greenMax) {
+      setError("Productivity Factor Amber maximum must be at least the Green maximum.");
+      return;
+    }
+    const nextProject = { ...project, productivityFactorThresholds: normaliseProductivityFactorThresholds(factorThresholds) };
+    updateProject(nextProject); setProject(nextProject); setFactorThresholds(nextProject.productivityFactorThresholds); setError(""); setMessage("Productivity Factor thresholds saved for this project.");
   }
 
   function updateCompanyRule(company: string, field: "backshiftStart" | "backshiftMultiplier", value: string) {
@@ -246,6 +259,11 @@ export default function SettingsPage() {
         </fieldset>}
         <button type="submit" className="primary-button" disabled={!project}>Save Labour Rate Rules</button>
       </form>
+    </section>
+
+    <section style={{ marginBottom: 36 }}>
+      <p className="eyebrow">Production criteria</p><h2>Productivity Factor RAG</h2><p>Lower is better. Green applies up to the Green maximum; Amber applies above Green and up to the Amber maximum.</p>
+      <form onSubmit={saveFactorThresholds} style={{ display: "grid", gap: 14, maxWidth: 560 }}><div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(180px,1fr))", gap: 14 }}><label className="attendance-field"><span>Green maximum PF</span><input type="number" min="0.01" step="0.01" value={factorThresholds.greenMax} onChange={(event) => setFactorThresholds((current) => ({ ...current, greenMax: Number(event.target.value) }))} /></label><label className="attendance-field"><span>Amber maximum PF</span><input type="number" min={factorThresholds.greenMax} step="0.01" value={factorThresholds.amberMax} onChange={(event) => setFactorThresholds((current) => ({ ...current, amberMax: Number(event.target.value) }))} /></label></div><button className="primary-button" disabled={!project}>Save Productivity Thresholds</button></form>
     </section>
 
     <section style={{ marginBottom: 36 }}><p className="eyebrow">Backup</p><h2>Export project</h2><p>Save the active project as one portable JSON file. On supported browsers, choose a OneDrive, SharePoint-synchronised, or network shared-drive folder directly.</p>

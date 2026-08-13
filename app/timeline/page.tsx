@@ -7,7 +7,14 @@ import AddWorkModal from "@/components/AddWorkModal";
 import EditTimelineEvent from "@/components/EditTimelineEvent";
 import { getActiveDate, getActiveProjectId, loadDay, loadOperatives, saveDay } from "@/lib/storage";
 import { loadActivityInstalledQuantity, loadProjectRole, loadPublishedProgramme, recalculateProgrammeProgress } from "@/lib/supabase/programmeData";
+import { loadPublishedProgrammeRelationships } from "@/lib/supabase/programmeData";
 import { createTimelineEvent, deleteTimelineEvent, loadTimelineEvents, updateTimelineEvent, uploadTimelinePhotos } from "@/lib/supabase/timelineData";
+import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
+import { loadReadinessData, recordProceedException } from "@/lib/supabase/readinessData";
+import { loadDailyPlan } from "@/lib/supabase/dailyPlanData";
+import type { DailyPlanAllocation } from "@/lib/dailyPlan";
+import { activityReadiness, requiresReadinessException, type ActivityReadiness, type ReadinessData } from "@/lib/readiness";
+import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import type {
   AttendanceRecord,
   Crew,
@@ -18,6 +25,7 @@ import type {
 } from "@/types/site";
 
 const startingEvents: TimelineEvent[] = [];
+const emptyReadiness: ReadinessData = { releases: [], releaseLinks: [], dependencies: [], completions: [], exceptions: [], evidence: [], audit: [] };
 
 type NewSiteRecord = Omit<TimelineEvent, "id">;
 
@@ -113,6 +121,15 @@ export default function TimelinePage() {
   const [canEditProgramme, setCanEditProgramme] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [today, setToday] = useState("Today");
+  const [relationships, setRelationships] = useState<Awaited<ReturnType<typeof loadPublishedProgrammeRelationships>>>([]);
+  const [readinessData, setReadinessData] = useState<ReadinessData>(emptyReadiness);
+  const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
+  const [constraintLinks, setConstraintLinks] = useState<ConstraintActivityLink[]>([]);
+  const [pendingStart, setPendingStart] = useState<{ record: NewSiteRecord; photos: File[]; readiness: ActivityReadiness } | null>(null);
+  const [exceptionReason, setExceptionReason] = useState("");
+  const [exceptionArea, setExceptionArea] = useState("");
+  const [plannedAllocations, setPlannedAllocations] = useState<DailyPlanAllocation[]>([]);
+  const [selectedAllocation, setSelectedAllocation] = useState<DailyPlanAllocation | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,8 +152,8 @@ export default function TimelinePage() {
       setOperatives(loadOperatives());
       try {
         const projectId=getActiveProjectId();
-        const [programme,timeline,role]=await Promise.all([loadPublishedProgramme(projectId),loadTimelineEvents(projectId,getActiveDate()),loadProjectRole(projectId)]);
-        if(cancelled)return;setProgrammeActivities(programme.activities);setEvents(timeline);setCanEditProgramme(role==="planner"||role==="admin");setProgrammeError("");
+        const [programme,timeline,role,programmeRelationships,operationalReadiness,constraintRows,links,dailyPlan]=await Promise.all([loadPublishedProgramme(projectId),loadTimelineEvents(projectId,getActiveDate()),loadProjectRole(projectId),loadPublishedProgrammeRelationships(projectId),loadReadinessData(projectId),loadConstraints(projectId),loadConstraintLinks(projectId),loadDailyPlan(projectId,getActiveDate())]);
+        if(cancelled)return;setProgrammeActivities(programme.activities);setEvents(timeline);setCanEditProgramme(role==="planner"||role==="admin");setRelationships(programmeRelationships);setReadinessData(operationalReadiness);setConstraints(constraintRows);setConstraintLinks(links);setPlannedAllocations(dailyPlan.allocations.filter(row=>row.plan_status!=="DRAFT"));setProgrammeError("");
       } catch(error) { if(!cancelled)setProgrammeError(error instanceof Error?error.message:"Unable to load programme."); }
       finally { if(!cancelled)setProgrammeLoading(false); }
       setHasLoaded(true);
@@ -166,6 +183,21 @@ export default function TimelinePage() {
   }, [attendance, crews, hasLoaded]);
 
   async function addSiteRecord(record: NewSiteRecord, photos: File[]) {
+    if (record.type === "work" && record.programmeActivityId) {
+      const activity = programmeActivities.find((item) => item.programmeActivityId === record.programmeActivityId);
+      if (activity) {
+        const readiness = activityReadiness({ activity, activities: programmeActivities, relationships, data: readinessData, constraints, constraintLinks, today: getActiveDate() });
+        if (requiresReadinessException(readiness)) {
+          setPendingStart({ record, photos, readiness });
+          setExceptionArea(activity.gridline || "");
+          return;
+        }
+      }
+    }
+    await saveSiteRecord(record, photos);
+  }
+
+  async function saveSiteRecord(record: NewSiteRecord, photos: File[]) {
     if (
       record.type === "work" &&
       record.crewId &&
@@ -200,6 +232,16 @@ export default function TimelinePage() {
       )
     );
     setShowModal(false);
+  }
+
+  async function proceedWithException() {
+    if (!pendingStart || !exceptionReason.trim()) return;
+    try {
+      await recordProceedException(getActiveProjectId(), pendingStart.readiness.activityId, pendingStart.readiness.blockers.join("; ") || "Known readiness issue", exceptionReason, exceptionArea, pendingStart.readiness.blockers);
+      const pending = pendingStart; setPendingStart(null); setExceptionReason(""); setExceptionArea("");
+      await saveSiteRecord(pending.record, pending.photos);
+      setReadinessData(await loadReadinessData(getActiveProjectId()));
+    } catch (error) { window.alert(error instanceof Error ? error.message : "Unable to record the readiness exception."); }
   }
 
   async function saveTimelineEdit(updatedEvent: TimelineEvent, date: string) {
@@ -330,6 +372,7 @@ export default function TimelinePage() {
           </div>
         </header>
 
+        {plannedAllocations.length > 0 && <section className="timeline-daily-plan"><header><div><p className="eyebrow">Committed morning plan</p><h2>Planned allocations</h2></div><Link href="/daily-plan">View Daily Plan</Link></header><div>{plannedAllocations.map(row=><article key={row.id}><div><strong>{row.gang_name}</strong><span>{programmeActivities.find(activity=>activity.programmeActivityId===row.programme_activity_external_id)?.activity||row.programme_activity_external_id}</span><small>Morning target: {row.target_quantity} {row.unit} · {row.planned_operatives} operatives</small></div><button className="primary-button" onClick={()=>{setSelectedAllocation(row);setShowModal(true)}}>Start Work</button></article>)}</div></section>}
         <div className="timeline-list">
           {sortedEvents.map((event, index) => {
             const assignmentLabel = getAssignmentLabel(event);
@@ -500,8 +543,10 @@ export default function TimelinePage() {
             programmeLoading={programmeLoading}
             programmeError={programmeError}
             canEditProgramme={canEditProgramme}
+            initialAllocation={selectedAllocation ? { gangId: selectedAllocation.gang_id, activityId: selectedAllocation.programme_activity_external_id, plannedOperatives: selectedAllocation.planned_operatives, targetQuantity: selectedAllocation.target_quantity, areaZone: selectedAllocation.area_zone } : undefined}
           />
         )}
+        {pendingStart && <div className="readiness-backdrop"><section className="readiness-modal readiness-exception-modal" role="alertdialog" aria-modal="true" aria-labelledby="readiness-warning-title"><header><div><p className="eyebrow">Readiness warning</p><h2 id="readiness-warning-title">PREDECESSOR / RELEASE NOT COMPLETE</h2><p>This does not change the imported P6/Asta programme.</p></div></header><div className="readiness-warning"><strong>{pendingStart.readiness.status}</strong><ul>{pendingStart.readiness.blockers.map(item=><li key={item}>{item}</li>)}</ul></div><div className="readiness-requirements">{pendingStart.readiness.requirements.map(item=><article key={item.key}><span className={`readiness-dot ${item.rag.toLowerCase()}`}>●</span><div><strong>{item.label}</strong><p>{item.detail}</p></div></article>)}</div><label className="attendance-field"><span>Applicable area / zone</span><input value={exceptionArea} onChange={event=>setExceptionArea(event.target.value)} placeholder="e.g. Grid N1–N6" /></label><label className="attendance-field"><span>Reason to proceed *</span><textarea rows={4} value={exceptionReason} onChange={event=>setExceptionReason(event.target.value)} placeholder="Explain why work can safely commence despite the known readiness issue." /></label>{!exceptionReason.trim()&&<p className="readiness-exception-help">A short explanation is required and will be preserved in the audit trail.</p>}<footer><button className="secondary-button" onClick={()=>{setPendingStart(null);setExceptionReason("");setExceptionArea("")}}>Go Back</button><button className="primary-button" disabled={!exceptionReason.trim()} onClick={()=>void proceedWithException()}>Proceed with Exception</button></footer></section></div>}
         {editingEvent && <EditTimelineEvent event={editingEvent} date={getActiveDate()} activity={getActivity(editingEvent.programmeActivityId) ?? undefined} canEditProgramme={canEditProgramme} onCancel={() => setEditingEvent(null)} onSave={saveTimelineEdit} />}
       </section>
     </main>

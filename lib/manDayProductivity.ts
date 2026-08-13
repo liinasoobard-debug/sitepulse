@@ -2,6 +2,50 @@ import type { ProgrammeActivity, TimelineEvent } from "@/types/site";
 
 export type DatedWorkEvent = { date: string; event: TimelineEvent };
 
+export type ProductivityFactorThresholds = { greenMax: number; amberMax: number };
+export const DEFAULT_PRODUCTIVITY_FACTOR_THRESHOLDS: ProductivityFactorThresholds = { greenMax: 1, amberMax: 1.1 };
+export function normaliseProductivityFactorThresholds(value?: Partial<ProductivityFactorThresholds> | null): ProductivityFactorThresholds {
+  const greenMax = Number(value?.greenMax);
+  const amberMax = Number(value?.amberMax);
+  return Number.isFinite(greenMax) && greenMax > 0 && Number.isFinite(amberMax) && amberMax >= greenMax ? { greenMax, amberMax } : DEFAULT_PRODUCTIVITY_FACTOR_THRESHOLDS;
+}
+export type ProductivityFactorRag = "green" | "amber" | "red" | "baseline-missing" | "no-actuals";
+export type ProductivityFactorMetrics = {
+  quantity: number;
+  earnedManDays: number | null;
+  actualManDays: number | null;
+  manDayVariance: number | null;
+  productivityFactor: number | null;
+  rag: ProductivityFactorRag;
+};
+
+export function productivityFactorRag(factor: number | null, thresholds: ProductivityFactorThresholds = DEFAULT_PRODUCTIVITY_FACTOR_THRESHOLDS): ProductivityFactorRag {
+  if (factor === null || !Number.isFinite(factor)) return "no-actuals";
+  if (factor <= thresholds.greenMax) return "green";
+  if (factor <= thresholds.amberMax) return "amber";
+  return "red";
+}
+
+export function calculateProductivityFactor(quantity: number, plannedManDayProductivity?: number | null, actualManDays?: number | null, thresholds: ProductivityFactorThresholds = DEFAULT_PRODUCTIVITY_FACTOR_THRESHOLDS): ProductivityFactorMetrics {
+  const planned = Number(plannedManDayProductivity);
+  const actual = Number(actualManDays);
+  if (!(planned > 0)) return { quantity, earnedManDays: null, actualManDays: Number.isFinite(actual) && actual >= 0 ? actual : null, manDayVariance: null, productivityFactor: null, rag: "baseline-missing" };
+  const earnedManDays = quantity / planned;
+  if (!Number.isFinite(actual) || actual < 0 || earnedManDays <= 0) return { quantity, earnedManDays, actualManDays: null, manDayVariance: null, productivityFactor: null, rag: "no-actuals" };
+  const productivityFactor = actual / earnedManDays;
+  return { quantity, earnedManDays, actualManDays: actual, manDayVariance: actual - earnedManDays, productivityFactor, rag: productivityFactorRag(productivityFactor, thresholds) };
+}
+
+export function aggregateProductivityFactors(rows: Array<Pick<ProductivityFactorMetrics, "quantity" | "earnedManDays" | "actualManDays">>, thresholds: ProductivityFactorThresholds = DEFAULT_PRODUCTIVITY_FACTOR_THRESHOLDS): ProductivityFactorMetrics {
+  const valid = rows.filter((row) => row.earnedManDays !== null && row.actualManDays !== null);
+  const quantity = valid.reduce((sum, row) => sum + row.quantity, 0);
+  const earnedManDays = valid.reduce((sum, row) => sum + row.earnedManDays!, 0);
+  const actualManDays = valid.reduce((sum, row) => sum + row.actualManDays!, 0);
+  if (!valid.length || earnedManDays <= 0) return { quantity, earnedManDays: null, actualManDays: null, manDayVariance: null, productivityFactor: null, rag: rows.length ? "baseline-missing" : "no-actuals" };
+  const productivityFactor = actualManDays / earnedManDays;
+  return { quantity, earnedManDays, actualManDays, manDayVariance: actualManDays - earnedManDays, productivityFactor, rag: productivityFactorRag(productivityFactor, thresholds) };
+}
+
 export type ManDayBaseline = {
   plannedGangDailyOutput: number | null;
   plannedManDays: number | null;

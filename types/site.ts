@@ -6,6 +6,7 @@ export interface Project {
   isArchived?: boolean;
   createdAt: string;
   labourRateSettings?: LabourRateSettings;
+  productivityFactorThresholds?: { greenMax: number; amberMax: number };
 }
 
 export interface LabourRateRule {

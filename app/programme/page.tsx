@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductivityRagBadge from "@/components/ProductivityRagBadge";
 import { productivityPerformance, productivityRag, productivityRagLabels, ragDistribution, type ProductivityRag } from "@/lib/productivityRag";
-import { getActiveProjectId } from "@/lib/storage";
+import { getActiveProject, getActiveProjectId } from "@/lib/storage";
+import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
+import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import {
   loadProgrammeImports,
   loadActualProductivity,
@@ -63,6 +65,8 @@ const formatNumber = (value?: number) =>
 export default function ProgrammePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activities, setActivities] = useState<ProgrammeActivity[]>([]);
+  const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
+  const [constraintLinks, setConstraintLinks] = useState<ConstraintActivityLink[]>([]);
   const [actualProductivity, setActualProductivity] = useState<Record<string, number>>({});
   const [imports, setImports] = useState<Record<string, unknown>[]>([]);
   const [role, setRole] = useState<string>();
@@ -95,16 +99,20 @@ export default function ProgrammePage() {
     setLoading(true);
     try {
       const projectId = getActiveProjectId();
-      const [programme, history, currentRole, productivity] = await Promise.all([
+      const [programme, history, currentRole, productivity, constraintRows, links] = await Promise.all([
         loadPublishedProgramme(projectId),
         loadProgrammeImports(projectId),
         loadProjectRole(projectId),
         loadActualProductivity(projectId),
+        loadConstraints(projectId),
+        loadConstraintLinks(projectId),
       ]);
       setActivities(programme.activities);
       setImports(history as Record<string, unknown>[]);
       setRole(currentRole);
       setActualProductivity(productivity);
+      setConstraints(constraintRows);
+      setConstraintLinks(links);
       setError("");
     } catch (loadError) {
       setError(
@@ -261,12 +269,13 @@ export default function ProgrammePage() {
   );
   const publishedImport = imports.find((row) => row.status === "published");
   const publishedSource = publishedImport?.source_type as ImportSource | undefined;
+  const productivityFactorThresholds = getActiveProject()?.productivityFactorThresholds;
 
   const productivityRows = useMemo(() => activities.map((item) => {
     const actual = actualProductivity[item.programmeActivityId];
-    const rag = productivityRag(item.plannedManDayProductivity, actual);
+    const rag = productivityRag(item.plannedManDayProductivity, actual, productivityFactorThresholds);
     return { item, actual, rag, performance: productivityPerformance(item.plannedManDayProductivity, actual) };
-  }), [activities, actualProductivity]);
+  }), [activities, actualProductivity, productivityFactorThresholds]);
   const ragSummary = useMemo(() => ragDistribution(productivityRows.map((row) => row.rag)), [productivityRows]);
 
   const filtered = useMemo(
@@ -457,12 +466,13 @@ export default function ProgrammePage() {
 
         <div className="programme-desktop-table" style={{ overflowX: "auto" }}>
           <table className="programme-grid" style={{ width: "100%", minWidth: 1900, borderCollapse: "collapse" }}>
-            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Product Type", "Labour Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "Assumed Gang Size", "Productivity RAG", "Planned Man-Day Productivity", "Actual Man-Day Productivity", "Productivity Performance %"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Open Constraints", "Product Type", "Labour Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "Assumed Gang Size", "Productivity RAG", "Planned Man-Day Productivity", "Actual Man-Day Productivity", "Productivity Performance %"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
               {filtered.map(({ item, actual, rag, performance }) => (
                 <tr key={item.id}>
                   <td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td>
-                  <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small><Link href={`/forecast?activity=${encodeURIComponent(item.programmeActivityId)}`}>View Forecast &amp; Recovery</Link></td><td>{item.productType || "—"}</td>
+                  <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small><Link href={`/forecast?activity=${encodeURIComponent(item.programmeActivityId)}`}>View Forecast &amp; Recovery</Link><small style={{ display: "block" }}><Link href="/readiness">Site readiness / release</Link></small></td>
+                  <td>{(() => { const ids=new Set(constraintLinks.filter((link)=>link.programme_activity_external_id===item.programmeActivityId).map((link)=>link.constraint_id)); const openRows=constraints.filter((row)=>ids.has(row.id)&&["OPEN","ACTIONED / MONITORING"].includes(row.status)); const worst=openRows.some((row)=>row.rag==="RED")?"RED":openRows.some((row)=>row.rag==="AMBER")?"AMBER":openRows.length?"GREEN":""; return openRows.length?<Link href={`/constraints?activity=${encodeURIComponent(item.programmeActivityId)}`}><span className={`calloff-rag ${worst.toLowerCase()}`}>{openRows.length} · {worst}</span></Link>:"—"; })()}</td><td>{item.productType || "—"}</td>
                   <td>{item.labourResourceNames?.join(", ") || "—"}</td><td>{item.materialResourceNames?.join(", ") || "—"}</td>
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
                   <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.assumedGangSize)}</td>
@@ -509,6 +519,7 @@ export default function ProgrammePage() {
               </details>
               {canManage && <button className="secondary-button programme-baseline-action" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? "")); }}>{baselineComplete ? "Edit baseline" : "Complete baseline"}</button>}
               <Link className="secondary-button programme-baseline-action" href={`/forecast?activity=${encodeURIComponent(item.programmeActivityId)}`}>View Forecast &amp; Recovery</Link>
+              <Link className="secondary-button programme-baseline-action" href="/readiness">Site Readiness / Release</Link>
             </article>;
           })}
         </div>

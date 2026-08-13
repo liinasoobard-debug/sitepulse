@@ -50,6 +50,26 @@ export type ConstraintRecord = {
   last_detected_date: string;
   created_at?: string;
   updated_at?: string;
+  constraint_reference?: string;
+  project_wide?: boolean;
+  calculated_rag?: ConstraintRag | null;
+  override_rag?: ConstraintRag | null;
+  rag_override_reason?: string | null;
+  rag_overridden_by?: string | null;
+  rag_overridden_at?: string | null;
+  notes?: string | null;
+};
+export type BlockingRelationship =
+  | "Blocking Start"
+  | "Blocking Progress"
+  | "Blocking Completion"
+  | "Potential Risk"
+  | "General Constraint";
+export type ConstraintActivityLink = {
+  constraint_id: string;
+  project_id: string;
+  programme_activity_external_id: string;
+  blocking_relationship: BlockingRelationship;
 };
 export type ConstraintSuggestion = Omit<
   ConstraintRecord,
@@ -96,6 +116,17 @@ export function constraintRag(
   if (days <= 3) return "RED";
   if (days <= 14 && !controlled) return "AMBER";
   return "GREEN";
+}
+export function effectiveConstraintRag(
+  row: Pick<ConstraintRecord, "rag" | "calculated_rag" | "override_rag" | "status" | "overridden_required_date" | "calculated_required_date">,
+  today: string,
+) {
+  const required = row.overridden_required_date || row.calculated_required_date;
+  const overdue = Boolean(required && required < today && row.status !== "CLOSED");
+  const calculated: ConstraintRag = overdue
+    ? "RED"
+    : row.calculated_rag || row.rag;
+  return { calculated, effective: row.override_rag || calculated, overdue };
 }
 export function suggestionKey(
   activityId: string | undefined,

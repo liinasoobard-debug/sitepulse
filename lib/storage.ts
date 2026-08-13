@@ -5,12 +5,12 @@ import type {
   Project,
   SiteDay,
 } from "@/types/site";
-import { operatives as defaultOperatives } from "@/lib/operatives";
 import { deleteSharedRecord, queueSharedWrite } from "@/lib/sharedSync";
 import { normaliseLabourRateSettings } from "@/lib/labourRates";
+import { normaliseProductivityFactorThresholds } from "@/lib/manDayProductivity";
 
 export const LEGACY_DAY_STORAGE_KEY = "sitepulse-day";
-export const OPERATIVES_STORAGE_KEY = "sitepulse-operatives";
+export const OPERATIVES_STORAGE_KEY = "sitepulse-operatives-project";
 export const PROJECTS_STORAGE_KEY = "sitepulse-projects";
 export const ACTIVE_PROJECT_STORAGE_KEY =
   "sitepulse-active-project";
@@ -18,6 +18,10 @@ export const ACTIVE_DATE_STORAGE_KEY = "sitepulse-active-date";
 
 const PROJECT_DAY_KEY_PREFIX = "sitepulse-day-project";
 const LEGACY_DAY_MIGRATION_KEY = "sitepulse-legacy-day-migrated";
+
+function getProjectOperativesStorageKey(projectId: string): string {
+  return `${OPERATIVES_STORAGE_KEY}-${projectId}`;
+}
 
 function createId(prefix: string): string {
   if (
@@ -96,6 +100,7 @@ function normaliseProject(project: Project): Project {
     createdAt:
       project.createdAt || new Date().toISOString(),
     labourRateSettings: normaliseLabourRateSettings(project.labourRateSettings),
+    productivityFactorThresholds: normaliseProductivityFactorThresholds(project.productivityFactorThresholds),
   };
 }
 
@@ -157,6 +162,11 @@ function normaliseProgrammeActivity(
       Number(activity.plannedCrewSize) > 0
         ? Number(activity.plannedCrewSize)
         : undefined,
+    plannedManDayProductivity: Number(activity.plannedManDayProductivity) > 0 ? Number(activity.plannedManDayProductivity) : undefined,
+    assumedGangSize: Number(activity.assumedGangSize) > 0 ? Number(activity.assumedGangSize) : undefined,
+    plannedGangDailyOutput: Number(activity.plannedGangDailyOutput) > 0 ? Number(activity.plannedGangDailyOutput) : undefined,
+    plannedManDays: Number(activity.plannedManDays) > 0 ? Number(activity.plannedManDays) : undefined,
+    plannedDurationDays: Number(activity.plannedDurationDays) > 0 ? Number(activity.plannedDurationDays) : undefined,
     plannedStart: activity.plannedStart?.trim() || undefined,
     plannedFinish: activity.plannedFinish?.trim() || undefined,
     actualStart: activity.actualStart?.trim() || undefined,
@@ -170,7 +180,7 @@ function normaliseProgrammeActivity(
     sourceType: activity.sourceType || "manual",
     sourceImportId: activity.sourceImportId,
     missingFromLatestUpdate: Boolean(activity.missingFromLatestUpdate),
-    productivityBaselineComplete: activity.productivityBaselineComplete ?? Boolean(Number(activity.plannedQuantity) > 0 && Number(activity.plannedProductionRate) > 0 && Number.isInteger(Number(activity.plannedCrewSize)) && Number(activity.plannedCrewSize) > 0 && activity.unit?.trim()),
+    productivityBaselineComplete: activity.productivityBaselineComplete ?? Boolean(Number(activity.plannedQuantity) > 0 && Number(activity.plannedManDayProductivity) > 0 && Number.isInteger(Number(activity.assumedGangSize)) && Number(activity.assumedGangSize) > 0 && activity.unit?.trim()),
     createdAt:
       activity.createdAt || new Date().toISOString(),
     updatedAt: activity.updatedAt || activity.createdAt || new Date().toISOString(),
@@ -585,9 +595,9 @@ export function restoreProjectData(
   saveProjects(updatedProjects);
   saveProgramme(data.programmeActivities, projectId);
 
-  const operativeMap = new Map(loadOperatives().map((operative) => [String(operative.id), operative]));
+  const operativeMap = new Map(loadOperatives(projectId).map((operative) => [String(operative.id), operative]));
   data.operatives.forEach((operative) => operativeMap.set(String(operative.id), operative));
-  saveOperatives([...operativeMap.values()]);
+  saveOperatives([...operativeMap.values()], projectId);
 
   data.siteDays.forEach((day) => saveDay(day, projectId));
   setActiveProject(projectId);
@@ -642,12 +652,14 @@ export function duplicatePreviousDay(projectId?: string): SiteDay {
   return duplicated;
 }
 
-export function loadOperatives(): Operative[] {
+export function loadOperatives(projectId?: string): Operative[] {
   if (typeof window === "undefined") return [];
 
   try {
+    const resolvedProjectId = projectId || getActiveProjectId();
+    if (!resolvedProjectId) return [];
     const savedData = localStorage.getItem(
-      OPERATIVES_STORAGE_KEY
+      getProjectOperativesStorageKey(resolvedProjectId)
     );
 
     if (savedData) {
@@ -657,22 +669,26 @@ export function loadOperatives(): Operative[] {
       }
     }
 
-    saveOperatives(defaultOperatives);
-    return defaultOperatives;
+    saveOperatives([], resolvedProjectId);
+    return [];
   } catch (error) {
     console.error("Unable to load operatives:", error);
-    return defaultOperatives;
+    return [];
   }
 }
 
 export function saveOperatives(
-  operatives: Operative[]
+  operatives: Operative[],
+  projectId?: string
 ): void {
   if (typeof window === "undefined") return;
 
   try {
-    localStorage.setItem(OPERATIVES_STORAGE_KEY, JSON.stringify(operatives));
-    queueSharedWrite(OPERATIVES_STORAGE_KEY, operatives);
+    const resolvedProjectId = projectId || getActiveProjectId();
+    if (!resolvedProjectId) return;
+    const key = getProjectOperativesStorageKey(resolvedProjectId);
+    localStorage.setItem(key, JSON.stringify(operatives));
+    queueSharedWrite(key, operatives);
   } catch (error) {
     console.error("Unable to save operatives:", error);
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import ProductivityRagBadge from "@/components/ProductivityRagBadge";
@@ -11,8 +11,8 @@ import { productivityRag } from "@/lib/productivityRag";
 import { getActiveDate, getActiveProject, getActiveProjectId } from "@/lib/storage";
 import { loadPublishedProgramme, loadPublishedProgrammeRelationships } from "@/lib/supabase/programmeData";
 import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
-import { loadConstraints } from "@/lib/supabase/constraintData";
-import type { ConstraintRecord } from "@/lib/constraints";
+import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
+import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import type { ProgrammeActivity, TimelineEvent } from "@/types/site";
 
 type DatedEvent = { date: string; event: TimelineEvent };
@@ -42,7 +42,7 @@ const forecastLabel = {
   unavailable: "Forecast unavailable",
 } as const;
 
-export default function ForecastPage() {
+function ForecastContent() {
   const params = useSearchParams(),
     projectId = getActiveProjectId();
   const [activities, setActivities] = useState<ProgrammeActivity[]>([]),
@@ -55,6 +55,7 @@ export default function ForecastPage() {
     [dataDate, setDataDate] = useState(""),
     [activityType, setActivityType] = useState<ForecastActivityType | "all">("production");
   const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
+  const [constraintLinks, setConstraintLinks] = useState<ConstraintActivityLink[]>([]);
   const [filters, setFilters] = useState({
     building: "",
     elevation: "",
@@ -65,12 +66,13 @@ export default function ForecastPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [programme, timeline, logic, projectConstraints] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadPublishedProgrammeRelationships(projectId), loadConstraints(projectId)]);
+        const [programme, timeline, logic, projectConstraints, links] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadPublishedProgrammeRelationships(projectId), loadConstraints(projectId), loadConstraintLinks(projectId)]);
         if (cancelled) return;
         setActivities(programme.activities);
         setEvents(timeline);
         setRelationships(logic);
         setConstraints(projectConstraints);
+        setConstraintLinks(links);
         const resolvedDataDate = latestRecordedDataDate(timeline, params.get("dataDate")) || getActiveDate();
         setDataDate(resolvedDataDate);
         console.info("Forecast published-programme integration diagnostic", forecastDiagnostics(programme.activities, timeline));
@@ -187,7 +189,8 @@ export default function ForecastPage() {
         </div>
       </main>
     );
-  const productivityStatus = productivityRag(activity.plannedManDayProductivity, model.rates.actualManDayProductivity),
+  const productivityFactorThresholds = getActiveProject()?.productivityFactorThresholds;
+  const productivityStatus = productivityRag(activity.plannedManDayProductivity, model.rates.actualManDayProductivity, productivityFactorThresholds),
     late = (model.likely.variance ?? 0) > 0;
   const recoveryText = model.recoveryStatus === "demonstrated" ? "Amber — achievable based on demonstrated performance" : model.recoveryStatus === "not-yet-demonstrated" ? "Red — required output not yet demonstrated" : model.recoveryStatus === "on-track" ? "Green — current sustained output meets the programme requirement" : "Insufficient data";
   const selectedType = forecastActivityType(activity);
@@ -513,7 +516,7 @@ export default function ForecastPage() {
                     </td>
                     <td>{formatDate(forecast.worst.finish)}</td>
                     <td>
-                      <ProductivityRagBadge status={productivityRag(row.plannedManDayProductivity, forecast.rates.actualManDayProductivity)} />
+                      <ProductivityRagBadge status={productivityRag(row.plannedManDayProductivity, forecast.rates.actualManDayProductivity, productivityFactorThresholds)} />
                     </td>
                     <td>{forecast.mainDisruption?.category ?? forecast.constraint}</td>
                     <td>{format(forecast.requiredImprovementPercent, "% output")}</td>
@@ -546,8 +549,8 @@ export default function ForecastPage() {
           <article>
             <h2>Potential downstream impact</h2>
             <h3>Open Constraints</h3>
-            {constraints.filter((row) => row.programme_activity_external_id === activity.programmeActivityId && ["OPEN", "ACTIONED / MONITORING"].includes(row.status)).map((row) => <div className="forecast-stat" key={row.id}><strong>{row.category}</strong><span>{row.description}</span><small>{row.rag} · Evidence/context only; delay is not automatically quantified.</small></div>)}
-            {!constraints.some((row) => row.programme_activity_external_id === activity.programmeActivityId && ["OPEN", "ACTIONED / MONITORING"].includes(row.status)) && <p>No open constraints linked to this activity.</p>}
+            {constraints.filter((row) => constraintLinks.some((link) => link.constraint_id === row.id && link.programme_activity_external_id === activity.programmeActivityId) && ["OPEN", "ACTIONED / MONITORING"].includes(row.status)).map((row) => <div className="forecast-stat" key={row.id}><strong>{row.category}</strong><span>{row.description}</span><small>{row.rag} · Evidence/context only; delay is not automatically quantified.</small></div>)}
+            {!constraints.some((row) => constraintLinks.some((link) => link.constraint_id === row.id && link.programme_activity_external_id === activity.programmeActivityId) && ["OPEN", "ACTIONED / MONITORING"].includes(row.status)) && <p>No open constraints linked to this activity.</p>}
             {downstream.length ? (
               downstream.map((row) => (
                 <div className="forecast-stat" key={row.successorId}>
@@ -657,4 +660,8 @@ export default function ForecastPage() {
       </div>
     </main>
   );
+}
+
+export default function ForecastPage() {
+  return <Suspense fallback={<main className="forecast-page"><p className="dashboard-notice">Loading forecast…</p></main>}><ForecastContent /></Suspense>;
 }

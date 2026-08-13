@@ -10,6 +10,7 @@ import {
   SHARED_STATE_TABLE,
   type SharedStateRow,
 } from "@/lib/sharedSync";
+import { getActiveProjectId } from "@/lib/storage";
 
 type SyncStatus = "connecting" | "synced" | "offline" | "setup-required";
 
@@ -29,10 +30,13 @@ export default function SharedDataSync({ children }: { children: React.ReactNode
     let channel: ReturnType<typeof supabase.channel> | undefined;
 
     async function startSync() {
+      const projectId = getActiveProjectId();
+      const operativeKey = `sitepulse-operatives-project-${projectId}`;
+      const dayPrefix = `sitepulse-day-project-${projectId}-%`;
       const { data, error } = await supabase
         .from(SHARED_STATE_TABLE)
         .select("record_key,payload,client_id,updated_at")
-        .or("record_key.eq.sitepulse-projects,record_key.eq.sitepulse-operatives,record_key.like.sitepulse-day-project-%");
+        .or(`record_key.eq.sitepulse-projects,record_key.eq.${operativeKey},record_key.like.${dayPrefix}`);
 
       if (!active) return;
       if (error) {
@@ -43,7 +47,7 @@ export default function SharedDataSync({ children }: { children: React.ReactNode
       }
 
       const remoteRecords = (data ?? []) as SharedStateRow[];
-      const localRecords = getLocalSharedRecords();
+      const localRecords = getLocalSharedRecords(projectId);
 
       if (remoteRecords.length === 0 && localRecords.size > 0) {
         const seedRows = [...localRecords].map(([record_key, payload]) => ({

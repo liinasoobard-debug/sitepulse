@@ -4,6 +4,7 @@ import {
   constraintMovement,
   constraintRag,
   daysOpen,
+  effectiveConstraintRag,
   materialRiskSuggestion,
   mergeSuggestions,
   recurringDisruptionSuggestions,
@@ -32,6 +33,23 @@ test("material red produces one suggested constraint and unchanged duplicate is 
     },
   ];
   assert.equal(mergeSuggestions([suggestion], existing).length, 0);
+});
+test("overdue is calculated red while a reasoned override remains separate", () => {
+  const base = {
+    rag: "AMBER" as const,
+    calculated_rag: "AMBER" as const,
+    status: "OPEN" as const,
+    calculated_required_date: "2026-05-09",
+  };
+  assert.deepEqual(effectiveConstraintRag(base, "2026-05-10"), {
+    calculated: "RED",
+    effective: "RED",
+    overdue: true,
+  });
+  assert.equal(
+    effectiveConstraintRag({ ...base, override_rag: "GREEN" }, "2026-05-10").effective,
+    "GREEN",
+  );
 });
 test("recurring plant disruption creates evidence-led suggestion", () => {
   const activity = {
