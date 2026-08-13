@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-const items = [
+export const sitepulseNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: "▦" },
   { href: "/attendance", label: "Attendance", icon: "👷" },
   { href: "/crews", label: "Gangs", icon: "👥" },
@@ -19,6 +19,7 @@ const items = [
   { href: "/plant", label: "Plant", icon: "▣" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
+const items = sitepulseNavItems;
 
 export default function BottomNav() {
   const pathname = usePathname();

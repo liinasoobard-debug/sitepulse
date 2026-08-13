@@ -3,6 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig, isSupabaseConfigured } from "@/lib/supabase/config";
 
 export async function updateSession(request: NextRequest) {
+  if (process.env.NEXT_PUBLIC_SITEPULSE_DEMO_MODE === "true") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/demo";
+    url.searchParams.set("view", request.nextUrl.pathname);
+    return NextResponse.rewrite(url);
+  }
   const isLogin = request.nextUrl.pathname === "/login";
   if (!isSupabaseConfigured()) {
     if (isLogin) return NextResponse.next({ request });

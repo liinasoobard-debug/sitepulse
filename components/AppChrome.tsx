@@ -8,6 +8,7 @@ import SharedDataSync from "@/components/SharedDataSync";
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  if (process.env.NEXT_PUBLIC_SITEPULSE_DEMO_MODE === "true") return children;
   const isLogin = pathname === "/login";
   const usesSiteDate = ["/daily-plan", "/attendance", "/crews", "/timeline"].some((route) => pathname.startsWith(route));
   if (isLogin) return children;
