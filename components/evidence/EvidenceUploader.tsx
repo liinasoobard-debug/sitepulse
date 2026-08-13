@@ -1,0 +1,10 @@
+"use client";
+import { useState } from "react";
+import { evidenceCategories,type EvidenceCategory,type EvidenceContext,type EvidenceRecord } from "@/lib/evidence";
+import { uploadEvidence } from "@/lib/supabase/evidenceData";
+
+export default function EvidenceUploader({context,onUploaded,compact=false}:{context:EvidenceContext;onUploaded?:(rows:EvidenceRecord[])=>void;compact?:boolean}){
+  const [files,setFiles]=useState<File[]>([]),[category,setCategory]=useState<EvidenceCategory>(context.category||"Progress"),[description,setDescription]=useState(context.description||""),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
+  async function submit(){if(!files.length)return;setBusy(true);setMessage("");try{const rows=[];for(const file of files)rows.push(await uploadEvidence(file,context,category,description));setFiles([]);setMessage(`${rows.length} evidence item${rows.length===1?"":"s"} saved.`);onUploaded?.(rows);}catch(error){setMessage(error instanceof Error?error.message:"Unable to upload evidence.");}finally{setBusy(false);}}
+  return <section className={`evidence-uploader ${compact?"compact":""}`}><label>Photo / evidence<input type="file" accept="image/*,application/pdf" multiple onChange={event=>setFiles(Array.from(event.target.files||[]))}/></label><label>Category<select value={category} onChange={event=>setCategory(event.target.value as EvidenceCategory)}>{evidenceCategories.map(value=><option key={value}>{value}</option>)}</select></label><label className="wide">Description<input value={description} onChange={event=>setDescription(event.target.value)} placeholder="What does this evidence show?"/></label><button className="table-action" type="button" disabled={busy||!files.length} onClick={()=>void submit()}>{busy?"Uploading…":`Upload${files.length?` (${files.length})`:""}`}</button>{message&&<small role="status">{message}</small>}<small className="wide">Mobile users can choose Camera from the device picker. Known project, activity, location, gang and linked-record context is inherited automatically.</small></section>;
+}

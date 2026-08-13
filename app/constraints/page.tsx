@@ -38,6 +38,7 @@ import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
 import { loadPlant } from "@/lib/supabase/plantData";
 import { plantReadiness, plantRiskReason } from "@/lib/plantReadiness";
 import type { ProgrammeActivity } from "@/types/site";
+import LinkedEvidence from "@/components/evidence/LinkedEvidence";
 const dateLabel = (value?: string | null) =>
   value
     ? new Intl.DateTimeFormat("en-GB", {
@@ -75,6 +76,7 @@ export default function ConstraintsPage() {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
+  const [evidenceConstraint,setEvidenceConstraint]=useState<ConstraintRecord|null>(null);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -239,6 +241,7 @@ export default function ConstraintsPage() {
     () => new Map(activities.map((row) => [row.programmeActivityId, row])),
     [activities],
   );
+  const evidenceActivity=evidenceConstraint?byId.get(links.find(link=>link.constraint_id===evidenceConstraint.id)?.programme_activity_external_id||""):undefined;
   const open = rows.filter((row) =>
       ["OPEN", "ACTIONED / MONITORING"].includes(row.status),
     ),
@@ -610,6 +613,7 @@ export default function ConstraintsPage() {
                         >
                           Update
                         </button>
+                        <button className="table-action" onClick={() => setEvidenceConstraint(row)}>Evidence</button>
                         {row.status === "CLOSED" ? (
                           <button
                             className="table-action"
@@ -660,6 +664,7 @@ export default function ConstraintsPage() {
       </div>
       {showForm && <div className="constraint-modal-backdrop"><form className="constraint-form-modal" onSubmit={(event) => void manual(event)}><header><div><p className="eyebrow">Operational register</p><h2>Add Constraint</h2></div><button type="button" onClick={() => setShowForm(false)}>×</button></header><div className="constraint-form-grid"><label>Category<select name="category" required>{constraintCategories.map((value)=><option key={value}>{value}</option>)}</select></label><label>RAG<select name="rag" defaultValue="GREY">{["GREEN","AMBER","RED","GREY"].map((value)=><option key={value}>{value}</option>)}</select></label><label className="wide">Description<textarea name="description" required rows={3}/></label><label className="wide constraint-checkbox"><input type="checkbox" checked={projectWide} onChange={(event)=>setProjectWide(event.target.checked)}/> Project-wide constraint</label><fieldset className="wide"><legend>Programme Activity / Activities</legend><div className="constraint-activity-picker">{activities.map((activity)=><label key={activity.id}><input type="checkbox" disabled={projectWide} checked={selectedActivityIds.includes(activity.programmeActivityId)} onChange={(event)=>setSelectedActivityIds((current)=>event.target.checked?[...current,activity.programmeActivityId]:current.filter((id)=>id!==activity.programmeActivityId))}/><span>{activity.building} → {activity.elevation} → {activity.level} → <strong>{activity.activity}</strong><small>{activity.programmeActivityId}</small></span></label>)}</div></fieldset><label>Blocking Relationship<select name="relationship" defaultValue="Blocking Progress">{["Blocking Start","Blocking Progress","Blocking Completion","Potential Risk","General Constraint"].map((value)=><option key={value}>{value}</option>)}</select></label><label>Status<select name="status" defaultValue="OPEN">{["OPEN","ACTIONED / MONITORING","CLOSED"].map((value)=><option key={value}>{value}</option>)}</select></label><label>Owner<input name="owner"/></label><label>Responsible Organisation<input name="organisation"/></label><label>Date Raised<input name="raised_date" type="date" defaultValue={today}/></label><label>Required Resolution Date<input name="required_date" type="date"/></label><label>Source<input name="source" defaultValue="MANUAL"/></label><label>Latest Update<input name="latest_update"/></label><label className="wide">Programme / Forecast Impact<textarea name="impact" rows={2}/></label><label className="wide">Notes<textarea name="notes" rows={2}/></label></div><footer><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button><button className="primary-button">Save Constraint</button></footer></form></div>}
       {importPreview && <div className="constraint-modal-backdrop"><section className="constraint-form-modal"><header><div><p className="eyebrow">Excel import</p><h2>Import Preview</h2></div><button onClick={()=>setImportPreview(null)}>×</button></header><div className="report-table-scroll"><table><thead><tr><th>Row</th><th>Classification</th><th>Error</th></tr></thead><tbody>{importPreview.map((item)=><tr key={item.row}><td>{item.row}</td><td>{item.classification}</td><td>{item.error || "—"}</td></tr>)}</tbody></table></div><footer><button className="secondary-button" onClick={()=>setImportPreview(null)}>Cancel</button><button className="primary-button" disabled={importPreview.some((item)=>["INVALID","UNMATCHED ACTIVITY"].includes(item.classification))} onClick={()=>void publishImport()}>Publish Import</button></footer></section></div>}
+      {evidenceConstraint&&<div className="constraint-modal-backdrop"><section className="constraint-form-modal"><header><div><p className="eyebrow">Linked operational record</p><h2>Constraint Evidence</h2><p>{evidenceConstraint.constraint_reference||evidenceConstraint.id.slice(0,8)} · {evidenceConstraint.description}</p></div><button onClick={()=>setEvidenceConstraint(null)}>×</button></header><LinkedEvidence context={{projectId,programmeActivityId:evidenceActivity?.programmeActivityId,activityName:evidenceActivity?.activity||evidenceConstraint.description,building:evidenceActivity?.building,elevation:evidenceActivity?.elevation,level:evidenceActivity?.level,productType:evidenceActivity?.productType,recordType:"constraint",recordId:evidenceConstraint.id,category:"Constraint",description:evidenceConstraint.description}}/><footer><button className="secondary-button" onClick={()=>setEvidenceConstraint(null)}>Close</button></footer></section></div>}
     </main>
   );
 }

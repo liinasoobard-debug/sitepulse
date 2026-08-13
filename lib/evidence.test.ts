@@ -1,0 +1,5 @@
+import test from "node:test";import assert from "node:assert/strict";
+import { evidenceStoragePath,generatedEvidenceFilename,safeFilenamePart } from "./evidence.ts";
+const context={projectId:"11111111-1111-1111-1111-111111111111",projectCode:"HVB",building:"South",elevation:"South",level:"L00",programmeActivityId:"A1000",activityName:"CW Glazing",recordType:"timeline" as const,category:"Access" as const,description:"Access Blocked"};
+test("generated evidence filename is readable and sanitised",()=>{assert.equal(generatedEvidenceFilename(context,{name:"photo.JPG",type:"image/jpeg"},"2026-08-13T14:32:18Z"),"2026-08-13_HVB_South_South_L00_CW-Glazing_Access-Blocked_14-32-18.jpg");assert.equal(safeFilenamePart("../../unsafe:name"),"unsafe-name")});
+test("private storage path uses project/date/activity and unique id",()=>{assert.equal(evidenceStoragePath(context,{name:"photo.jpg",type:"image/jpeg"},"unique-id","2026-08-13T14:32:18Z"),"11111111-1111-1111-1111-111111111111/2026/08/13/A1000/unique-id.jpg")});

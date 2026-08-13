@@ -1,6 +1,7 @@
 "use client";
 import { createClient } from "@/lib/supabase/client";
 import type { OperationalDependency, ProceedException, ReadinessData, ReleaseEvidence, ReleaseRecord, ReleaseType, SiteCompletion } from "@/lib/readiness";
+import { uploadEvidence } from "@/lib/supabase/evidenceData";
 
 const missing = (error: { code?: string } | null) => Boolean(error && ["42P01", "PGRST205"].includes(error.code ?? ""));
 export async function loadReadinessData(projectId: string): Promise<ReadinessData> {
@@ -38,12 +39,10 @@ export async function updateRelease(record: ReleaseRecord, changes: Partial<Rele
   const { error } = await createClient().from("activity_releases").update({ ...changes, updated_at: new Date().toISOString() }).eq("id", record.id).eq("project_id", record.project_id); if (error) throw error;
 }
 export async function uploadReleaseEvidence(projectId: string, releaseId: string, activityIds: string[], files: File[]) {
-  const db = createClient(), actor = await userId();
+  const db = createClient(); await userId();
+  const {data:release,error}=await db.from("activity_releases").select("*").eq("id",releaseId).eq("project_id",projectId).single();if(error)throw error;
   for (const file of files) {
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "-"); const path = `${projectId}/readiness/${releaseId}/${crypto.randomUUID()}-${safe}`;
-    const { error: uploadError } = await db.storage.from("timeline-photos").upload(path, file); if (uploadError) throw uploadError;
-    const { error } = await db.from("readiness_evidence").insert(activityIds.map((activityId) => ({ project_id: projectId, release_id: releaseId, programme_activity_external_id: activityId, storage_path: path, file_name: file.name, file_type: file.type || null, file_size: file.size, uploaded_by: actor })));
-    if (error) throw error;
+    for(const activityId of activityIds) await uploadEvidence(file,{projectId,programmeActivityId:activityId,activityName:release.title,building:release.building||undefined,elevation:release.elevation||undefined,level:release.level||undefined,area:release.area_zone||undefined,recordType:"handover",recordId:releaseId,category:"Handover",description:release.description||release.title});
   }
 }
 export async function markSiteComplete(projectId: string, activityId: string, completedAt: string, notes?: string, quantity?: number) {

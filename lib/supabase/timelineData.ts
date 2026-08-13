@@ -1,6 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { uploadEvidence } from "@/lib/supabase/evidenceData";
 import type { TimelineEvent } from "@/types/site";
 
 type DbEvent = Record<string, unknown>;
@@ -60,7 +61,10 @@ export function timelineEventFromDb(row: DbEvent): TimelineEvent {
 }
 export async function loadTimelineEvents(projectId: string, date: string): Promise<TimelineEvent[]> {
   const supabase = createClient();
-  const { data, error } = await supabase.from("timeline_events").select("*,timeline_event_photos(storage_path),timeline_event_labour(operative_id),plant_usage(plant_hire_record_id)").eq("project_id", projectId).eq("event_date", date).is("deleted_at", null).order("start_time");
+  const [{ data, error }, evidenceResult] = await Promise.all([
+    supabase.from("timeline_events").select("*,timeline_event_photos(storage_path),timeline_event_labour(operative_id),plant_usage(plant_hire_record_id)").eq("project_id", projectId).eq("event_date", date).is("deleted_at", null).order("start_time"),
+    supabase.from("evidence_records").select("record_id,storage_path").eq("project_id",projectId).eq("record_type","timeline"),
+  ]);
   if (error) throw error;
   return Promise.all(
     (data ?? []).map(async (row) => {
@@ -69,6 +73,8 @@ export async function loadTimelineEvents(projectId: string, date: string): Promi
         storage_path: string;
       }>;
       event.photoIds = (await Promise.all(photos.map((photo) => supabase.storage.from("timeline-photos").createSignedUrl(photo.storage_path, 3600)))).flatMap((result) => (result.data?.signedUrl ? [result.data.signedUrl] : []));
+      const current=(evidenceResult.data??[]).filter(photo=>photo.record_id===event.id);
+      event.photoIds.push(...(await Promise.all(current.map(photo=>supabase.storage.from("sitepulse-evidence").createSignedUrl(photo.storage_path,3600)))).flatMap(result=>result.data?.signedUrl?[result.data.signedUrl]:[]));
       return event;
     }),
   );
@@ -210,20 +216,7 @@ export async function uploadTimelinePhotos(projectId: string, eventId: string, f
   const supabase = createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) throw new Error("You must be signed in.");
-  for (const file of files) {
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const path = `${projectId}/${eventId}/${crypto.randomUUID()}-${safe}`;
-    const { error: uploadError } = await supabase.storage.from("timeline-photos").upload(path, file);
-    if (uploadError) throw uploadError;
-    const { error } = await supabase.from("timeline_event_photos").insert({
-      timeline_event_id: eventId,
-      storage_path: path,
-      file_name: file.name,
-      file_type: file.type,
-      file_size: file.size,
-      category: "progress",
-      uploaded_by: userData.user.id,
-    });
-    if (error) throw error;
-  }
+  const {data:event,error}=await supabase.from("timeline_events").select("event_date,activity_name_snapshot,building_snapshot,area_snapshot,level_snapshot,external_activity_id,crew_id,programme_activities(product_type)").eq("id",eventId).eq("project_id",projectId).single();
+  if(error)throw error;const activity=Array.isArray(event.programme_activities)?event.programme_activities[0]:event.programme_activities;
+  for (const file of files) await uploadEvidence(file,{projectId,programmeActivityId:event.external_activity_id||undefined,activityName:event.activity_name_snapshot,building:event.building_snapshot||undefined,elevation:event.area_snapshot||undefined,level:event.level_snapshot||undefined,productType:(activity as {product_type?:string|null}|null)?.product_type||undefined,gangId:event.crew_id||undefined,recordType:"timeline",recordId:eventId,category:"Progress",capturedAt:undefined});
 }
