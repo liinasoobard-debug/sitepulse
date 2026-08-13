@@ -11,6 +11,7 @@ test("dashboard periods use calendar boundaries", () => {
   assert.deepEqual(dashboardRange("monthly", "2026-08-06"), { start: "2026-08-01", end: "2026-08-31" });
   assert.deepEqual(dashboardRange("overall", "2026-08-06", "2026-05-04"), { start: "2026-05-04", end: "2026-08-06" });
 });
+test("custom dashboard period preserves the selected from and to dates",()=>{assert.deepEqual(dashboardRange("custom","2026-08-13",undefined,"2026-07-20"),{start:"2026-07-20",end:"2026-08-13"})});
 
 test("from-start range uses the earliest programme or recorded date", () => {
   assert.equal(dashboardStartDate([{ ...activity, plannedStart: "2026-08-03" }], [{ date: "2026-07-30", day, event: { id: "note", time: "08:00", duration: 0, title: "Record", type: "non_measured_work" } }], "2026-08-06"), "2026-07-30");

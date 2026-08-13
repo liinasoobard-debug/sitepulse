@@ -3,7 +3,7 @@ import { aggregateProductivityFactors, calculateProductivityFactor, groupGangDay
 import { productivityPerformance, productivityRag, ragDistribution, type ProductivityRag } from "./productivityRag.ts";
 import type { ProgrammeActivity, SiteDay, TimelineEvent } from "@/types/site";
 
-export type DashboardPeriod = "overall" | "daily" | "weekly" | "monthly";
+export type DashboardPeriod = "overall" | "daily" | "weekly" | "monthly" | "custom";
 export type DashboardFilters = { building: string; elevation: string; level: string; activity: string; gang: string; unit: string; activityStatus: string; blockerCategory: string; productivityRag: string; productType?: string };
 export type DatedDashboardEvent = { date: string; day: SiteDay; event: TimelineEvent };
 export type DashboardBucket = { key: string; label: string; start: string; end: string };
@@ -72,8 +72,9 @@ export function dashboardStartDate(programme: ProgrammeActivity[], events: Dated
   return [...programme.map((row) => row.plannedStart), ...events.map((row) => row.date)].filter((value): value is string => typeof value === "string" && value <= fallback).sort()[0] || fallback;
 }
 
-export function dashboardRange(period: DashboardPeriod, selectedDate: string, overallStart?: string): { start: string; end: string } {
+export function dashboardRange(period: DashboardPeriod, selectedDate: string, overallStart?: string, customStart?: string): { start: string; end: string } {
   if (period === "overall") return { start: overallStart && overallStart <= selectedDate ? overallStart : selectedDate, end: selectedDate };
+  if (period === "custom") return { start: customStart && customStart <= selectedDate ? customStart : selectedDate, end: selectedDate };
   if (period === "daily") return { start: selectedDate, end: selectedDate };
   if (period === "weekly") { const start = mondayFor(selectedDate); return { start, end: addDays(start, 6) }; }
   return { start: `${selectedDate.slice(0, 7)}-01`, end: monthEnd(selectedDate) };
@@ -132,10 +133,10 @@ export function dashboardActivityStatus(activity: ProgrammeActivity, asOf: strin
 }
 
 export function buildDashboardData(args: {
-  period: DashboardPeriod; selectedDate: string; programme: ProgrammeActivity[]; events: DatedDashboardEvent[]; filters: DashboardFilters; productivityFactorThresholds?: ProductivityFactorThresholds;
+  period: DashboardPeriod; selectedDate: string; customStart?: string; programme: ProgrammeActivity[]; events: DatedDashboardEvent[]; filters: DashboardFilters; productivityFactorThresholds?: ProductivityFactorThresholds;
 }): DashboardData {
   const { period, selectedDate, programme, events, filters } = args;
-  const range = dashboardRange(period, selectedDate, dashboardStartDate(programme, events, selectedDate));
+  const range = dashboardRange(period, selectedDate, dashboardStartDate(programme, events, selectedDate), args.customStart);
   const activityById = new Map(programme.map((activity) => [activity.programmeActivityId, activity]));
   const ragForActivity = (activity: ProgrammeActivity): ProductivityRag => {
     const groups = groupGangDayProductivity(events.filter(({ date, event }) => date <= range.end && event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId).map(({ date, event }) => ({ date, event })));

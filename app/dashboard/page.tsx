@@ -21,6 +21,7 @@ const unique = (values: Array<string | undefined>) => [...new Set(values.filter(
 export default function DashboardPage() {
   const [period, setPeriod] = useState<DashboardPeriod>("overall");
   const [selectedDate, setSelectedDate] = useState("");
+  const [customStart, setCustomStart] = useState("");
   const [filters, setFilters] = useState<DashboardFilters>(blankFilters);
   const [programme, setProgramme] = useState<ProgrammeActivity[]>([]);
   const [events, setEvents] = useState<DatedDashboardEvent[]>([]);
@@ -32,7 +33,7 @@ export default function DashboardPage() {
   const [todayPlan, setTodayPlan] = useState<DailyPlanAllocation[]>([]);
   const [performanceView, setPerformanceView] = useState("Daily Output");
 
-  useEffect(() => { queueMicrotask(() => setSelectedDate(getActiveDate())); }, []);
+  useEffect(() => { queueMicrotask(() => { const today=getActiveDate();setSelectedDate(today);setCustomStart(today); }); }, []);
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -55,7 +56,7 @@ export default function DashboardPage() {
   const gangs = useMemo(() => unique(events.map(({ day, event }) => day.crews?.find((crew) => crew.id === event.crewId)?.name)), [events]);
   const selectedActivities = useMemo(() => programme.filter((row) => (!filters.productType || row.productType === filters.productType) && (!filters.elevation || row.elevation === filters.elevation)), [filters.elevation, filters.productType, programme]);
   const selectedProductTypes = unique(selectedActivities.map((row) => row.productType));
-  const data = useMemo(() => selectedDate ? buildDashboardData({ period, selectedDate, programme, events, filters, productivityFactorThresholds: project?.productivityFactorThresholds }) : null, [events, filters, period, programme, project?.productivityFactorThresholds, selectedDate]);
+  const data = useMemo(() => selectedDate ? buildDashboardData({ period, selectedDate, customStart, programme, events, filters, productivityFactorThresholds: project?.productivityFactorThresholds }) : null, [customStart, events, filters, period, programme, project?.productivityFactorThresholds, selectedDate]);
   const forecasts = useMemo(() => !selectedDate ? [] : selectedActivities.map((activity) => {
     const disruptions = events.filter(({ event }) => event.type === "disruption" && event.programmeActivityId === activity.programmeActivityId);
     const disrupted = new Set(disruptions.map((row) => row.date));
@@ -64,7 +65,7 @@ export default function DashboardPage() {
   }).filter(({ forecast }) => forecast.likely.variance !== null), [events, selectedActivities, selectedDate]);
 
   if (!selectedDate || !data) return null;
-  const range = dashboardRange(period, selectedDate, dashboardStartDate(programme, events, selectedDate));
+  const range = dashboardRange(period, selectedDate, dashboardStartDate(programme, events, selectedDate), customStart);
   const reliableQuantity = !data.mixedUnits;
   const reliableProductivity = reliableQuantity && selectedProductTypes.length <= 1;
   const progress = reliableQuantity ? data.kpis.achievement : null;
@@ -114,7 +115,16 @@ export default function DashboardPage() {
     <TodayPlanCard count={todayPlan.length} ready={todayPlan.filter(row=>row.readiness_rag==="GREEN").length} amber={todayPlan.filter(row=>row.readiness_rag==="AMBER").length} red={todayPlan.filter(row=>row.readiness_rag==="RED").length} target={planUnits.length===1?todayPlan.reduce((sum,row)=>sum+row.target_quantity,0):null} unit={planUnits[0]}/>
     <HealthCards cards={cards}/>
     <PeriodProgress planned={data.kpis.expected} actual={data.kpis.achieved} unit={data.unit} tone={progressTone} mixed={!reliableQuantity}/>
-    <section className="health-compact-filters" aria-label="Production performance filters"><strong>Production performance</strong><label>Date range<select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}><option value="overall">From Start</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label><label>{period === "overall" ? "To date" : period === "weekly" ? "Week containing" : period === "monthly" ? "Month" : "Date"}<input type={period === "monthly" ? "month" : "date"} value={period === "monthly" ? selectedDate.slice(0,7) : selectedDate} onChange={(event) => setSelectedDate(period === "monthly" ? `${event.target.value}-01` : event.target.value)} /></label><label>Interface / Product Type<select value={filters.productType} onChange={(event) => setFilters((current) => ({ ...current, productType: event.target.value, elevation: "" }))}><option value="">All interfaces / product types</option>{productTypes.map((value) => <option key={value}>{value}</option>)}</select></label><label>Area<select value={filters.elevation} onChange={(event) => setFilters((current) => ({ ...current, elevation: event.target.value }))}><option value="">All</option>{areas.map((value) => <option key={value}>{value}</option>)}</select></label><label>Gang<select value={filters.gang} onChange={(event) => setFilters((current) => ({ ...current, gang: event.target.value }))}><option value="">All</option>{gangs.map((value) => <option key={value}>{value}</option>)}</select></label>{(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}</section>
+    <section className="health-compact-filters" aria-label="Production performance filters">
+      <strong>Production performance</strong>
+      <label>Period<select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}><option value="overall">Whole Project / From Start</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="custom">Custom Date Range</option></select></label>
+      {period === "custom" && <label>From<input type="date" value={customStart} max={selectedDate} onChange={(event) => setCustomStart(event.target.value)} /></label>}
+      <label>{period === "overall" ? "To date" : period === "custom" ? "To" : period === "weekly" ? "Week containing" : period === "monthly" ? "Month" : "Date"}<input type={period === "monthly" ? "month" : "date"} min={period === "custom" ? customStart : undefined} value={period === "monthly" ? selectedDate.slice(0,7) : selectedDate} onChange={(event) => setSelectedDate(period === "monthly" ? `${event.target.value}-01` : event.target.value)} /></label>
+      <label>Interface / Product Type<select value={filters.productType} onChange={(event) => setFilters((current) => ({ ...current, productType: event.target.value, elevation: "" }))}><option value="">All interfaces / product types</option>{productTypes.map((value) => <option key={value}>{value}</option>)}</select></label>
+      <label>Area<select value={filters.elevation} onChange={(event) => setFilters((current) => ({ ...current, elevation: event.target.value }))}><option value="">All</option>{areas.map((value) => <option key={value}>{value}</option>)}</select></label>
+      <label>Gang<select value={filters.gang} onChange={(event) => setFilters((current) => ({ ...current, gang: event.target.value }))}><option value="">All</option>{gangs.map((value) => <option key={value}>{value}</option>)}</select></label>
+      {(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}
+    </section>
     <ProductionPerformance view={performanceView} setView={changePerformanceView} points={performancePoints} unit={data.unit} quantityCompatible={reliableQuantity} productivityCompatible={reliableProductivity}/>
     <NeedsAttention items={ranked}/>
   </div></main>;
