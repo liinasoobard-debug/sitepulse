@@ -12,6 +12,7 @@ const items = [
   { href: "/readiness", label: "Readiness", icon: "✓" },
   { href: "/daily-plan", label: "Today / Daily Plan", icon: "☀" },
   { href: "/timeline", label: "Timeline", icon: "◷" },
+  { href: "/evidence", label: "Evidence", icon: "▨" },
   { href: "/reports", label: "Reports", icon: "▤" },
   { href: "/forecast", label: "Forecast", icon: "↗" },
   { href: "/materials", label: "Materials", icon: "▧" },
