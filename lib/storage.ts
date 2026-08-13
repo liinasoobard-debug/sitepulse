@@ -228,7 +228,7 @@ function migrateLegacyDay(projectId: string): void {
   }
 }
 
-function ensureProjectSetup(): {
+function ensureProjectSetup(options: { createDefault?: boolean } = {}): {
   projects: Project[];
   activeProjectId: string;
 } {
@@ -258,7 +258,7 @@ function ensureProjectSetup(): {
     console.error("Unable to load projects:", error);
   }
 
-  if (projects.length === 0) {
+  if (projects.length === 0 && options.createDefault !== false) {
     projects = [createDefaultProject()];
     localStorage.setItem(
       PROJECTS_STORAGE_KEY,
@@ -266,6 +266,8 @@ function ensureProjectSetup(): {
     );
     queueSharedWrite(PROJECTS_STORAGE_KEY, projects);
   }
+
+  if (projects.length === 0) return { projects: [], activeProjectId: "" };
 
   const storedActiveProjectId = localStorage.getItem(
     ACTIVE_PROJECT_STORAGE_KEY
@@ -294,7 +296,7 @@ function ensureProjectSetup(): {
 
 export function loadProjects(): Project[] {
   if (typeof window === "undefined") return [];
-  return ensureProjectSetup().projects;
+  return ensureProjectSetup({ createDefault: false }).projects;
 }
 
 export function saveProjects(projects: Project[]): void {
