@@ -60,7 +60,7 @@ export default function MaterialsPage() {
     [productType, setProductType] = useState(""),
     [productLead, setProductLead] = useState(""),
     [importSummary, setImportSummary] = useState<Record<string, number> | null>(null);
-  const canManage = ["admin", "planner", "commercial"].includes(role ?? "");
+  const canManage = Boolean(role);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {

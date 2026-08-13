@@ -153,7 +153,7 @@ export default function TimelinePage() {
       try {
         const projectId=getActiveProjectId();
         const [programme,timeline,role,programmeRelationships,operationalReadiness,constraintRows,links,dailyPlan]=await Promise.all([loadPublishedProgramme(projectId),loadTimelineEvents(projectId,getActiveDate()),loadProjectRole(projectId),loadPublishedProgrammeRelationships(projectId),loadReadinessData(projectId),loadConstraints(projectId),loadConstraintLinks(projectId),loadDailyPlan(projectId,getActiveDate())]);
-        if(cancelled)return;setProgrammeActivities(programme.activities);setEvents(timeline);setCanEditProgramme(role==="planner"||role==="admin");setRelationships(programmeRelationships);setReadinessData(operationalReadiness);setConstraints(constraintRows);setConstraintLinks(links);setPlannedAllocations(dailyPlan.allocations.filter(row=>row.plan_status!=="DRAFT"));setProgrammeError("");
+        if(cancelled)return;setProgrammeActivities(programme.activities);setEvents(timeline);setCanEditProgramme(Boolean(role));setRelationships(programmeRelationships);setReadinessData(operationalReadiness);setConstraints(constraintRows);setConstraintLinks(links);setPlannedAllocations(dailyPlan.allocations.filter(row=>row.plan_status!=="DRAFT"));setProgrammeError("");
       } catch(error) { if(!cancelled)setProgrammeError(error instanceof Error?error.message:"Unable to load programme."); }
       finally { if(!cancelled)setProgrammeLoading(false); }
       setHasLoaded(true);

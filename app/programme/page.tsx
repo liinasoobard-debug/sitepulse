@@ -93,7 +93,7 @@ export default function ProgrammePage() {
   const [crewSize, setCrewSize] = useState("");
   const [unit, setUnit] = useState("");
   const [rate, setRate] = useState("");
-  const canManage = role === "planner" || role === "admin";
+  const canManage = Boolean(role);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -337,7 +337,7 @@ export default function ProgrammePage() {
                 </select>
               </label>
               <div className="programme-template-actions"><a className="add-event-button" href="/api/programme/template" download="SitePulse-Programme-Template.xlsx">Download SitePulse Programme Template (.xlsx)</a><span>{importSource === "p6-xlsx" ? "Requires TASK; TASKPRED, RSRC and TASKRSRC are supported." : importSource === "asta-xlsx" ? "Use an Asta activity or task export with visible column headings." : "Download the official workbook, complete its programme rows, then upload it below. Budget hours or production rate will calculate the other value."}</span></div>
-              {!canManage && <p style={{ margin: 0, fontWeight: 700 }}>You can view the upload formats and download the template. Planner or Admin access is required to review and publish a programme.</p>}
+              {!canManage && <p style={{ margin: 0, fontWeight: 700 }}>Project membership is required to review and publish a programme.</p>}
               <label className="attendance-field" style={{ maxWidth: 360 }}>
                 <span>Single building value (optional)</span>
                 <input value={buildingDefault} onChange={(event) => setBuildingDefault(event.target.value)} placeholder="e.g. HBX" />
