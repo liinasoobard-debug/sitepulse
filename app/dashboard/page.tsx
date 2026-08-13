@@ -93,6 +93,12 @@ export default function DashboardPage() {
   ];
   const performancePoints: PerformancePoint[] = data.output.map((row,index)=>({label:row.label,start:row.start,end:row.end,plannedOutput:row.expected,actualOutput:row.actual,plannedProductivity:data.productivity[index]?.planned??null,actualProductivity:data.productivity[index]?.actual??null,cumulativePlanned:data.cumulative[index]?.planned??0,cumulativeActual:data.cumulative[index]?.actual??0,productType:row.productTypes,area:filters.elevation,gang:filters.gang,gangSize:row.gangSize,disruptionHours:row.disruptionHours}));
   const planUnits=unique(todayPlan.map(row=>row.unit));
+  function changePerformanceView(nextView: string) {
+    setPerformanceView(nextView);
+    if (nextView === "Man-Day Productivity" && !filters.productType && productTypes[0]) {
+      setFilters((current) => ({ ...current, productType: productTypes[0], elevation: "" }));
+    }
+  }
   const attention: Attention[] = [];
   if (productivity !== null && productivityTone === "red") attention.push({ tone: "red", text: `${filters.productType || "Selected work"} Productivity Factor is ${format(productivity, 2)} — ${format((productivity-1)*100)}% more man-days consumed than earned.`, href: "/reports", priority: 100 });
   if (lateForecasts[0]) attention.push({ tone: "red", text: `${lateForecasts[0].activity.productType || lateForecasts[0].activity.activity} likely forecast is +${format(lateForecasts[0].forecast.likely.variance ?? 0, 0)} working days.`, href: `/forecast?activity=${encodeURIComponent(lateForecasts[0].activity.programmeActivityId)}`, priority: 95 });
@@ -109,7 +115,7 @@ export default function DashboardPage() {
     <HealthCards cards={cards}/>
     <PeriodProgress planned={data.kpis.expected} actual={data.kpis.achieved} unit={data.unit} tone={progressTone} mixed={!reliableQuantity}/>
     <section className="health-compact-filters" aria-label="Production performance filters"><strong>Production performance</strong><label>Date range<select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}><option value="overall">From Start</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label><label>{period === "overall" ? "To date" : period === "weekly" ? "Week containing" : period === "monthly" ? "Month" : "Date"}<input type={period === "monthly" ? "month" : "date"} value={period === "monthly" ? selectedDate.slice(0,7) : selectedDate} onChange={(event) => setSelectedDate(period === "monthly" ? `${event.target.value}-01` : event.target.value)} /></label><label>Interface / Product Type<select value={filters.productType} onChange={(event) => setFilters((current) => ({ ...current, productType: event.target.value, elevation: "" }))}><option value="">All interfaces / product types</option>{productTypes.map((value) => <option key={value}>{value}</option>)}</select></label><label>Area<select value={filters.elevation} onChange={(event) => setFilters((current) => ({ ...current, elevation: event.target.value }))}><option value="">All</option>{areas.map((value) => <option key={value}>{value}</option>)}</select></label><label>Gang<select value={filters.gang} onChange={(event) => setFilters((current) => ({ ...current, gang: event.target.value }))}><option value="">All</option>{gangs.map((value) => <option key={value}>{value}</option>)}</select></label>{(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}</section>
-    <ProductionPerformance view={performanceView} setView={setPerformanceView} points={performancePoints} unit={data.unit} quantityCompatible={reliableQuantity} productivityCompatible={reliableProductivity}/>
+    <ProductionPerformance view={performanceView} setView={changePerformanceView} points={performancePoints} unit={data.unit} quantityCompatible={reliableQuantity} productivityCompatible={reliableProductivity}/>
     <NeedsAttention items={ranked}/>
   </div></main>;
 }
