@@ -24,7 +24,7 @@ const items = [
 export default function BottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-  const mobileItems = items.filter((item) => ["/daily-plan", "/attendance", "/timeline"].includes(item.href));
+  const mobileItems = items.filter((item) => ["/dashboard", "/daily-plan", "/timeline"].includes(item.href));
 
   const link = (item: typeof items[number], mobile = false) => {
     const isActive = pathname.startsWith(item.href);
@@ -39,13 +39,13 @@ export default function BottomNav() {
       <nav className="primary-nav" aria-label="Main navigation">{items.map((item) => link(item))}</nav>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {mobileItems.map((item) => link(item, true))}
-        <button type="button" className={`mobile-nav-item ${moreOpen ? "active" : ""}`} onClick={() => setMoreOpen((current) => !current)} aria-expanded={moreOpen}>
+        <button type="button" className={`mobile-nav-item ${moreOpen ? "active" : ""}`} onClick={() => setMoreOpen(true)} aria-expanded={moreOpen} aria-controls="sitepulse-all-tabs">
           <span className="bottom-nav-icon" aria-hidden="true">•••</span><span className="bottom-nav-label">More</span>
         </button>
       </nav>
       {moreOpen && <div className="mobile-nav-backdrop" onClick={() => setMoreOpen(false)}>
-        <section className="mobile-nav-sheet" aria-label="All SitePulse pages" onClick={(event) => event.stopPropagation()}>
-          <header><strong>SitePulse</strong><button type="button" onClick={() => setMoreOpen(false)} aria-label="Close navigation">×</button></header>
+        <section id="sitepulse-all-tabs" className="mobile-nav-sheet" role="dialog" aria-modal="true" aria-label="All SitePulse tabs" onClick={(event) => event.stopPropagation()}>
+          <header><strong>All SitePulse tabs</strong><button type="button" onClick={() => setMoreOpen(false)} aria-label="Close navigation">×</button></header>
           <div>{items.map((item) => link(item))}</div>
         </section>
       </div>}
