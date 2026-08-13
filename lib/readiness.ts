@@ -49,7 +49,7 @@ export function activityReadiness(input: {
   const completion = data.completions.find((row) => row.programme_activity_external_id === activity.programmeActivityId);
   const actualRelease = releases.flatMap((row) => row.actual_release_date ? [row.actual_release_date] : []).sort().at(-1);
   const blockers = [...incomplete.map((id) => `Predecessor ${activities.find((row) => row.programmeActivityId === id)?.activity || id} is not Site Complete`), ...releases.filter((row) => row.status !== "RELEASED").map((row) => `${row.title}: ${row.status}`), ...blockingConstraints.map((row) => row.description)];
-  let status: ReadinessStatus = completion ? "COMPLETE" : input.actualSiteStart || activity.actualStart ? "STARTED" : releaseStatus === "PARTIALLY RELEASED" ? "PARTIALLY RELEASED" : requirements.some((row) => row.rag === "RED") ? "NOT READY" : "READY";
+  const status: ReadinessStatus = completion ? "COMPLETE" : input.actualSiteStart || activity.actualStart ? "STARTED" : releaseStatus === "PARTIALLY RELEASED" ? "PARTIALLY RELEASED" : requirements.some((row) => row.rag === "RED") ? "NOT READY" : "READY";
   const rag: ReadinessRag = status === "COMPLETE" || status === "READY" ? "GREEN" : status === "PARTIALLY RELEASED" || status === "STARTED" ? "AMBER" : "RED";
   return { activityId: activity.programmeActivityId, status, rag, releaseStatus, requirements, blockers, actualRelease, siteCompletedAt: completion?.completed_at, actualSiteStart: input.actualSiteStart || activity.actualStart };
 }

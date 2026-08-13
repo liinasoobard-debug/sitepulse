@@ -192,7 +192,7 @@ export function buildDashboardData(args: {
   let cumulativeActual = filteredEvents.filter(({ date, event }) => date < range.start && event.type === "work" && event.status === "completed").reduce((sum, { event }) => sum + (event.quantity ?? 0), 0);
   const cumulative = output.map((row) => ({ label: row.label, planned: cumulativePlanned += row.expected, actual: cumulativeActual += row.actual }));
 
-  let productivity = buckets.map((bucket) => {
+  const productivity = buckets.map((bucket) => {
     const work = filteredEvents.filter((row) => inBucket(row, bucket) && row.event.type === "work" && row.event.status === "completed");
     const groups = groupGangDayProductivity(work.map(({ date, event }) => ({ date, event })));
     const quantity = groups.reduce((sum, group) => sum + group.quantity, 0);

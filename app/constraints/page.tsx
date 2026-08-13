@@ -233,7 +233,7 @@ export default function ConstraintsPage() {
   }, [refresh]);
   useEffect(() => {
     const activity = new URLSearchParams(window.location.search).get("activity");
-    if (activity) setActivityFilter(activity);
+    if (activity) queueMicrotask(() => setActivityFilter(activity));
   }, []);
   const byId = useMemo(
     () => new Map(activities.map((row) => [row.programmeActivityId, row])),

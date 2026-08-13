@@ -1,4 +1,4 @@
-import { aggregateProductivityFactors, calculateProductivityFactor, type ProductivityFactorThresholds } from "./manDayProductivity.ts";
+import { calculateProductivityFactor, type ProductivityFactorThresholds } from "./manDayProductivity.ts";
 import type { ActivityReadiness, ReadinessRag } from "./readiness.ts";
 import type { TimelineEvent } from "../types/site.ts";
 

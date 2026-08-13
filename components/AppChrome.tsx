@@ -7,7 +7,9 @@ import ProjectSelector from "@/components/ProjectSelector";
 import SharedDataSync from "@/components/SharedDataSync";
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
-  const isLogin = usePathname() === "/login";
+  const pathname = usePathname();
+  const isLogin = pathname === "/login";
+  const usesSiteDate = ["/daily-plan", "/attendance", "/crews", "/timeline"].some((route) => pathname.startsWith(route));
   if (isLogin) return children;
   return <SharedDataSync>
     <header className="sitepulse-app-header">
@@ -15,7 +17,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
       <span>Construction production control</span>
     </header>
     <BottomNav />
-    <div className="context-controls"><ProjectSelector /><DateSelector /></div>
+    <div className="context-controls"><ProjectSelector />{usesSiteDate && <DateSelector />}</div>
     <div className="sitepulse-page-content">{children}</div>
   </SharedDataSync>;
 }

@@ -10,7 +10,7 @@ const items = [
   { href: "/crews", label: "Gangs", icon: "👥" },
   { href: "/programme", label: "Programme", icon: "📋" },
   { href: "/readiness", label: "Readiness", icon: "✓" },
-  { href: "/daily-plan", label: "Daily Plan", icon: "☀" },
+  { href: "/daily-plan", label: "Today / Daily Plan", icon: "☀" },
   { href: "/timeline", label: "Timeline", icon: "◷" },
   { href: "/reports", label: "Reports", icon: "▤" },
   { href: "/forecast", label: "Forecast", icon: "↗" },
@@ -23,7 +23,7 @@ const items = [
 export default function BottomNav() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-  const mobileItems = items.filter((item) => ["/dashboard", "/daily-plan", "/timeline", "/constraints"].includes(item.href));
+  const mobileItems = items.filter((item) => ["/daily-plan", "/attendance", "/timeline"].includes(item.href));
 
   const link = (item: typeof items[number], mobile = false) => {
     const isActive = pathname.startsWith(item.href);

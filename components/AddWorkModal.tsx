@@ -152,11 +152,13 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     if (!initialAllocation || !programmeActivities.length) return;
     const activity = programmeActivities.find((row) => row.programmeActivityId === initialAllocation.activityId);
     if (!activity) return;
-    setSelectedType("work"); setAssignmentMode("crew"); setSelectedCrewId(initialAllocation.gangId);
-    setSelectedBuilding(locationValue(activity.building)); setSelectedElevation(locationValue(activity.elevation)); setSelectedLevel(locationValue(activity.level));
-    setSelectedProgrammeActivityId(activity.programmeActivityId); setTitle(activity.activity); setNumberOfOperatives(String(initialAllocation.plannedOperatives));
-    setNotes(`Daily Plan target: ${initialAllocation.targetQuantity} ${activity.unit}${initialAllocation.areaZone ? ` · Area ${initialAllocation.areaZone}` : ""}`);
-    setBaselineUnit(activity.unit); setBaselineRate(String(activity.plannedManDayProductivity ?? "")); setBaselineCrewSize(String(activity.assumedGangSize ?? ""));
+    queueMicrotask(() => {
+      setSelectedType("work"); setAssignmentMode("crew"); setSelectedCrewId(initialAllocation.gangId);
+      setSelectedBuilding(locationValue(activity.building)); setSelectedElevation(locationValue(activity.elevation)); setSelectedLevel(locationValue(activity.level));
+      setSelectedProgrammeActivityId(activity.programmeActivityId); setTitle(activity.activity); setNumberOfOperatives(String(initialAllocation.plannedOperatives));
+      setNotes(`Daily Plan target: ${initialAllocation.targetQuantity} ${activity.unit}${initialAllocation.areaZone ? ` · Area ${initialAllocation.areaZone}` : ""}`);
+      setBaselineUnit(activity.unit); setBaselineRate(String(activity.plannedManDayProductivity ?? "")); setBaselineCrewSize(String(activity.assumedGangSize ?? ""));
+    });
   }, [initialAllocation, programmeActivities]);
 
   useEffect(() => {
