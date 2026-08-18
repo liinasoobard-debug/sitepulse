@@ -9,6 +9,8 @@ import {
   updateProject,
 } from "@/lib/storage";
 import type { Project } from "@/types/site";
+import { flushSharedWrite } from "@/lib/sharedSync";
+import { PROJECTS_STORAGE_KEY } from "@/lib/storage";
 import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import UserIndicator from "@/components/UserIndicator";
@@ -93,7 +95,7 @@ export default function ProjectSelector() {
     reloadCurrentPage();
   }
 
-  function handleArchiveProject() {
+  async function handleArchiveProject() {
     const active = projects.find((project) => project.id === activeProjectId);
     if (!active) return;
     if (projects.length === 1) {
@@ -101,12 +103,14 @@ export default function ProjectSelector() {
       return;
     }
     if (!window.confirm(`Archive “${active.name}”? It will be hidden, but its records and audit history will not be deleted.`)) return;
-    archiveProject(active.id);
+    const updatedProjects = archiveProject(active.id);
+    await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
     reloadCurrentPage();
   }
 
-  function handleRestoreProject(project: Project) {
-    updateProject({ ...project, isArchived: false });
+  async function handleRestoreProject(project: Project) {
+    const updatedProjects = updateProject({ ...project, isArchived: false });
+    await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
     setActiveProject(project.id);
     reloadCurrentPage();
   }
@@ -183,7 +187,7 @@ export default function ProjectSelector() {
         {archivedProjects.length > 0 && <details style={{ marginTop: 10 }}>
           <summary style={{ cursor: "pointer", fontWeight: 700, color: "#4a5560" }}>Archived projects ({archivedProjects.length})</summary>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            {archivedProjects.map((project) => <button type="button" className="secondary-button" key={project.id} onClick={() => handleRestoreProject(project)}>Restore {project.name}</button>)}
+            {archivedProjects.map((project) => <button type="button" className="secondary-button" key={project.id} onClick={() => void handleRestoreProject(project)}>Restore {project.name}</button>)}
           </div>
         </details>}
 

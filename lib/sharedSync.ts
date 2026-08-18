@@ -85,6 +85,14 @@ async function writeSharedRecord(key: string, payload: unknown): Promise<void> {
   if (error) console.error(`Unable to sync ${key}:`, error.message);
 }
 
+export async function flushSharedWrite(key: string, payload: unknown): Promise<void> {
+  if (typeof window === "undefined" || !isSharedStorageKey(key)) return;
+  const pending = pendingWrites.get(key);
+  if (pending) clearTimeout(pending);
+  pendingWrites.delete(key);
+  await writeSharedRecord(key, payload);
+}
+
 export function queueSharedWrite(key: string, payload: unknown): void {
   if (typeof window === "undefined" || !isSharedStorageKey(key)) return;
   const pending = pendingWrites.get(key);
