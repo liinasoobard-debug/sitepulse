@@ -1,0 +1,6 @@
+"use client";
+import { createClient } from "@/lib/supabase/client";
+export type ActivityAction="VIEW"|"INSERT"|"UPDATE"|"DELETE";
+export type ActivityLogEntry={id:string;project_id:string;actor_id:string|null;actor_email:string|null;actor_name:string|null;action:ActivityAction;page_path:string|null;entity_type:string|null;entity_id:string|null;old_value:Record<string,unknown>|null;new_value:Record<string,unknown>|null;occurred_at:string};
+export async function recordPageView(projectId:string,pagePath:string){if(!projectId||!pagePath||pagePath==="/login")return;const db=createClient(),{data}=await db.auth.getUser();if(!data.user)return;const{error}=await db.from("sitepulse_activity_log").insert({project_id:projectId,actor_id:data.user.id,actor_email:data.user.email??null,actor_name:data.user.user_metadata?.full_name??data.user.user_metadata?.name??null,action:"VIEW",page_path:pagePath});if(error&&process.env.NODE_ENV==="development")console.warn("Page view was not recorded:",error.message)}
+export async function loadActivityLog(projectId:string,limit=500){const{data,error}=await createClient().from("sitepulse_activity_log").select("*").eq("project_id",projectId).order("occurred_at",{ascending:false}).limit(limit);if(error)throw error;return(data??[])as ActivityLogEntry[]}

@@ -19,8 +19,7 @@ export async function POST(request: Request) {
   const {data:membership,error:membershipError}=await supabase.from("sitepulse_project_members").select("project_id,user_id,role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle();
   console.info("Programme import authorization",{userId:user.id,projectId,membership,membershipError:membershipError?.message??null});
   if(membershipError)return NextResponse.json({error:`Unable to verify project membership: ${membershipError.message}`,diagnostic:{userId:user.id,projectId,membership:null}},{status:500});
-  if(!membership)return NextResponse.json({error:"Your authenticated user has no membership for the selected project. Ask a Project Admin to add this user to sitepulse_project_members.",diagnostic:{userId:user.id,projectId,membership:null}},{status:403});
-  if(!["planner","admin"].includes(membership.role))return NextResponse.json({error:`Programme imports require the Admin or Planner role. Current role: ${membership.role}.`,diagnostic:{userId:user.id,projectId,membership}},{status:403});
+  if(!membership)return NextResponse.json({error:"Your authenticated user is not a member of the selected project.",diagnostic:{userId:user.id,projectId,membership:null}},{status:403});
   const {data:last}=await supabase.from("programme_imports").select("import_version").eq("project_id",projectId).order("import_version",{ascending:false}).limit(1).maybeSingle();
   const {data:published}=await supabase.from("programme_imports").select("id").eq("project_id",projectId).eq("status","published").maybeSingle();
   let knownIds:string[]=[]; let previousActivities:Record<string,unknown>[]=[]; if(published){const {data}=await supabase.from("programme_activities").select("*").eq("programme_import_id",published.id);previousActivities=(data??[]) as Record<string,unknown>[];knownIds=previousActivities.map(x=>String(x.external_activity_id));}

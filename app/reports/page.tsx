@@ -329,10 +329,140 @@ export default function ReportsPage() {
     XLSX.writeFile(workbook, `${safeProject}_report_${weekStart}.xlsx`);
   }
 
+  function exportWholeProjectExcel() {
+    const workbook = XLSX.utils.book_new();
+    const allEvents: DatedEvent[] = allDays.flatMap((day) => day.events.map((event) => ({ date: day.date, day, event })));
+    const programmeById = new Map(programme.map((activity) => [activity.programmeActivityId, activity]));
+    const operativeById = new Map(operatives.map((operative) => [String(operative.id), operative]));
+    const dates = allDays.map((day) => day.date).sort();
+    const dataDate = dates.at(-1) ?? getActiveDate();
+
+    const appendSheet = (name: string, rows: Record<string, unknown>[]) => {
+      const values = rows.length ? rows : [{ Note: "No records available" }];
+      const sheet = XLSX.utils.json_to_sheet(values);
+      const range = XLSX.utils.decode_range(sheet["!ref"] ?? "A1:A1");
+      sheet["!autofilter"] = { ref: XLSX.utils.encode_range({ s: range.s, e: { r: range.s.r, c: range.e.c } }) };
+      sheet["!cols"] = Object.keys(values[0]).map((heading) => ({ wch: Math.min(Math.max(heading.length + 2, 14), 34) }));
+      XLSX.utils.book_append_sheet(workbook, sheet, name);
+    };
+
+    const signInRows = allDays.flatMap((day) => day.attendance.map((record) => {
+      const operative = operativeById.get(String(record.operativeId));
+      const gang = (day.crews ?? []).find((crew) => crew.operativeIds.map(String).includes(String(record.operativeId)));
+      return {
+        Date: day.date,
+        "Operative ID": record.operativeId,
+        Name: operative?.name ?? "Unknown operative",
+        Company: operative?.company ?? "",
+        Position: operative?.position ?? "",
+        Gang: gang?.name ?? "",
+        "Sign In": record.signIn ?? "",
+        "Sign Out": record.signOut ?? "",
+        "Hours On Site": elapsedHours(record.signIn, record.signOut),
+      };
+    }));
+
+    const diaryRows = allEvents.map(({ date, day, event }) => {
+      const activity = programmeFor(event, programmeById);
+      return {
+        Date: date,
+        Start: event.startTime ?? event.time,
+        Finish: event.finishTime ?? "",
+        "Record Type": event.type,
+        Status: event.status ?? "Recorded",
+        Gang: crewName(day.crews ?? [], event.crewId),
+        Building: activity?.building ?? "",
+        Elevation: activity?.elevation ?? "",
+        Level: activity?.level ?? "",
+        "Programme Activity ID": event.programmeActivityId ?? "",
+        Activity: activity?.activity ?? event.title,
+        Quantity: event.quantity ?? "",
+        Unit: event.unit ?? activity?.unit ?? "",
+        Operatives: event.numberOfOperatives ?? event.affectedOperativeIds?.length ?? "",
+        "Labour Hours": eventLabourHours(event),
+        Reason: event.reason ?? "",
+        Notes: event.notes ?? "",
+        "Instruction / Drawing Reference": event.instructionReference ?? event.drawingReference ?? "",
+      };
+    });
+
+    const programmeRows = programme.map((activity) => ({
+      "Programme Activity ID": activity.programmeActivityId,
+      WBS: activity.wbsPath || activity.wbsCode || activity.wbs || "",
+      Building: activity.building,
+      Elevation: activity.elevation,
+      Level: activity.level,
+      Gridline: activity.gridline ?? "",
+      Activity: activity.activity,
+      "Work Activity": activity.workActivity ?? "",
+      Trade: activity.trade ?? "",
+      "Product Type": activity.productType ?? "",
+      Status: activity.activityStatus || activity.status || "",
+      "Planned Start": activity.plannedStart ?? "",
+      "Planned Finish": activity.plannedFinish ?? "",
+      "Actual Start": activity.actualStart ?? "",
+      "Actual Finish": activity.actualFinish ?? "",
+      "Original Duration": activity.originalDuration ?? "",
+      "Remaining Duration": activity.remainingDuration ?? "",
+      "Planned Quantity": activity.plannedQuantity,
+      Unit: activity.unit,
+      "% Complete": activity.physicalPercentComplete ?? "",
+      "Planned Man-Day Productivity": activity.plannedManDayProductivity ?? "",
+      "Assumed Gang Size": activity.assumedGangSize ?? activity.plannedCrewSize ?? "",
+      "Planned Gang Daily Output": activity.plannedGangDailyOutput ?? "",
+      "Budget Labour Hours": activity.budgetLabourHours ?? "",
+      Calendar: activity.calendar ?? "",
+      "Data Date": activity.dataDate ?? "",
+      "Source File": activity.sourceFilename ?? "",
+    }));
+
+    const productivityRows = programme.map((activity) => {
+      const records = allEvents.filter(({ event }) => event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId);
+      const quantity = records.reduce((sum, { event }) => sum + (event.quantity ?? 0), 0);
+      const hours = records.reduce((sum, { event }) => sum + eventLabourHours(event), 0);
+      const gangDays = groupGangDayProductivity(records.map(({ date, event }) => ({ date, event })));
+      const actualManDays = gangDays.reduce((sum, row) => sum + row.operatives, 0);
+      const plannedRate = (activity.plannedManDayProductivity ?? 0) > 0 ? activity.plannedManDayProductivity! : null;
+      const factor = calculateProductivityFactor(quantity, plannedRate, actualManDays, project?.productivityFactorThresholds);
+      return {
+        Building: activity.building,
+        Elevation: activity.elevation,
+        Level: activity.level,
+        Activity: activity.activity,
+        "Programme Activity ID": activity.programmeActivityId,
+        Unit: activity.unit,
+        "Planned Quantity": activity.plannedQuantity,
+        "Actual Quantity": quantity,
+        "Remaining Quantity": Math.max(activity.plannedQuantity - quantity, 0),
+        "% Complete": activity.plannedQuantity > 0 ? quantity / activity.plannedQuantity * 100 : 0,
+        "Planned Man-Day Productivity": plannedRate ?? "",
+        "Actual Man-Day Productivity": actualManDays > 0 ? quantity / actualManDays : "",
+        "Productivity Performance %": actualManDays > 0 && plannedRate ? (quantity / actualManDays) / plannedRate * 100 : "",
+        "Productivity Factor": factor.productivityFactor ?? "",
+        "Productivity RAG": factor.rag,
+        "Earned Man-Days": factor.earnedManDays ?? "",
+        "Actual Man-Days": factor.actualManDays ?? "",
+        "Man-Day Variance": factor.manDayVariance ?? "",
+        "Productive Labour Hours": hours,
+        "Man-Hour Productivity": hours > 0 ? quantity / hours : "",
+        "First Recorded": records.map(row => row.date).sort()[0] ?? "",
+        "Last Recorded": records.map(row => row.date).sort().at(-1) ?? "",
+      };
+    });
+
+    appendSheet("Project Summary", [{ Project: project?.name ?? "Project", "Project Code": project?.code ?? "", Location: project?.location ?? "", "Exported At": new Date().toISOString(), "Data Through": dataDate, "Programme Activities": programme.length, "Attendance Records": signInRows.length, "Daily Diary Records": diaryRows.length }]);
+    appendSheet("Sign-In Sheets", signInRows);
+    appendSheet("Daily Diary", diaryRows);
+    appendSheet("Programme", programmeRows);
+    appendSheet("Productivity Matrix", productivityRows);
+    const safeProject = (project?.code || project?.name || "SitePulse").replace(/[^a-zA-Z0-9_-]+/g, "-");
+    XLSX.writeFile(workbook, `${safeProject}_whole-project_${dataDate}.xlsx`);
+  }
+
   if (!weekStart) return null;
 
   return <main className="timeline-page"><section className="timeline-panel">
-    <header className="timeline-header"><div><p className="eyebrow">Production reporting</p><h1>Weekly Production Report</h1><p style={{ marginBottom: 0, color: "#5f6b76" }}>{project?.name ?? "Project"}</p></div><button type="button" className="secondary-button" onClick={exportExcel}>Export Excel</button></header>
+    <header className="timeline-header"><div><p className="eyebrow">Production reporting</p><h1>Weekly Production Report</h1><p style={{ marginBottom: 0, color: "#5f6b76" }}>{project?.name ?? "Project"}</p></div><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button type="button" className="secondary-button" onClick={exportExcel}>Export Weekly Excel</button><button type="button" className="primary-button" onClick={exportWholeProjectExcel}>Export Whole Project Excel</button></div></header>
     <section className="report-controls" style={{ padding: 18, marginBottom: 30, border: "1px solid #d7dde3", borderRadius: 14, background: "#f7f9fa" }}>
       <label style={{ display: "grid", gap: 6, maxWidth: 260, fontWeight: 800 }}>Week commencing<input type="date" value={weekStart} onChange={(event) => setWeekStart(mondayFor(event.target.value))} style={{ minHeight: 42, padding: "8px 10px" }} /></label>
       <h2 style={{ marginBottom: 4 }}>Week commencing {formatDate(weekStart)}</h2><p style={{ margin: 0 }}>{formatDate(weekStart)} – {formatDate(report.weekEnd)}</p>

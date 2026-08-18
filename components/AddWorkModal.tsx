@@ -487,7 +487,7 @@ export default function AddWorkModal({ onAdd, onClose, programmeActivities, prog
     const effectiveRate = Number(baselineRate) > 0 ? Number(baselineRate) : selectedProgrammeActivity?.plannedManDayProductivity;
     const effectiveCrewSize = Number(baselineCrewSize) > 0 ? Number(baselineCrewSize) : selectedProgrammeActivity?.assumedGangSize;
     if (canEditProgramme && selectedType === "work" && selectedProgrammeActivity && (effectiveUnit !== selectedProgrammeActivity.unit || effectiveRate !== selectedProgrammeActivity.plannedManDayProductivity || effectiveCrewSize !== selectedProgrammeActivity.assumedGangSize)) {
-      try { await updateProgrammeBaseline(selectedProgrammeActivity.id,effectiveUnit,Number(effectiveRate),Number(effectiveCrewSize)); } catch(error) { setValidationMessage(error instanceof Error?error.message:"Only a Planner/Admin can update planned data."); return; }
+      try { await updateProgrammeBaseline(selectedProgrammeActivity.id,effectiveUnit,Number(effectiveRate),Number(effectiveCrewSize)); } catch(error) { setValidationMessage(error instanceof Error?error.message:"Unable to update planned data."); return; }
     }
     await onAdd({
       crewId: assignmentMode === "crew" ? selectedCrewId : undefined,

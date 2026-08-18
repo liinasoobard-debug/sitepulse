@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const { data: membership, error: membershipError } = await supabase.from("sitepulse_project_members").select("project_id,user_id,role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle();
   console.info("Programme publish authorization", { userId: user.id, projectId, importId, membership, membershipError: membershipError?.message ?? null });
   if (membershipError) return NextResponse.json({ error: `Unable to verify project membership: ${membershipError.message}` }, { status: 500 });
-  if (!membership || !["planner", "admin"].includes(membership.role)) return NextResponse.json({ error: "Only a Project Admin or Planner can publish programme imports.", diagnostic: { userId: user.id, projectId, membership } }, { status: 403 });
+  if (!membership) return NextResponse.json({ error: "Your authenticated user is not a member of this project.", diagnostic: { userId: user.id, projectId, membership } }, { status: 403 });
   const { error } = await supabase.rpc("publish_programme_import", { target_import: importId });
   if (error) return NextResponse.json({ error: error.message }, { status: 403 });
   const { error: progressError } = await supabase.rpc("recalculate_published_programme_actuals", { target_import: importId });

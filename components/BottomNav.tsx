@@ -18,6 +18,7 @@ const items = [
   { href: "/materials", label: "Materials", icon: "▧" },
   { href: "/constraints", label: "Constraints", icon: "⚠" },
   { href: "/plant", label: "Plant", icon: "▣" },
+  { href: "/activity-log", label: "Activity Log", icon: "◉" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
