@@ -2,9 +2,11 @@
 
 import {
   addProject,
+  archiveProject,
   getActiveProjectId,
   loadProjects,
   setActiveProject,
+  updateProject,
 } from "@/lib/storage";
 import type { Project } from "@/types/site";
 import { usePathname } from "next/navigation";
@@ -14,6 +16,7 @@ import UserIndicator from "@/components/UserIndicator";
 export default function ProjectSelector() {
   const pathname = usePathname();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectIdState] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -22,7 +25,9 @@ export default function ProjectSelector() {
   const [error, setError] = useState("");
 
   function refreshProjects() {
-    setProjects(loadProjects().filter((project) => !project.isArchived));
+    const allProjects = loadProjects();
+    setProjects(allProjects.filter((project) => !project.isArchived));
+    setArchivedProjects(allProjects.filter((project) => project.isArchived));
     setActiveProjectIdState(getActiveProjectId());
   }
 
@@ -85,6 +90,24 @@ export default function ProjectSelector() {
     setLocation("");
     setError("");
     setShowForm(false);
+    reloadCurrentPage();
+  }
+
+  function handleArchiveProject() {
+    const active = projects.find((project) => project.id === activeProjectId);
+    if (!active) return;
+    if (projects.length === 1) {
+      setError("Create another active project before archiving this one.");
+      return;
+    }
+    if (!window.confirm(`Archive “${active.name}”? It will be hidden, but its records and audit history will not be deleted.`)) return;
+    archiveProject(active.id);
+    reloadCurrentPage();
+  }
+
+  function handleRestoreProject(project: Project) {
+    updateProject({ ...project, isArchived: false });
+    setActiveProject(project.id);
     reloadCurrentPage();
   }
 
@@ -151,8 +174,18 @@ export default function ProjectSelector() {
           >
             {showForm ? "Cancel" : "+ New Project"}
           </button>
+          <button type="button" className="secondary-button" onClick={handleArchiveProject} disabled={!activeProjectId}>
+            Archive Project
+          </button>
           <UserIndicator />
         </div>
+
+        {archivedProjects.length > 0 && <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 700, color: "#4a5560" }}>Archived projects ({archivedProjects.length})</summary>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            {archivedProjects.map((project) => <button type="button" className="secondary-button" key={project.id} onClick={() => handleRestoreProject(project)}>Restore {project.name}</button>)}
+          </div>
+        </details>}
 
         {showForm && (
           <form
