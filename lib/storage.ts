@@ -369,6 +369,17 @@ export function addProject(
   return updatedProjects;
 }
 
+export function removeProject(projectId: string): Project[] {
+  const updatedProjects = loadProjects().filter((project) => project.id !== projectId);
+  saveProjects(updatedProjects);
+  if (getActiveProjectId() === projectId) {
+    const nextProject = updatedProjects.find((project) => !project.isArchived);
+    if (nextProject) setActiveProject(nextProject.id);
+    else localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+  }
+  return updatedProjects;
+}
+
 export function updateProject(
   updatedProject: Project
 ): Project[] {

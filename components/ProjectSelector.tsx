@@ -5,12 +5,14 @@ import {
   archiveProject,
   getActiveProjectId,
   loadProjects,
+  removeProject,
   setActiveProject,
   updateProject,
 } from "@/lib/storage";
 import type { Project } from "@/types/site";
 import { flushSharedWrite } from "@/lib/sharedSync";
 import { PROJECTS_STORAGE_KEY } from "@/lib/storage";
+import { createProjectMembership } from "@/lib/supabase/projectData";
 import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import UserIndicator from "@/components/UserIndicator";
@@ -25,6 +27,7 @@ export default function ProjectSelector() {
   const [code, setCode] = useState("");
   const [location, setLocation] = useState("");
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   function refreshProjects() {
     const allProjects = loadProjects();
@@ -60,7 +63,7 @@ export default function ProjectSelector() {
     reloadCurrentPage();
   }
 
-  function handleAddProject(event: FormEvent<HTMLFormElement>) {
+  async function handleAddProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = name.trim();
 
@@ -78,21 +81,35 @@ export default function ProjectSelector() {
       return;
     }
 
-    const updatedProjects = addProject({
-      name: trimmedName,
-      code: code.trim(),
-      location: location.trim(),
-      isArchived: false,
-    });
-
-    setProjects(updatedProjects.filter((project) => !project.isArchived));
-    setActiveProjectIdState(getActiveProjectId());
-    setName("");
-    setCode("");
-    setLocation("");
+    setCreating(true);
     setError("");
-    setShowForm(false);
-    reloadCurrentPage();
+    let createdProjectId = "";
+    try {
+      const updatedProjects = addProject({
+        name: trimmedName,
+        code: code.trim(),
+        location: location.trim(),
+        isArchived: false,
+      });
+      createdProjectId = getActiveProjectId();
+      await createProjectMembership(createdProjectId);
+      await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
+      setProjects(updatedProjects.filter((project) => !project.isArchived));
+      setActiveProjectIdState(createdProjectId);
+      setName("");
+      setCode("");
+      setLocation("");
+      setShowForm(false);
+      reloadCurrentPage();
+    } catch (caught) {
+      if (createdProjectId) {
+        const rolledBack = removeProject(createdProjectId);
+        await flushSharedWrite(PROJECTS_STORAGE_KEY, rolledBack);
+        refreshProjects();
+      }
+      setError(caught instanceof Error ? caught.message : "Unable to create the project.");
+      setCreating(false);
+    }
   }
 
   async function handleArchiveProject() {
@@ -246,8 +263,8 @@ export default function ProjectSelector() {
             </label>
 
             <div style={{ display: "flex", alignItems: "end" }}>
-              <button type="submit" className="primary-button" style={{ width: "100%" }}>
-                Create Project
+              <button type="submit" className="primary-button" style={{ width: "100%" }} disabled={creating}>
+                {creating ? "Creating Project…" : "Create Project"}
               </button>
             </div>
 
