@@ -101,6 +101,7 @@ function normaliseProject(project: Project): Project {
       project.createdAt || new Date().toISOString(),
     labourRateSettings: normaliseLabourRateSettings(project.labourRateSettings),
     productivityFactorThresholds: normaliseProductivityFactorThresholds(project.productivityFactorThresholds),
+    hoursPerManDay: Number(project.hoursPerManDay) > 0 ? Number(project.hoursPerManDay) : undefined,
   };
 }
 

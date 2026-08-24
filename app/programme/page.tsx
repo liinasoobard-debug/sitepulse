@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductivityRagBadge from "@/components/ProductivityRagBadge";
 import { productivityPerformance, productivityRag, productivityRagLabels, ragDistribution, type ProductivityRag } from "@/lib/productivityRag";
-import { getActiveProject, getActiveProjectId } from "@/lib/storage";
+import { getActiveProject, getActiveProjectId, updateProject } from "@/lib/storage";
 import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
 import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import {
@@ -76,6 +76,7 @@ export default function ProgrammePage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [buildingDefault, setBuildingDefault] = useState("");
+  const [hoursPerManDay, setHoursPerManDay] = useState(8);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importSource, setImportSource] = useState<ImportSource>("sitepulse-template");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -127,7 +128,7 @@ export default function ProgrammePage() {
   }, []);
 
   useEffect(() => {
-    queueMicrotask(() => void refresh());
+    queueMicrotask(() => { setHoursPerManDay(getActiveProject()?.hoursPerManDay ?? 8); void refresh(); });
     const changed = () => void refresh();
     window.addEventListener("sitepulse-project-changed", changed);
     return () => window.removeEventListener("sitepulse-project-changed", changed);
@@ -161,6 +162,9 @@ export default function ProgrammePage() {
       form.set("projectId", getActiveProjectId());
       form.set("building", buildingDefault);
       form.set("sourceType", importSource);
+      form.set("hoursPerManDay", String(hoursPerManDay));
+      const activeProject = getActiveProject();
+      if (activeProject && activeProject.hoursPerManDay !== hoursPerManDay) updateProject({ ...activeProject, hoursPerManDay });
       const response = await fetch("/api/programme/import", {
         method: "POST",
         body: form,
@@ -344,6 +348,7 @@ export default function ProgrammePage() {
                 <span>Single building value (optional)</span>
                 <input value={buildingDefault} onChange={(event) => setBuildingDefault(event.target.value)} placeholder="e.g. HBX" />
               </label>
+              {importSource === "p6-xlsx" && <label className="attendance-field" style={{ maxWidth: 360 }}><span>Hours per P6 labour day</span><input type="number" min="1" max="24" step="0.25" value={hoursPerManDay} onChange={(event) => setHoursPerManDay(Number(event.target.value))} /><small>HBX baseline: 8 hours. Used only when P6 budgeted labour units are exported in days.</small></label>}
 
               <div className="programme-import-actions" style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
                 <label className="programme-file-picker">

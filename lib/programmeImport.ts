@@ -55,7 +55,7 @@ const aliases = {
   resourceNames: ["resource names", "resource_names", "resource list", "resource_list"],
   dataDate: ["data date", "data_date", "last recal date", "last_recalc_date"],
   plannedQuantity: ["planned quantity", "planned_quantity", "quantity", "target qty", "target_qty"],
-  unit: ["unit", "uom", "unit of measure", "unit_of_measure"],
+  unit: ["unit", "unit id", "unit_id", "uom", "unit of measure", "unit_of_measure"],
   budgetHours: ["budget labour hours", "budget labor hours", "budget_labour_hours", "target work qty", "target_work_qty"],
   productionRate: ["planned production rate", "planned_production_rate", "production rate"],
   manDayRate: ["planned man-day productivity", "planned_man_day_productivity", "man day productivity"],
@@ -150,7 +150,7 @@ export function hierarchyFromActivityDescription(description: string): { elevati
   return { elevation: elevationPart.trim(), level, workActivity, productType: productParts.join(" - ") };
 }
 
-export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, importId: string, mapping: HierarchyMapping, knownActivityIds: string[] = []): ParsedP6Workbook {
+export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, importId: string, mapping: HierarchyMapping, knownActivityIds: string[] = [], hoursPerManDay?: number): ParsedP6Workbook {
   const taskRows = sheet(sheets, "task");
   const issues: ImportIssue[] = [];
   if (!taskRows) {
@@ -239,7 +239,11 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
   });
   if (externalRelationshipReferences) issues.push({ sheet: "TASKPRED", severity: "warning", message: `${externalRelationshipReferences} relationships reference activities outside this filtered workbook. Their official P6 Activity IDs were preserved.` });
   let externalAssignmentReferences = 0;
-  const assignments = (sheet(sheets, "taskrsrc") ?? []).flatMap((row, index): ProgrammeResourceAssignment[] => {
+  const assignmentRows = sheet(sheets, "taskrsrc") ?? [];
+  const assignmentLabelRow = assignmentRows.find(isP6LabelRow);
+  const labourUnitsAreDays = /budgeted units\s*\(d\)/i.test(text(assignmentLabelRow?.target_qty));
+  const dayHours = Number(hoursPerManDay) > 0 ? Number(hoursPerManDay) : undefined;
+  const assignments = assignmentRows.flatMap((row, index): ProgrammeResourceAssignment[] => {
     if (isP6LabelRow(row) || isDeletedRow(row)) return [];
     const rawActivity = text(value(row, aliases.internalTaskId)) || text(value(row, aliases.activityId));
     const programmeActivityId = resolveActivity(rawActivity) ?? rawActivity;
@@ -247,13 +251,20 @@ export function parseP6Workbook(sheets: WorkbookSheets, projectId: string, impor
     const resourceId = resourceRefs.get(rawResource) ?? rawResource;
     if (!programmeActivityId || !resourceId) { issues.push({ sheet: "TASKRSRC", rowNumber: index + 2, severity: "error", message: `Assignment requires both an Activity ID and Resource ID.` }); return []; }
     if (!resolveActivity(rawActivity) || !resourceRefs.has(rawResource)) externalAssignmentReferences += 1;
-    return [{ id: id("programme-assignment"), projectId, programmeActivityId, resourceId, resourceType: text(value(row, aliases.resourceType)) || resourceById.get(resourceId)?.resourceType, assignmentStart: date(value(row, aliases.assignmentStart)), assignmentFinish: date(value(row, aliases.assignmentFinish)), budgetedLabourUnits: number(value(row, aliases.budgetedUnits)), actualLabourUnits: number(value(row, aliases.actualUnits)), remainingLabourUnits: number(value(row, aliases.remainingUnits)), atCompletionUnits: number(value(row, aliases.atCompletionUnits)), sourceImportId: importId }];
+    const resourceType = text(value(row, aliases.resourceType)) || resourceById.get(resourceId)?.resourceType;
+    const multiplier = labourUnitsAreDays && /^(?:rt_)?labou?r$/i.test(resourceType ?? "") && dayHours ? dayHours : 1;
+    return [{ id: id("programme-assignment"), projectId, programmeActivityId, resourceId, resourceType, assignmentStart: date(value(row, aliases.assignmentStart)), assignmentFinish: date(value(row, aliases.assignmentFinish)), budgetedLabourUnits: (number(value(row, aliases.budgetedUnits)) ?? 0) * multiplier, actualLabourUnits: (number(value(row, aliases.actualUnits)) ?? 0) * multiplier, remainingLabourUnits: (number(value(row, aliases.remainingUnits)) ?? 0) * multiplier, atCompletionUnits: number(value(row, aliases.atCompletionUnits)), sourceImportId: importId }];
   });
+  if (labourUnitsAreDays && !dayHours) issues.push({ sheet: "TASKRSRC", severity: "warning", message: "Labour assignments are expressed in days. Configure hours per man-day before using them as a labour-hours baseline." });
+  if (labourUnitsAreDays && dayHours) {
+    resources.filter((resource) => /^(?:rt_)?labou?r$/i.test(resource.resourceType ?? "")).forEach((resource) => { resource.unitOfMeasure = "h"; });
+    issues.push({ sheet: "TASKRSRC", severity: "warning", message: `Labour assignment days were converted using the configured ${dayHours}-hour standard day.` });
+  }
   if (externalAssignmentReferences) issues.push({ sheet: "TASKRSRC", severity: "warning", message: `${externalAssignmentReferences} assignments reference activities or resources outside this filtered workbook. Their official P6 IDs were preserved.` });
   const enrichedActivities = activities.map((activity) => {
     const activityAssignments = assignments.filter((assignment) => assignment.programmeActivityId === activity.programmeActivityId);
-    const labourAssignments = activityAssignments.filter((assignment) => /labor|labour|human|role/i.test(assignment.resourceType ?? ""));
-    const materialAssignments = activityAssignments.filter((assignment) => /mat|material/i.test(assignment.resourceType ?? ""));
+    const labourAssignments = activityAssignments.filter((assignment) => /^(?:rt_)?labou?r$/i.test(assignment.resourceType ?? ""));
+    const materialAssignments = activityAssignments.filter((assignment) => /^(?:rt_)?mat(?:erial)?$/i.test(assignment.resourceType ?? ""));
     const labourHourAssignments = labourAssignments.filter((assignment) => /^(?:h|hr|hrs|hour|hours)$/i.test(resourceById.get(assignment.resourceId)?.unitOfMeasure?.trim() ?? ""));
     const labourCountAssignments = labourAssignments.filter((assignment) => !labourHourAssignments.includes(assignment));
     const assignedLabourHours = labourHourAssignments.reduce((total, assignment) => total + (assignment.budgetedLabourUnits ?? 0), 0);

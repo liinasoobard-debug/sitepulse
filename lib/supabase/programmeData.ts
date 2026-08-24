@@ -72,8 +72,8 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     assigned.set(activityId, [...(assigned.get(activityId) ?? []), { ...resource, budgetedUnits: Number(row.budgeted_units ?? 0) }]);
   }
   const uniqueNames = (items: Array<{ name: string }>) => [...new Set(items.map((item) => item.name).filter(Boolean))];
-  const isMaterial = (type: string) => /mat|material/i.test(type);
-  const isLabour = (type: string) => /labor|labour|human|role/i.test(type);
+  const isMaterial = (type: string) => /^(?:rt_)?mat(?:erial)?$/i.test(type);
+  const isLabour = (type: string) => /^(?:rt_)?labou?r$/i.test(type);
   const activities = ((activityResult.data ?? []) as DbActivity[]).map((row) => {
     const activity = programmeActivityFromDb(row, published);
     const activityResources = assigned.get(activity.programmeActivityId) ?? [];

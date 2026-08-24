@@ -7,6 +7,7 @@ export interface Project {
   createdAt: string;
   labourRateSettings?: LabourRateSettings;
   productivityFactorThresholds?: { greenMax: number; amberMax: number };
+  hoursPerManDay?: number;
 }
 
 export interface LabourRateRule {

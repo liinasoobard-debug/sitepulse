@@ -102,6 +102,25 @@ test("derives the activity baseline from P6 labour and material assignments", ()
   assert.equal(activity.productivityBaselineComplete, true);
 });
 
+test("converts P6 labour-day assignments to hours without converting nonlabour resources", () => {
+  const sheets = fixture();
+  sheets.TASK[1] = { task_id: "1", task_code: "A1000", task_name: "Install panels", "Planned Quantity": 75, Unit: "m²" };
+  sheets.RSRC = [
+    { rsrc_id: "10", rsrc_short_name: "LAB-01", rsrc_name: "Facade gang", rsrc_type: "Labor", unit_id: "" },
+    { rsrc_id: "12", rsrc_short_name: "PLANT-01", rsrc_name: "MEWP", rsrc_type: "Nonlabor", unit_id: "" },
+  ];
+  sheets.TASKRSRC = [
+    { rsrc_id: "Resource ID", task_id: "Activity ID", target_qty: "Budgeted Units(d)" },
+    { task_id: "1", rsrc_id: "10", target_qty: 20 },
+    { task_id: "1", rsrc_id: "12", target_qty: 5 },
+  ];
+  const result = parseP6Workbook(sheets, "project", "import", mapping, [], 8);
+  assert.equal(result.assignments.find((row) => row.resourceId === "LAB-01")?.budgetedLabourUnits, 160);
+  assert.equal(result.assignments.find((row) => row.resourceId === "PLANT-01")?.budgetedLabourUnits, 5);
+  assert.equal(result.activities[0].budgetLabourHours, 160);
+  assert.ok(result.issues.some((issue) => issue.message.includes("8-hour standard day")));
+});
+
 test("treats a non-hour labour assignment as crew size", () => {
   const sheets = fixture();
   sheets.TASK[1] = { task_id: "1", task_code: "A1000", task_name: "Install panels", target_drtn_hr_cnt: 40 };
