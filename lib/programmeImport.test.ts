@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyProgramme, hierarchyFromActivityDescription, parseP6Workbook, type WorkbookSheets } from "./programmeImport.ts";
-import { parseAstaWorkbook, parseSitePulseTemplate } from "./programmeImportAdapters.ts";
+import { detectProgrammeImportSource, parseAstaWorkbook, parseSitePulseTemplate } from "./programmeImportAdapters.ts";
 
 const mapping = { building: "Building", elevation: "Elevation", level: "Level", gridline: "Gridline", workActivity: "Activity Name" };
 
@@ -17,6 +17,12 @@ function fixture(): WorkbookSheets {
     TASKRSRC: [{ task_id: "1", rsrc_id: "10", target_qty: 40 }, { task_id: "1", rsrc_id: "11", target_qty: 8 }],
   };
 }
+
+test("detects P6 TASK workbooks when the default SitePulse format was left selected", () => {
+  assert.equal(detectProgrammeImportSource(fixture(), "sitepulse-template"), "p6-xlsx");
+  assert.equal(detectProgrammeImportSource({ "SitePulse Programme": [] }, "p6-xlsx"), "sitepulse-template");
+  assert.equal(detectProgrammeImportSource({ Activities: [] }, "asta-xlsx"), "asta-xlsx");
+});
 
 test("imports TASK, TASKPRED, RSRC and multiple TASKRSRC assignments", () => {
   const result = parseP6Workbook(fixture(), "project", "import", mapping);

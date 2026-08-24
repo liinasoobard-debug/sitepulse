@@ -33,6 +33,7 @@ type ImportPreview = {
   resources: number;
   assignments: number;
   issues: ImportIssue[];
+  sourceType: ImportSource;
 };
 
 type ImportSource = "sitepulse-template" | "p6-xlsx" | "asta-xlsx";
@@ -185,6 +186,7 @@ export default function ProgrammePage() {
         resources: resourceCount,
         assignments: assignmentCount,
         issues: Array.isArray(summary.issues) ? summary.issues : Array.isArray(storedValidation?.issues) ? storedValidation.issues : [],
+        sourceType: (body.sourceType ?? storedImport?.source_type ?? importSource) as ImportSource,
       };
       setPreview(result);
       if (!response.ok) {
@@ -372,6 +374,7 @@ export default function ProgrammePage() {
           {preview && (
             <section style={{ marginTop: 20, padding: 18, border: "1px solid #cbd5df", borderRadius: 14, background: "white" }} aria-live="polite">
               <h3 style={{ marginTop: 0 }}>Import Preview — {preview.filename}</h3>
+              <p><strong>Detected format:</strong> {sourceLabels[preview.sourceType]}{preview.sourceType !== importSource ? " (automatically selected from workbook structure)" : ""}</p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                 {[
                   ["Activities", preview.activities],

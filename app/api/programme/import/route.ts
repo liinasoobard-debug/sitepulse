@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { parseP6Workbook, type CanonicalProgrammeImport, type HierarchyField, type HierarchyMapping, type WorkbookSheets } from "@/lib/programmeImport";
-import { parseAstaWorkbook, parseSitePulseTemplate, type ProgrammeImportSource } from "@/lib/programmeImportAdapters";
+import { detectProgrammeImportSource, parseAstaWorkbook, parseSitePulseTemplate, type ProgrammeImportSource } from "@/lib/programmeImportAdapters";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   const supabase = await createClient(); const {data:{user},error:authError}=await supabase.auth.getUser();
   if(authError){console.error("Programme import auth lookup failed",{message:authError.message});return NextResponse.json({error:"Unable to verify the authenticated user."},{status:401});}
   if(!user)return NextResponse.json({error:"Authentication required."},{status:401});
-  const form=await request.formData(); const file=form.get("file"); const projectId=String(form.get("projectId")??""); const building=String(form.get("building")??"").trim(); const sourceType=String(form.get("sourceType")??"p6-xlsx") as ProgrammeImportSource;
+  const form=await request.formData(); const file=form.get("file"); const projectId=String(form.get("projectId")??""); const building=String(form.get("building")??"").trim(); let sourceType=String(form.get("sourceType")??"p6-xlsx") as ProgrammeImportSource;
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)){console.warn("Programme import rejected invalid project ID",{userId:user.id,projectId});return NextResponse.json({error:"The selected project ID is invalid. Select a project created by SitePulse and try again.",diagnostic:{userId:user.id,projectId,membership:null}},{status:400});}
   if(!(file instanceof File)||!file.name.toLowerCase().endsWith(".xlsx"))return NextResponse.json({error:"Select a valid .xlsx workbook."},{status:400});
   if(!["sitepulse-template","p6-xlsx","asta-xlsx"].includes(sourceType))return NextResponse.json({error:"Select a supported programme source."},{status:400});
@@ -27,6 +27,7 @@ export async function POST(request: Request) {
   try {
     const workbook=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true}); const sheets:WorkbookSheets={};
     workbook.SheetNames.forEach(name=>{const ws=workbook.Sheets[name];if(ws)sheets[name]=XLSX.utils.sheet_to_json<Record<string,unknown>>(ws,{defval:"",raw:true});});
+    sourceType=detectProgrammeImportSource(sheets,sourceType);
     const empty:HierarchyMapping={building:building?`__constant__:${building}`:"",elevation:"",level:"",gridline:"",workActivity:""};
     let mapping:HierarchyMapping=empty; let parsed:CanonicalProgrammeImport;
     if(sourceType==="p6-xlsx") { const first=parseP6Workbook(sheets,projectId,importId,empty,knownIds); const candidates=first.availableColumns.map(column=>({column,key:`${column} ${first.columnLabels[column]??""}`.toLowerCase().replace(/[\s_-]+/g," ")})); mapping={...empty}; (Object.keys(mapping) as HierarchyField[]).forEach(field=>{if(mapping[field])return;const label=hierarchyLabels[field].toLowerCase();mapping[field]=candidates.find(c=>c.key.includes(label)||field==="level"&&c.key.includes("floor")||field==="workActivity"&&c.key.includes("activity name"))?.column??"";}); parsed=parseP6Workbook(sheets,projectId,importId,mapping,knownIds); }
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
     if(errors.length)return NextResponse.json({
       importId,
       status:"failed",
+      sourceType,
       summary:{
         activities:parsed.activities.length,
         relationships:parsed.relationships.length,
@@ -54,6 +56,6 @@ export async function POST(request: Request) {
     await insertBatches(supabase,"programme_resources",parsed.resources.map(x=>({project_id:projectId,programme_import_id:importId,external_resource_id:x.resourceId,resource_name:x.resourceName,resource_type:x.resourceType||null,unit:x.unitOfMeasure||null,created_at:importedAt,raw_data:{}})));
     await insertBatches(supabase,"programme_assignments",parsed.assignments.map(x=>({project_id:projectId,programme_import_id:importId,activity_external_id:x.programmeActivityId,resource_external_id:x.resourceId,budgeted_units:x.budgetedLabourUnits??null,actual_units:x.actualLabourUnits??null,remaining_units:x.remainingLabourUnits??null,assignment_start:x.assignmentStart||null,assignment_finish:x.assignmentFinish||null,created_at:importedAt,raw_data:{}})));
     const summary={activities:parsed.activities.length,relationships:parsed.relationships.length,resources:parsed.resources.length,assignments:parsed.assignments.length,issues:parsed.issues};
-    return NextResponse.json({importId,status:"draft",filename:file.name,mapping,summary,activityCount:summary.activities,relationshipCount:summary.relationships,resourceCount:summary.resources,assignmentCount:summary.assignments});
+    return NextResponse.json({importId,status:"draft",filename:file.name,sourceType,mapping,summary,activityCount:summary.activities,relationshipCount:summary.relationships,resourceCount:summary.resources,assignmentCount:summary.assignments});
   } catch(error) { console.error("Programme import failed",error); await supabase.from("programme_imports").update({status:"failed",validation_summary:{error:error instanceof Error?error.message:"Import failed"}}).eq("id",importId); return NextResponse.json({error:error instanceof Error?error.message:"Import failed"},{status:500}); }
 }

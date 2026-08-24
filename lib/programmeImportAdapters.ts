@@ -19,6 +19,13 @@ const fields = {
 } as const;
 
 const normalise = (value: string) => value.trim().toLowerCase().replace(/[\s_-]+/g, " ");
+
+export function detectProgrammeImportSource(sheets: WorkbookSheets, requested: ProgrammeImportSource): ProgrammeImportSource {
+  const names = Object.keys(sheets).map(normalise);
+  if (names.includes("task")) return "p6-xlsx";
+  if (names.some((name) => ["sitepulse programme", "programme"].includes(name)) && requested === "p6-xlsx") return "sitepulse-template";
+  return requested;
+}
 const text = (value: unknown) => value === null || value === undefined ? "" : String(value).trim();
 function cell(row: WorkbookRow, aliases: readonly string[]): unknown { const wanted = new Set(aliases.map(normalise)); return Object.entries(row).find(([key]) => wanted.has(normalise(key)))?.[1]; }
 function numeric(value: unknown): number | undefined { const raw = text(value).replace(/,/g, ""); if (!raw) return undefined; const parsed = Number(raw); return Number.isFinite(parsed) ? parsed : undefined; }
