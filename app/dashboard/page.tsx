@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { HealthCards, NeedsAttention, PeriodProgress, ProductionPerformance, TodayPlanCard, type HealthCard, type HealthTone, type PerformancePoint } from "@/components/dashboard/ProjectHealthDashboard";
+import { EarnedValueChart } from "@/components/dashboard/EarnedValueChart";
 import { buildDashboardData, classifyDashboardBlocker, dashboardRange, dashboardStartDate, type DashboardFilters, type DashboardPeriod, type DatedDashboardEvent } from "@/lib/dashboard";
+import { buildEarnedValueData } from "@/lib/earnedValue";
 import { effectiveConstraintRag, type ConstraintActivityLink, type ConstraintRecord } from "@/lib/constraints";
 import { buildEvidenceForecast } from "@/lib/forecastRecovery";
 import { getActiveDate, getActiveProject, getActiveProjectId, loadSiteDaysBetween } from "@/lib/storage";
@@ -57,6 +59,7 @@ export default function DashboardPage() {
   const selectedActivities = useMemo(() => programme.filter((row) => (!filters.productType || row.productType === filters.productType) && (!filters.elevation || row.elevation === filters.elevation)), [filters.elevation, filters.productType, programme]);
   const selectedProductTypes = unique(selectedActivities.map((row) => row.productType));
   const data = useMemo(() => selectedDate ? buildDashboardData({ period, selectedDate, customStart, programme, events, filters, productivityFactorThresholds: project?.productivityFactorThresholds }) : null, [customStart, events, filters, period, programme, project?.productivityFactorThresholds, selectedDate]);
+  const earnedValue = useMemo(() => selectedDate ? buildEarnedValueData({ programme, events, reportingDate: selectedDate, filters }) : null, [events, filters, programme, selectedDate]);
   const forecasts = useMemo(() => !selectedDate ? [] : selectedActivities.map((activity) => {
     const disruptions = events.filter(({ event }) => event.type === "disruption" && event.programmeActivityId === activity.programmeActivityId);
     const disrupted = new Set(disruptions.map((row) => row.date));
@@ -86,7 +89,6 @@ export default function DashboardPage() {
 
   const cards: HealthCard[] = [
     { title: "Programme", value: programmeTone === "neutral" ? "Status unavailable" : programmeTone === "red" ? `${data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0} overdue activities` : "On programme dates", detail: "Published programme status", tone: programmeTone, href: "/programme" },
-    { title: "Productivity Factor", value: productivity === null ? (selectedProductTypes.length > 1 ? "— Mixed work types" : "— No productivity actuals") : `PF ${format(productivity, 2)}`, detail: productivity === null ? (selectedProductTypes.length > 1 ? "Select a product type to analyse" : "Actual man-days ÷ earned man-days") : `${format(Math.abs(productivity-1)*100)}% ${productivity <= 1 ? "fewer" : "more"} man-days consumed than earned`, tone: productivityTone, href: "/reports", support: productivity===null?undefined:[{label:"Earned MD",value:data.kpis.earnedManDays===null?"—":format(data.kpis.earnedManDays,2)},{label:"Actual MD",value:data.kpis.actualManDays===null?"—":format(data.kpis.actualManDays,2)},{label:"Variance",value:data.kpis.manDayVariance===null?"—":`${data.kpis.manDayVariance>=0?"+":""}${format(data.kpis.manDayVariance,2)} MD`}] },
     { title: "Constraints", value: `${openConstraints.length} Open · ${blocking.length} Blocking`, detail: `${redConstraints.length} Red constraint${redConstraints.length === 1 ? "" : "s"}`, tone: constraintTone, href: "/constraints" },
     { title: "Disruption", value: data.kpis.lostHours === null ? "No disruption recorded" : `${format(data.kpis.lostHours)} labour hrs`, detail: disruptionPercent === null ? "Recorded labour share unavailable" : `${format(disruptionPercent)}% of recorded productive + lost hours`, tone: disruptionTone, href: "/timeline" },
     { title: "Forecast", value: forecasts.length ? `${lateForecasts.length} activities forecast late` : "Forecast unavailable", detail: lateForecasts[0] ? `Worst: +${format(lateForecasts[0].forecast.likely.variance ?? 0, 0)} working days` : "No evidence-led late forecast", tone: !forecasts.length ? "neutral" : lateForecasts.length ? "red" : "green", href: "/forecast" },
@@ -113,8 +115,6 @@ export default function DashboardPage() {
     <header className="health-header"><div><p className="eyebrow">Project health</p><h1>Project Health</h1><p>{project?.name ?? "Project"} · {range.start} to {range.end}</p></div></header>
     {loading && <p className="dashboard-notice">Loading project health…</p>}{error && <p className="dashboard-notice error" role="alert">{error}</p>}
     <TodayPlanCard count={todayPlan.length} ready={todayPlan.filter(row=>row.readiness_rag==="GREEN").length} amber={todayPlan.filter(row=>row.readiness_rag==="AMBER").length} red={todayPlan.filter(row=>row.readiness_rag==="RED").length} target={planUnits.length===1?todayPlan.reduce((sum,row)=>sum+row.target_quantity,0):null} unit={planUnits[0]}/>
-    <HealthCards cards={cards}/>
-    <PeriodProgress planned={data.kpis.expected} actual={data.kpis.achieved} unit={data.unit} tone={progressTone} mixed={!reliableQuantity}/>
     <section className="health-compact-filters" aria-label="Production performance filters">
       <strong>Production performance</strong>
       <label>Period<select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}><option value="overall">Whole Project / From Start</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="custom">Custom Date Range</option></select></label>
@@ -125,6 +125,9 @@ export default function DashboardPage() {
       <label>Gang<select value={filters.gang} onChange={(event) => setFilters((current) => ({ ...current, gang: event.target.value }))}><option value="">All</option>{gangs.map((value) => <option key={value}>{value}</option>)}</select></label>
       {(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}
     </section>
+    {earnedValue && <EarnedValueChart data={earnedValue}/>}
+    <HealthCards cards={cards}/>
+    <PeriodProgress planned={data.kpis.expected} actual={data.kpis.achieved} unit={data.unit} tone={progressTone} mixed={!reliableQuantity}/>
     <ProductionPerformance view={performanceView} setView={changePerformanceView} points={performancePoints} unit={data.unit} quantityCompatible={reliableQuantity} productivityCompatible={reliableProductivity}/>
     <NeedsAttention items={ranked}/>
   </div></main>;
