@@ -29,6 +29,11 @@ export type EarnedValueData = {
   unallocatedHours: number;
 };
 
+export type EarnedValueStatus = {
+  schedule: "behind" | "ahead" | "on-plan" | "unavailable";
+  productivity: "loss" | "favourable" | "on-target" | "unavailable";
+};
+
 const DAY = 86_400_000;
 const dateValue = (date: string) => new Date(`${date}T12:00:00Z`);
 const isoDate = (date: Date) => date.toISOString().slice(0, 10);
@@ -88,6 +93,16 @@ export function calculateEarnedValueMetrics(plannedHours: number | null, earnedH
     labourVariance: earnedHours !== null && actualHours !== null ? earnedHours - actualHours : null,
     programmeVariance: earnedHours !== null && plannedHours !== null ? earnedHours - plannedHours : null,
   };
+}
+
+export function earnedValueStatus(metrics: EarnedValueMetrics): EarnedValueStatus {
+  const schedule = metrics.earnedHours === null || metrics.plannedHours === null ? "unavailable"
+    : metrics.earnedHours < metrics.plannedHours ? "behind"
+    : metrics.earnedHours > metrics.plannedHours ? "ahead" : "on-plan";
+  const productivity = metrics.earnedHours === null || metrics.actualHours === null ? "unavailable"
+    : metrics.actualHours > metrics.earnedHours ? "loss"
+    : metrics.earnedHours > metrics.actualHours ? "favourable" : "on-target";
+  return { schedule, productivity };
 }
 
 export function buildEarnedValueData(args: {

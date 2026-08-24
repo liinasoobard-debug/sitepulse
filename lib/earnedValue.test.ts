@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildEarnedValueData, calculateEarnedValueMetrics } from "./earnedValue.ts";
+import { buildEarnedValueData, calculateEarnedValueMetrics, earnedValueStatus } from "./earnedValue.ts";
 import type { DashboardFilters } from "./dashboard.ts";
 import type { ProgrammeActivity, SiteDay, TimelineEvent } from "../types/site.ts";
 
@@ -10,9 +10,17 @@ const day: SiteDay = { date: "2026-08-03", attendance: [], crews: [{ id: "g1", n
 const work = (id: string, date: string, quantity: number | undefined, hours: number, programmeActivityId: string | undefined = "A1") => ({ date, day: { ...day, date }, event: { id, programmeActivityId, crewId: "g1", time: "08:00", duration: hours * 60, title: "Work", type: "work", status: "completed", quantity, affectedOperativeIds: ["o1"] } satisfies TimelineEvent });
 
 test("calculates the requested earned-value example and safe zero denominators", () => {
-  assert.deepEqual(calculateEarnedValueMetrics(550, 500, 600), { plannedHours: 550, earnedHours: 500, actualHours: 600, productivityFactor: 500 / 600, schedulePerformance: 500 / 550, labourVariance: -100, programmeVariance: -50 });
+  const metrics = calculateEarnedValueMetrics(550, 500, 600);
+  assert.deepEqual(metrics, { plannedHours: 550, earnedHours: 500, actualHours: 600, productivityFactor: 500 / 600, schedulePerformance: 500 / 550, labourVariance: -100, programmeVariance: -50 });
+  assert.deepEqual(earnedValueStatus(metrics), { schedule: "behind", productivity: "loss" });
   assert.equal(calculateEarnedValueMetrics(550, 500, 0).productivityFactor, null);
   assert.equal(calculateEarnedValueMetrics(0, 500, 600).schedulePerformance, null);
+});
+
+test("classifies favourable and equal earned-value positions", () => {
+  assert.deepEqual(earnedValueStatus(calculateEarnedValueMetrics(400, 500, 450)), { schedule: "ahead", productivity: "favourable" });
+  assert.deepEqual(earnedValueStatus(calculateEarnedValueMetrics(500, 500, 500)), { schedule: "on-plan", productivity: "on-target" });
+  assert.deepEqual(earnedValueStatus(calculateEarnedValueMetrics(null, null, null)), { schedule: "unavailable", productivity: "unavailable" });
 });
 
 test("orders weekly points and accumulates planned, earned and allocated actual hours", () => {

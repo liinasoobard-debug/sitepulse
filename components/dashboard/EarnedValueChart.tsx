@@ -1,13 +1,14 @@
 "use client";
 
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { EarnedValueData, EarnedValuePoint } from "@/lib/earnedValue";
+import { earnedValueStatus, type EarnedValueData, type EarnedValuePoint } from "@/lib/earnedValue";
 
 const hours = (value: number | null) => value === null ? "—" : `${value.toLocaleString("en-GB", { maximumFractionDigits: 1 })} hrs`;
 const ratio = (value: number | null) => value === null ? "—" : value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function EarnedValueChart({ data }: { data: EarnedValueData }) {
   const canRender = data.missing.length === 0 && data.points.length > 0;
+  const status = earnedValueStatus(data.metrics);
   return <section className="earned-value-card" aria-labelledby="earned-value-title">
     <header className="earned-value-header">
       <div><p className="eyebrow">Earned hours</p><h2 id="earned-value-title">Project Progress &amp; Labour Performance</h2><p>Cumulative weekly labour hours through the reporting date.</p></div>
@@ -34,7 +35,12 @@ export function EarnedValueChart({ data }: { data: EarnedValueData }) {
           <Line type="monotone" dataKey="actualHours" name="Actual Labour Hours" stroke="#c77b08" strokeWidth={2.5} dot={false} />
         </LineChart></ResponsiveContainer>
       </div>
-      <div className="earned-value-guide" aria-label="How to interpret the graph"><span><b>Earned below Planned</b> Behind programme</span><span><b>Earned above Planned</b> Ahead of programme</span><span><b>Actual above Earned</b> Productivity loss</span><span><b>Earned above Actual</b> Favourable productivity</span></div>
+      <div className="earned-value-guide" aria-label="Current labour performance status">
+        <span className={status.schedule === "behind" ? "active adverse" : ""} aria-current={status.schedule === "behind" ? "true" : undefined}><b>Earned below Planned</b>Behind programme{status.schedule === "behind" && <em>Current</em>}</span>
+        <span className={status.schedule === "ahead" ? "active favourable" : ""} aria-current={status.schedule === "ahead" ? "true" : undefined}><b>Earned above Planned</b>Ahead of programme{status.schedule === "ahead" && <em>Current</em>}</span>
+        <span className={status.productivity === "loss" ? "active adverse" : ""} aria-current={status.productivity === "loss" ? "true" : undefined}><b>Actual above Earned</b>Productivity loss{status.productivity === "loss" && <em>Current</em>}</span>
+        <span className={status.productivity === "favourable" ? "active favourable" : ""} aria-current={status.productivity === "favourable" ? "true" : undefined}><b>Earned above Actual</b>Favourable productivity{status.productivity === "favourable" && <em>Current</em>}</span>
+      </div>
     </>}
   </section>;
 }
