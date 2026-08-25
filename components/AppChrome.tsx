@@ -2,24 +2,20 @@
 
 import { usePathname } from "next/navigation";
 import BottomNav from "@/components/BottomNav";
-import DateSelector from "@/components/DateSelector";
 import ProjectSelector from "@/components/ProjectSelector";
 import SharedDataSync from "@/components/SharedDataSync";
-import ActivityTracker from "@/components/ActivityTracker";
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLogin = pathname === "/login" || pathname === "/signin";
-  const usesDailyRecords = ["/daily-plan", "/attendance", "/crews", "/timeline"].some((route) => pathname.startsWith(route));
   if (isLogin) return children;
   return <SharedDataSync>
-    <ActivityTracker />
     <header className="sitepulse-app-header">
       <a className="sitepulse-brand" href="/dashboard">SitePulse</a>
-      <span>Construction production control</span>
+      <span>Programme and labour control</span>
     </header>
     <BottomNav />
-    <div className="context-controls"><ProjectSelector /><DateSelector showDuplicate={usesDailyRecords} /></div>
+    <div className="context-controls"><ProjectSelector /></div>
     <div className="sitepulse-page-content">{children}</div>
   </SharedDataSync>;
 }

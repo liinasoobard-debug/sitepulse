@@ -2,54 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 
 const items = [
-  { href: "/dashboard", label: "Dashboard", icon: "▦" },
-  { href: "/attendance", label: "Attendance", icon: "👷" },
-  { href: "/crews", label: "Gangs", icon: "👥" },
-  { href: "/programme", label: "Programme", icon: "📋" },
-  { href: "/readiness", label: "Readiness", icon: "✓" },
-  { href: "/daily-plan", label: "Today / Daily Plan", icon: "☀" },
-  { href: "/timeline", label: "Timeline", icon: "◷" },
-  { href: "/evidence", label: "Evidence", icon: "▨" },
-  { href: "/reports", label: "Reports", icon: "▤" },
-  { href: "/forecast", label: "Forecast", icon: "↗" },
-  { href: "/materials", label: "Materials", icon: "▧" },
-  { href: "/constraints", label: "Constraints", icon: "⚠" },
-  { href: "/plant", label: "Plant", icon: "▣" },
-  { href: "/activity-log", label: "Activity Log", icon: "◉" },
-  { href: "/settings", label: "Settings", icon: "⚙" },
+  { href: "/dashboard", label: "Overview", icon: "◫" },
+  { href: "/programme", label: "Programme", icon: "▤" },
+  { href: "/daily-update", label: "Daily Update", icon: "+" },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const [moreOpen, setMoreOpen] = useState(false);
-  const mobileItems = items.filter((item) => ["/dashboard", "/daily-plan", "/timeline"].includes(item.href));
-
-  const link = (item: typeof items[number], mobile = false) => {
-    const isActive = pathname.startsWith(item.href);
-    return <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)} className={`${mobile ? "mobile-nav-item" : "primary-nav-item"} ${isActive ? "active" : ""}`}>
-      <span className="bottom-nav-icon" aria-hidden="true">{item.icon}</span>
-      <span className="bottom-nav-label">{item.label}</span>
-    </Link>;
-  };
-
-  return (
-    <>
-      <nav className="primary-nav" aria-label="Main navigation">{items.map((item) => link(item))}</nav>
-      <nav className="mobile-nav" aria-label="Mobile navigation">
-        {mobileItems.map((item) => link(item, true))}
-        <button type="button" className={`mobile-nav-item ${moreOpen ? "active" : ""}`} onClick={() => setMoreOpen(true)} aria-expanded={moreOpen} aria-controls="sitepulse-all-tabs">
-          <span className="bottom-nav-icon" aria-hidden="true">•••</span><span className="bottom-nav-label">More</span>
-        </button>
-      </nav>
-      {moreOpen && <div className="mobile-nav-backdrop" onClick={() => setMoreOpen(false)}>
-        <section id="sitepulse-all-tabs" className="mobile-nav-sheet" role="dialog" aria-modal="true" aria-label="All SitePulse tabs" onClick={(event) => event.stopPropagation()}>
-          <header><strong>All SitePulse tabs</strong><button type="button" onClick={() => setMoreOpen(false)} aria-label="Close navigation">×</button></header>
-          <div>{items.map((item) => link(item))}</div>
-        </section>
-      </div>}
-    </>
-  );
+  const links = (mobile: boolean) => items.map((item) => <Link key={item.href} href={item.href} className={`${mobile ? "mobile-nav-item" : "primary-nav-item"} ${pathname.startsWith(item.href) ? "active" : ""}`}><span className="bottom-nav-icon" aria-hidden="true">{item.icon}</span><span className="bottom-nav-label">{item.label}</span></Link>);
+  return <><nav className="primary-nav" aria-label="Main navigation">{links(false)}</nav><nav className="mobile-nav" aria-label="Mobile navigation">{links(true)}</nav></>;
 }

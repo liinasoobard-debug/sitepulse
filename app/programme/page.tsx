@@ -5,18 +5,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductivityRagBadge from "@/components/ProductivityRagBadge";
 import ProgrammeGantt from "@/components/programme/ProgrammeGantt";
 import { productivityPerformance, productivityRag, productivityRagLabels, ragDistribution, type ProductivityRag } from "@/lib/productivityRag";
-import { getActiveDate, getActiveProject, getActiveProjectId, updateProject } from "@/lib/storage";
+import { getActiveDate, getActiveProject, getActiveProjectId, setActiveDate, updateProject } from "@/lib/storage";
 import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
 import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import {
   loadProgrammeImports,
   loadActualProductivity,
-  loadProgrammeOperationalMetrics,
   loadProjectRole,
   loadPublishedProgramme,
   updateProgrammeBaseline,
 } from "@/lib/supabase/programmeData";
 import type { ProgrammeOperationalMetric } from "@/lib/supabase/programmeData";
+import { loadV2DailyRecords } from "@/lib/supabase/v2Data";
+import { v2Productivity } from "@/lib/v2Productivity";
 import type { ProgrammeActivity } from "@/types/site";
 
 type ImportIssue = {
@@ -107,13 +108,14 @@ export default function ProgrammePage() {
     setLoading(true);
     try {
       const projectId = getActiveProjectId();
-      const [programme, history, currentRole, productivity, constraintRows, links] = await Promise.all([
+      const [programme, history, currentRole, productivity, constraintRows, links, dailyRecords] = await Promise.all([
         loadPublishedProgramme(projectId),
         loadProgrammeImports(projectId),
         loadProjectRole(projectId),
         loadActualProductivity(projectId),
         loadConstraints(projectId),
         loadConstraintLinks(projectId),
+        loadV2DailyRecords(projectId),
       ]);
       setActivities(programme.activities);
       setDataDate(getActiveDate());
@@ -123,7 +125,15 @@ export default function ProgrammePage() {
       setActualProductivity(productivity);
       setConstraints(constraintRows);
       setConstraintLinks(links);
-      setOperationalMetrics(await loadProgrammeOperationalMetrics(projectId, programme.activities, getActiveProject()?.productivityFactorThresholds));
+      const selectedDate = getActiveDate();
+      const shiftHours = getActiveProject()?.hoursPerManDay ?? 8;
+      setOperationalMetrics(Object.fromEntries(programme.activities.map((activity) => {
+        const matching = dailyRecords.filter((row) => row.activityId === activity.programmeActivityId && row.date <= selectedDate);
+        const quantity = matching.reduce((sum, row) => sum + row.quantity, 0);
+        const metrics = v2Productivity(activity, quantity, matching.reduce((sum, row) => sum + row.labourHours, 0), shiftHours);
+        const rag = metrics.productivityFactor === null ? (metrics.targetProductivity === null ? "baseline-missing" : "no-actuals") : metrics.productivityFactor >= 1 ? "green" : metrics.productivityFactor >= .9 ? "amber" : "red";
+        return [activity.programmeActivityId, { quantity, earnedManDays: metrics.earnedManDays, actualManDays: metrics.actualManDays, manDayVariance: metrics.earnedManDays !== null && metrics.actualManDays !== null ? metrics.earnedManDays - metrics.actualManDays : null, productivityFactor: metrics.productivityFactor, rag, actualCrew: null } satisfies ProgrammeOperationalMetric];
+      })));
       setError("");
     } catch (loadError) {
       setError(
@@ -322,16 +332,13 @@ export default function ProgrammePage() {
   return (
     <main className="timeline-page programme-page">
       <section className="timeline-panel">
-        <header className="timeline-header">
+        <header className="timeline-header v2-hero">
           <div>
-            <p className="eyebrow">Project Setup</p>
+            <p className="eyebrow">Programme</p>
             <h1>Programme</h1>
-            <p>Published programme data is shared securely through Supabase.</p>
+            <p>See what should be happening and how current activities are performing.</p>
           </div>
-          <div className="page-actions" style={{ display: "flex", gap: 10 }}>
-            <Link href="/crews" className="secondary-button">Gangs</Link>
-            <Link href="/timeline" className="secondary-button">Timeline</Link>
-          </div>
+          <label>Selected date<input type="date" value={dataDate} onChange={(event) => { setDataDate(event.target.value); setActiveDate(event.target.value); }} /></label>
         </header>
 
         <ProgrammeGantt
@@ -344,6 +351,8 @@ export default function ProgrammePage() {
           loading={loading}
         />
 
+        <details className="programme-admin-details v2-import-details">
+          <summary>Programme import and setup</summary>
         <section style={{ padding: 20, border: "1px solid #d7dde3", borderRadius: 18, marginBottom: 20, background: "#f7f9fa" }}>
           <div className="programme-import-heading"><div><h2>Import Programme</h2><p>Choose a source. Every workbook is validated and mapped into the same SitePulse programme model before publication.</p></div><div><strong>Programme Source</strong><span>{publishedSource ? sourceLabels[publishedSource] ?? String(publishedImport?.source_type) : "No published programme"}</span>{publishedImport?.imported_at ? <small>Last import: {new Date(String(publishedImport.imported_at)).toLocaleString("en-GB")}</small> : null}</div></div>
 
@@ -456,6 +465,7 @@ export default function ProgrammePage() {
             </table>
           </div>
         </section>
+        </details>
 
         {edit && (
           <section style={{ padding: 16, border: "1px solid #d7dde3", borderRadius: 12, marginBottom: 16 }}>

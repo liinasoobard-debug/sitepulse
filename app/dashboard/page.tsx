@@ -1,134 +1,61 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { HealthCards, NeedsAttention, PeriodProgress, ProductionPerformance, TodayPlanCard, type HealthCard, type HealthTone, type PerformancePoint } from "@/components/dashboard/ProjectHealthDashboard";
-import { EarnedValueChart } from "@/components/dashboard/EarnedValueChart";
-import { buildDashboardData, classifyDashboardBlocker, dashboardRange, dashboardStartDate, type DashboardFilters, type DashboardPeriod, type DatedDashboardEvent } from "@/lib/dashboard";
-import { buildEarnedValueData } from "@/lib/earnedValue";
-import { effectiveConstraintRag, type ConstraintActivityLink, type ConstraintRecord } from "@/lib/constraints";
-import { buildEvidenceForecast } from "@/lib/forecastRecovery";
-import { getActiveDate, getActiveProject, getActiveProjectId, loadSiteDaysBetween } from "@/lib/storage";
-import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
+import { getActiveDate, getActiveProject, getActiveProjectId, setActiveDate } from "@/lib/storage";
 import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
-import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
-import { loadDailyPlan } from "@/lib/supabase/dailyPlanData";
-import type { DailyPlanAllocation } from "@/lib/dailyPlan";
-import type { ProgrammeActivity, Project, SiteDay } from "@/types/site";
+import { loadV2DailyRecords } from "@/lib/supabase/v2Data";
+import { plannedQuantityToDate, v2Productivity, type V2DailyRecord } from "@/lib/v2Productivity";
+import type { ProgrammeActivity, Project } from "@/types/site";
 
-type Attention = { tone: "red" | "amber"; text: string; href: string; priority: number };
-const blankFilters: DashboardFilters = { building: "", elevation: "", level: "", activity: "", gang: "", unit: "", activityStatus: "", blockerCategory: "", productivityRag: "", productType: "" };
-const format = (value: number, digits = 1) => value.toLocaleString("en-GB", { maximumFractionDigits: digits });
-const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
+const number = (value: number, digits = 1) => value.toLocaleString("en-GB", { maximumFractionDigits: digits });
 
-export default function DashboardPage() {
-  const [period, setPeriod] = useState<DashboardPeriod>("overall");
-  const [selectedDate, setSelectedDate] = useState("");
-  const [customStart, setCustomStart] = useState("");
-  const [filters, setFilters] = useState<DashboardFilters>(blankFilters);
-  const [programme, setProgramme] = useState<ProgrammeActivity[]>([]);
-  const [events, setEvents] = useState<DatedDashboardEvent[]>([]);
-  const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
-  const [constraintLinks, setConstraintLinks] = useState<ConstraintActivityLink[]>([]);
+export default function OverviewPage() {
+  const [date, setDate] = useState("");
   const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [activities, setActivities] = useState<ProgrammeActivity[]>([]);
+  const [records, setRecords] = useState<V2DailyRecord[]>([]);
   const [error, setError] = useState("");
-  const [todayPlan, setTodayPlan] = useState<DailyPlanAllocation[]>([]);
-  const [performanceView, setPerformanceView] = useState("Daily Output");
 
-  useEffect(() => { queueMicrotask(() => { const today=getActiveDate();setSelectedDate(today);setCustomStart(today); }); }, []);
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true); setError(""); const projectId = getActiveProjectId(); setProject(getActiveProject());
-      try {
-        const [published, timeline, constraintRows, links, dailyPlan] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadConstraints(projectId), loadConstraintLinks(projectId), loadDailyPlan(projectId, getActiveDate())]);
-        if (cancelled) return;
-        const days = new Map<string, SiteDay>(loadSiteDaysBetween("1000-01-01", "9999-12-31", projectId).map((day) => [day.date, day]));
-        timeline.forEach(({ date }) => { if (!days.has(date)) days.set(date, { date, attendance: [], crews: [], events: [] }); });
-        setProgramme(published.activities); setEvents(timeline.map(({ date, event }) => ({ date, event, day: days.get(date)! }))); setConstraints(constraintRows); setConstraintLinks(links); setTodayPlan(dailyPlan.allocations);
-      } catch (caught) { if (!cancelled) setError(caught instanceof Error ? caught.message : "Unable to load dashboard data."); }
-      finally { if (!cancelled) setLoading(false); }
-    }
-    void load(); const refresh = () => void load(); window.addEventListener("sitepulse-project-changed", refresh); window.addEventListener("sitepulse-day-changed", refresh);
-    return () => { cancelled = true; window.removeEventListener("sitepulse-project-changed", refresh); window.removeEventListener("sitepulse-day-changed", refresh); };
+    queueMicrotask(() => { setDate(getActiveDate()); setProject(getActiveProject()); });
+    Promise.all([loadPublishedProgramme(getActiveProjectId()), loadV2DailyRecords(getActiveProjectId())])
+      .then(([programme, daily]) => { setActivities(programme.activities); setRecords(daily); })
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load overview."));
   }, []);
 
-  const productTypes = useMemo(() => unique(programme.map((row) => row.productType)), [programme]);
-  const areas = useMemo(() => unique(programme.filter((row) => !filters.productType || row.productType === filters.productType).map((row) => row.elevation)), [filters.productType, programme]);
-  const gangs = useMemo(() => unique(events.map(({ day, event }) => day.crews?.find((crew) => crew.id === event.crewId)?.name)), [events]);
-  const selectedActivities = useMemo(() => programme.filter((row) => (!filters.productType || row.productType === filters.productType) && (!filters.elevation || row.elevation === filters.elevation)), [filters.elevation, filters.productType, programme]);
-  const selectedProductTypes = unique(selectedActivities.map((row) => row.productType));
-  const data = useMemo(() => selectedDate ? buildDashboardData({ period, selectedDate, customStart, programme, events, filters, productivityFactorThresholds: project?.productivityFactorThresholds }) : null, [customStart, events, filters, period, programme, project?.productivityFactorThresholds, selectedDate]);
-  const earnedValue = useMemo(() => selectedDate ? buildEarnedValueData({ programme, events, reportingDate: selectedDate, filters }) : null, [events, filters, programme, selectedDate]);
-  const forecasts = useMemo(() => !selectedDate ? [] : selectedActivities.map((activity) => {
-    const disruptions = events.filter(({ event }) => event.type === "disruption" && event.programmeActivityId === activity.programmeActivityId);
-    const disrupted = new Set(disruptions.map((row) => row.date));
-    const production = events.filter(({ event }) => event.type === "work" && event.status === "completed" && event.programmeActivityId === activity.programmeActivityId && typeof event.quantity === "number").map(({ date, event }) => ({ date, quantity: Number(event.quantity), operatives: new Set(event.affectedOperativeIds ?? []).size || Number(event.numberOfOperatives ?? 0), disrupted: disrupted.has(date) }));
-    return { activity, forecast: buildEvidenceForecast({ id: activity.programmeActivityId, name: activity.activity, plannedQuantity: activity.plannedQuantity, plannedFinish: activity.plannedFinish, plannedManDayProductivity: activity.plannedManDayProductivity }, selectedDate, production, disruptions.map(({ date, event }) => ({ date, category: classifyDashboardBlocker(event), lostLabourHours: Number(event.lostLabourHours ?? 0) }))) };
-  }).filter(({ forecast }) => forecast.likely.variance !== null), [events, selectedActivities, selectedDate]);
+  const summary = useMemo(() => {
+    const throughDate = records.filter((record) => record.date <= date);
+    const today = records.filter((record) => record.date === date);
+    const totalHours = throughDate.reduce((sum, record) => sum + record.labourHours, 0);
+    const positions = activities.map((activity) => {
+      const quantity = throughDate.filter((row) => row.activityId === activity.programmeActivityId).reduce((total, row) => total + row.quantity, 0);
+      const plannedQuantity = plannedQuantityToDate(activity, date);
+      const activityWeight = Number(activity.plannedManDays ?? 0) || 1;
+      return { activity, quantity, plannedQuantity, activityWeight };
+    });
+    const weighted = positions.filter(({ activity }) => activity.plannedQuantity > 0).reduce((total, row) => ({ planned: total.planned + Math.min(1, row.plannedQuantity / row.activity.plannedQuantity) * row.activityWeight, actual: total.actual + Math.min(1, row.quantity / row.activity.plannedQuantity) * row.activityWeight, weight: total.weight + row.activityWeight }), { planned: 0, actual: 0, weight: 0 });
+    const attention = positions.filter((row) => row.plannedQuantity > row.quantity).map(({ activity, quantity, plannedQuantity }) => ({ activity, variance: quantity - plannedQuantity })).sort((a, b) => a.variance - b.variance).slice(0, 5);
+    const earned = activities.reduce((sum, activity) => { const quantity = throughDate.filter((row) => row.activityId === activity.programmeActivityId).reduce((total, row) => total + row.quantity, 0); return sum + (v2Productivity(activity, quantity, 0, project?.hoursPerManDay ?? 8).earnedManDays ?? 0); }, 0);
+    const actual = totalHours / (project?.hoursPerManDay ?? 8);
+    const constrained = [...new Set(throughDate.filter((row) => row.constrained).map((row) => row.activityId))];
+    return { earned, actual, pf: actual > 0 ? earned / actual : null, plannedProgress: weighted.weight ? weighted.planned / weighted.weight * 100 : null, actualProgress: weighted.weight ? weighted.actual / weighted.weight * 100 : null, today, constrained, attention };
+  }, [activities, date, project?.hoursPerManDay, records]);
 
-  if (!selectedDate || !data) return null;
-  const range = dashboardRange(period, selectedDate, dashboardStartDate(programme, events, selectedDate), customStart);
-  const reliableQuantity = !data.mixedUnits;
-  const reliableProductivity = reliableQuantity && selectedProductTypes.length <= 1;
-  const progress = reliableQuantity ? data.kpis.achievement : null;
-  const progressTone: HealthTone = progress === null ? "neutral" : progress >= 100 ? "green" : progress >= 90 ? "amber" : "red";
-  const productivity = reliableProductivity ? data.kpis.productivityFactor : null;
-  const productivityTone: HealthTone = productivity === null ? "neutral" : data.kpis.productivityFactorRag === "green" ? "green" : data.kpis.productivityFactorRag === "amber" ? "amber" : data.kpis.productivityFactorRag === "red" ? "red" : "neutral";
-  const lateForecasts = forecasts.filter(({ forecast }) => (forecast.likely.variance ?? 0) > 0).sort((a, b) => (b.forecast.likely.variance ?? 0) - (a.forecast.likely.variance ?? 0));
-  const programmeTone: HealthTone = programme.length ? (data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0) > 0 ? "red" : "green" : "neutral";
-  const openConstraints = constraints.filter((row) => ["OPEN", "ACTIONED / MONITORING"].includes(row.status));
-  const redConstraints = openConstraints.filter((row) => effectiveConstraintRag(row, selectedDate).effective === "RED");
-  const blockingIds = new Set(constraintLinks.filter((row) => ["Blocking Start", "Blocking Progress", "Blocking Completion"].includes(row.blocking_relationship)).map((row) => row.constraint_id));
-  const blocking = openConstraints.filter((row) => blockingIds.has(row.id));
-  const constraintTone: HealthTone = redConstraints.length ? "red" : openConstraints.length || blocking.length ? "amber" : "green";
-  const recordedHours = (data.kpis.productiveHours ?? 0) + (data.kpis.lostHours ?? 0);
-  const disruptionPercent = data.kpis.lostHours !== null && recordedHours ? data.kpis.lostHours / recordedHours * 100 : null;
-  const disruptionTone: HealthTone = data.kpis.lostHours === null ? "green" : disruptionPercent === null ? "neutral" : disruptionPercent >= 10 ? "red" : "amber";
-  const activeChanges = data.changes.filter((row) => !["closed", "completed"].includes(row.status.toLowerCase()));
+  function changeDate(next: string) { setDate(next); setActiveDate(next); }
 
-  const cards: HealthCard[] = [
-    { title: "Programme", value: programmeTone === "neutral" ? "Status unavailable" : programmeTone === "red" ? `${data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0} overdue activities` : "On programme dates", detail: "Published programme status", tone: programmeTone, href: "/programme" },
-    { title: "Constraints", value: `${openConstraints.length} Open · ${blocking.length} Blocking`, detail: `${redConstraints.length} Red constraint${redConstraints.length === 1 ? "" : "s"}`, tone: constraintTone, href: "/constraints" },
-    { title: "Disruption", value: data.kpis.lostHours === null ? "No disruption recorded" : `${format(data.kpis.lostHours)} labour hrs`, detail: disruptionPercent === null ? "Recorded labour share unavailable" : `${format(disruptionPercent)}% of recorded productive + lost hours`, tone: disruptionTone, href: "/timeline" },
-    { title: "Forecast", value: forecasts.length ? `${lateForecasts.length} activities forecast late` : "Forecast unavailable", detail: lateForecasts[0] ? `Worst: +${format(lateForecasts[0].forecast.likely.variance ?? 0, 0)} working days` : "No evidence-led late forecast", tone: !forecasts.length ? "neutral" : lateForecasts.length ? "red" : "green", href: "/forecast" },
-    { title: "Change", value: activeChanges.length ? `${activeChanges.length} active changes` : "— Exposure not yet available", detail: activeChanges.length ? "Commercial value not recorded" : "No supported commercial exposure", tone: activeChanges.length ? "amber" : "neutral", href: "/reports" },
-  ];
-  const performancePoints: PerformancePoint[] = data.output.map((row,index)=>({label:row.label,start:row.start,end:row.end,plannedOutput:row.expected,actualOutput:row.actual,plannedProductivity:data.productivity[index]?.planned??null,actualProductivity:data.productivity[index]?.actual??null,cumulativePlanned:data.cumulative[index]?.planned??0,cumulativeActual:data.cumulative[index]?.actual??0,productType:row.productTypes,area:filters.elevation,gang:filters.gang,gangSize:row.gangSize,disruptionHours:row.disruptionHours}));
-  const planUnits=unique(todayPlan.map(row=>row.unit));
-  function changePerformanceView(nextView: string) {
-    setPerformanceView(nextView);
-    if (nextView === "Man-Day Productivity" && !filters.productType && productTypes[0]) {
-      setFilters((current) => ({ ...current, productType: productTypes[0], elevation: "" }));
-    }
-  }
-  const attention: Attention[] = [];
-  if (productivity !== null && productivityTone === "red") attention.push({ tone: "red", text: `${filters.productType || "Selected work"} Productivity Factor is ${format(productivity, 2)} — ${format((productivity-1)*100)}% more man-days consumed than earned.`, href: "/reports", priority: 100 });
-  if (lateForecasts[0]) attention.push({ tone: "red", text: `${lateForecasts[0].activity.productType || lateForecasts[0].activity.activity} likely forecast is +${format(lateForecasts[0].forecast.likely.variance ?? 0, 0)} working days.`, href: `/forecast?activity=${encodeURIComponent(lateForecasts[0].activity.programmeActivityId)}`, priority: 95 });
-  if (redConstraints[0]) attention.push({ tone: "red", text: `${redConstraints[0].description}`, href: "/constraints", priority: 92 });
-  else if (blocking.length) attention.push({ tone: "amber", text: `${blocking.length} blocking constraint${blocking.length === 1 ? "" : "s"} affect planned activities.`, href: "/constraints", priority: 85 });
-  if (data.kpis.lostHours) attention.push({ tone: disruptionTone === "red" ? "red" : "amber", text: `${format(data.kpis.lostHours)} disruption labour hours recorded this period.`, href: "/timeline", priority: 70 });
-  if (activeChanges.length) attention.push({ tone: "amber", text: `${activeChanges.length} active change${activeChanges.length === 1 ? "" : "s"} recorded this period.`, href: "/reports", priority: 60 });
-  const ranked = attention.sort((a, b) => b.priority - a.priority).slice(0, 5);
-
-  return <main className="dashboard-page health-dashboard"><div className="dashboard-shell">
-    <header className="health-header"><div><p className="eyebrow">Project health</p><h1>Project Health</h1><p>{project?.name ?? "Project"} · {range.start} to {range.end}</p></div></header>
-    {loading && <p className="dashboard-notice">Loading project health…</p>}{error && <p className="dashboard-notice error" role="alert">{error}</p>}
-    <TodayPlanCard count={todayPlan.length} ready={todayPlan.filter(row=>row.readiness_rag==="GREEN").length} amber={todayPlan.filter(row=>row.readiness_rag==="AMBER").length} red={todayPlan.filter(row=>row.readiness_rag==="RED").length} target={planUnits.length===1?todayPlan.reduce((sum,row)=>sum+row.target_quantity,0):null} unit={planUnits[0]}/>
-    <section className="health-compact-filters" aria-label="Production performance filters">
-      <strong>Production performance</strong>
-      <label>Period<select value={period} onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}><option value="overall">Whole Project / From Start</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="custom">Custom Date Range</option></select></label>
-      {period === "custom" && <label>From<input type="date" value={customStart} max={selectedDate} onChange={(event) => setCustomStart(event.target.value)} /></label>}
-      <label>{period === "overall" ? "To date" : period === "custom" ? "To" : period === "weekly" ? "Week containing" : period === "monthly" ? "Month" : "Date"}<input type={period === "monthly" ? "month" : "date"} min={period === "custom" ? customStart : undefined} value={period === "monthly" ? selectedDate.slice(0,7) : selectedDate} onChange={(event) => setSelectedDate(period === "monthly" ? `${event.target.value}-01` : event.target.value)} /></label>
-      <label>Interface / Product Type<select value={filters.productType} onChange={(event) => setFilters((current) => ({ ...current, productType: event.target.value, elevation: "" }))}><option value="">All interfaces / product types</option>{productTypes.map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label>Area<select value={filters.elevation} onChange={(event) => setFilters((current) => ({ ...current, elevation: event.target.value }))}><option value="">All</option>{areas.map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label>Gang<select value={filters.gang} onChange={(event) => setFilters((current) => ({ ...current, gang: event.target.value }))}><option value="">All</option>{gangs.map((value) => <option key={value}>{value}</option>)}</select></label>
-      {(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}
+  return <main className="v2-page">
+    <header className="v2-hero"><div><p className="eyebrow">Overview</p><h1>{project?.name ?? "SitePulse"}</h1><p>Programme position and today&apos;s production at a glance.</p></div><label>Date<input type="date" value={date} onChange={(event) => changeDate(event.target.value)} /></label></header>
+    {error && <p className="dashboard-notice error" role="alert">{error}</p>}
+    <section className="v2-kpis" aria-label="Project performance">
+      <article><span>Programme position</span><strong>{summary.actualProgress === null || summary.plannedProgress === null ? "—" : summary.actualProgress >= summary.plannedProgress ? "Ahead" : "Behind"}</strong><small>{summary.actualProgress === null || summary.plannedProgress === null ? "Progress unavailable" : `${number(summary.actualProgress)}% actual vs ${number(summary.plannedProgress)}% planned · ${number(summary.actualProgress - summary.plannedProgress)} points`}</small></article>
+      <article><span>Productivity factor</span><strong>{summary.pf === null ? "—" : number(summary.pf, 2)}</strong><small>{summary.pf === null ? "No labour result yet" : summary.pf > 1 ? "Above labour allowance" : summary.pf < 1 ? "Below labour allowance" : "Achieving allowance"}</small></article>
+      <article><span>Labour</span><strong>{number(summary.earned)} earned MD</strong><small>{number(summary.actual)} actual MD · {number(summary.earned - summary.actual)} variance</small></article>
+      <article><span>Constraints</span><strong>{summary.constrained.length}</strong><small>{summary.constrained.length ? "Activities recorded as constrained" : "No constrained activities"}</small></article>
     </section>
-    {earnedValue && <EarnedValueChart data={earnedValue}/>}
-    <HealthCards cards={cards}/>
-    <PeriodProgress planned={data.kpis.expected} actual={data.kpis.achieved} unit={data.unit} tone={progressTone} mixed={!reliableQuantity}/>
-    <ProductionPerformance view={performanceView} setView={changePerformanceView} points={performancePoints} unit={data.unit} quantityCompatible={reliableQuantity} productivityCompatible={reliableProductivity}/>
-    <NeedsAttention items={ranked}/>
-  </div></main>;
+    <section className="v2-grid">
+      <article className="v2-panel"><div className="v2-panel-heading"><div><p className="eyebrow">Today</p><h2>Daily position</h2></div><Link className="primary-button" href="/daily-update">Add update</Link></div>{summary.today.length ? <ul className="v2-list">{summary.today.map((row) => <li key={row.id}><strong>{activities.find((activity) => activity.programmeActivityId === row.activityId)?.activityName ?? row.activityId}</strong><span>{number(row.quantity)} qty · {number(row.labourHours)} hrs</span></li>)}</ul> : <p className="v2-empty">No daily update has been entered for this date.</p>}</article>
+      <article className="v2-panel"><div className="v2-panel-heading"><div><p className="eyebrow">Attention</p><h2>Activities needing attention</h2></div><Link href="/programme">Open programme</Link></div>{summary.attention.length ? <ul className="v2-list">{summary.attention.map(({ activity, variance }) => <li key={activity.id}><strong>{activity.activityName || activity.activity}</strong><span>{number(Math.abs(variance))} {activity.unit} behind</span></li>)}</ul> : <p className="v2-empty">No measurable activities are behind the evenly spread plan.</p>}</article>
+    </section>
+  </main>;
 }
