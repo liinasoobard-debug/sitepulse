@@ -72,6 +72,9 @@ export default function SharedDataSync({ children }: { children: React.ReactNode
         .order("project_id");
       if (membershipError) {
         console.error("Unable to recover project memberships:", membershipError.message);
+        setStatus("offline");
+        setReady(true);
+        return;
       } else {
         const accessibleIds = [...new Set((memberships ?? []).map((row) => String(row.project_id)))];
         const stored = loadProjects();

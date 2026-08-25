@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { getActiveDate, getActiveProject, getActiveProjectId, setActiveDate } from "@/lib/storage";
+import { getActiveDate, getActiveProject, getActiveProjectId, loadSiteDaysBetween, setActiveDate } from "@/lib/storage";
 import { loadV2DailyRecords, loadV2Programme } from "@/lib/supabase/v2Data";
 import { V2_DEMO_PROJECT } from "@/lib/v2Demo";
 import { plannedQuantityToDate, v2Productivity, type V2DailyRecord } from "@/lib/v2Productivity";
@@ -38,8 +38,11 @@ export default function OverviewPage() {
     const attention = positions.filter((row) => row.plannedQuantity > row.quantity).map(({ activity, quantity, plannedQuantity }) => ({ activity, variance: quantity - plannedQuantity })).sort((a, b) => a.variance - b.variance).slice(0, 5);
     const earned = activities.reduce((sum, activity) => { const quantity = throughDate.filter((row) => row.activityId === activity.programmeActivityId).reduce((total, row) => total + row.quantity, 0); return sum + (v2Productivity(activity, quantity, 0, project?.hoursPerManDay ?? 8).earnedManDays ?? 0); }, 0);
     const actual = totalHours / (project?.hoursPerManDay ?? 8);
+    const attendanceHours = loadSiteDaysBetween("1000-01-01", date, getActiveProjectId()).flatMap((day) => day.attendanceImport ?? []).reduce((sum, row) => sum + row.hours, 0);
+    const signedInMd = attendanceHours / (project?.hoursPerManDay ?? 8);
+    const plannedMd = positions.reduce((sum, row) => sum + (row.activity.plannedQuantity > 0 && Number(row.activity.plannedManDays) > 0 ? Math.min(1, row.plannedQuantity / row.activity.plannedQuantity) * Number(row.activity.plannedManDays) : 0), 0);
     const constrained = [...new Set(throughDate.filter((row) => row.constrained).map((row) => row.activityId))];
-    return { earned, actual, pf: actual > 0 ? earned / actual : null, plannedProgress: weighted.weight ? weighted.planned / weighted.weight * 100 : null, actualProgress: weighted.weight ? weighted.actual / weighted.weight * 100 : null, today, constrained, attention };
+    return { earned, actual, signedInMd, plannedMd, unallocatedMd: Math.max(0, signedInMd - actual), pf: actual > 0 ? earned / actual : null, plannedProgress: weighted.weight ? weighted.planned / weighted.weight * 100 : null, actualProgress: weighted.weight ? weighted.actual / weighted.weight * 100 : null, today, constrained, attention };
   }, [activities, date, project?.hoursPerManDay, records]);
 
   function changeDate(next: string) { setDate(next); setActiveDate(next); }
@@ -50,7 +53,7 @@ export default function OverviewPage() {
     <section className="v2-kpis" aria-label="Project performance">
       <article><span>Programme position</span><strong>{summary.actualProgress === null || summary.plannedProgress === null ? "—" : summary.actualProgress >= summary.plannedProgress ? "Ahead" : "Behind"}</strong><small>{summary.actualProgress === null || summary.plannedProgress === null ? "Progress unavailable" : `${number(summary.actualProgress)}% actual vs ${number(summary.plannedProgress)}% planned · ${number(summary.actualProgress - summary.plannedProgress)} points`}</small></article>
       <article><span>Productivity factor</span><strong>{summary.pf === null ? "—" : number(summary.pf, 2)}</strong><small>{summary.pf === null ? "No labour result yet" : summary.pf > 1 ? "Above labour allowance" : summary.pf < 1 ? "Below labour allowance" : "Achieving allowance"}</small></article>
-      <article><span>Labour</span><strong>{number(summary.earned)} earned MD</strong><small>{number(summary.actual)} actual MD · {number(summary.earned - summary.actual)} variance</small></article>
+      <article><span>Labour</span><strong>{number(summary.earned)} earned MD</strong><small>{number(summary.plannedMd)} planned · {number(summary.signedInMd)} signed in · {number(summary.actual)} allocated · {number(summary.unallocatedMd)} unallocated MD</small></article>
       <article><span>Constraints</span><strong>{summary.constrained.length}</strong><small>{summary.constrained.length ? "Activities recorded as constrained" : "No constrained activities"}</small></article>
     </section>
     <section className="v2-grid">

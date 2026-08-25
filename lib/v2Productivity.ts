@@ -1,7 +1,7 @@
 import { plannedWorkingDaysBetween } from "./manDayProductivity.ts";
 import type { ProgrammeActivity } from "../types/site.ts";
 
-export type V2DailyRecord = { id?: string; date: string; activityId: string; quantity: number; labourHours: number; constrained?: boolean; constraintReason?: string; note?: string };
+export type V2DailyRecord = { id?: string; date: string; activityId: string; quantity: number; labourHours: number; men?: number; affectedHours?: number; manualLabour?: boolean; constrained?: boolean; constraintReason?: string; note?: string };
 export type V2Productivity = { targetProductivity: number | null; earnedManDays: number | null; actualManDays: number | null; productivityFactor: number | null };
 
 export function v2Productivity(activity: Pick<ProgrammeActivity, "plannedQuantity" | "plannedManDays" | "budgetLabourHours">, quantity: number, labourHours: number, hoursPerManDay: number): V2Productivity {

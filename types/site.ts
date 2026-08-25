@@ -295,6 +295,7 @@ export interface TimelineEvent {
 export interface SiteDay {
   date: string;
   attendance: AttendanceRecord[];
+  attendanceImport?: Array<{ id: string; date: string; operative: string; hours: number; shift?: string; trade?: string; crew?: string; employer?: string; breakHours?: number }>;
   crews?: Crew[];
   events: TimelineEvent[];
 }
