@@ -16,7 +16,7 @@ import {
   updateProgrammeBaseline,
 } from "@/lib/supabase/programmeData";
 import type { ProgrammeOperationalMetric } from "@/lib/supabase/programmeData";
-import { loadV2DailyRecords } from "@/lib/supabase/v2Data";
+import { loadV2DailyRecords, loadV2Programme } from "@/lib/supabase/v2Data";
 import { v2Productivity } from "@/lib/v2Productivity";
 import type { ProgrammeActivity } from "@/types/site";
 
@@ -78,6 +78,7 @@ export default function ProgrammePage() {
   const [programmeDataDate, setProgrammeDataDate] = useState<string>();
   const [imports, setImports] = useState<Record<string, unknown>[]>([]);
   const [role, setRole] = useState<string>();
+  const [demoMode, setDemoMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -108,6 +109,14 @@ export default function ProgrammePage() {
     setLoading(true);
     try {
       const projectId = getActiveProjectId();
+      const publicProgramme = await loadV2Programme(projectId);
+      if (publicProgramme.demo) {
+        setDemoMode(true);
+        const dailyRecords = await loadV2DailyRecords(projectId);
+        setActivities(publicProgramme.activities); setDataDate("2026-08-25"); setProgrammeDataDate(publicProgramme.dataDate); setImports([]); setRole(undefined); setActualProductivity({}); setConstraints([]); setConstraintLinks([]);
+        setOperationalMetrics(Object.fromEntries(publicProgramme.activities.map((activity) => { const matching = dailyRecords.filter((row) => row.activityId === activity.programmeActivityId && row.date <= "2026-08-25"); const quantity = matching.reduce((sum, row) => sum + row.quantity, 0); const metric = v2Productivity(activity, quantity, matching.reduce((sum, row) => sum + row.labourHours, 0), 8); return [activity.programmeActivityId, { quantity, earnedManDays: metric.earnedManDays, actualManDays: metric.actualManDays, manDayVariance: metric.earnedManDays !== null && metric.actualManDays !== null ? metric.earnedManDays - metric.actualManDays : null, productivityFactor: metric.productivityFactor, rag: metric.productivityFactor === null ? "no-actuals" : metric.productivityFactor >= 1 ? "green" : metric.productivityFactor >= .9 ? "amber" : "red", actualCrew: null } satisfies ProgrammeOperationalMetric]; })));
+        setError(""); setLoading(false); return;
+      }
       const [programme, history, currentRole, productivity, constraintRows, links, dailyRecords] = await Promise.all([
         loadPublishedProgramme(projectId),
         loadProgrammeImports(projectId),
@@ -118,6 +127,7 @@ export default function ProgrammePage() {
         loadV2DailyRecords(projectId),
       ]);
       setActivities(programme.activities);
+      setDemoMode(false);
       setDataDate(getActiveDate());
       setProgrammeDataDate(programme.dataDate);
       setImports(history as Record<string, unknown>[]);
@@ -170,12 +180,23 @@ export default function ProgrammePage() {
   }
 
   async function reviewImport() {
-    if (!selectedFile || !canManage) return;
+    if (!selectedFile) return;
     setBusy(true);
     setError("");
     setMessage("");
     setPreview(null);
     try {
+      if (demoMode) {
+        const XLSX = await import("xlsx");
+        const workbook = XLSX.read(await selectedFile.arrayBuffer(), { type: "array" });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = firstSheet ? XLSX.utils.sheet_to_json<unknown[]>(firstSheet, { header: 1, blankrows: false }) : [];
+        const count = Math.max(0, rows.length - 1);
+        setPreview({ importId: "", status: count ? "draft" : "failed", filename: selectedFile.name, activities: count, relationships: 0, resources: 0, assignments: 0, issues: count ? [] : [{ sheet: workbook.SheetNames[0] || "Workbook", severity: "error", message: "No programme rows were found." }], sourceType: importSource });
+        setMessage(count ? `Sandbox validation found ${count} data rows. Sign in to map and publish the workbook.` : "");
+        return;
+      }
+      if (!canManage) return;
       const form = new FormData();
       form.set("file", selectedFile, selectedFile.name);
       form.set("projectId", getActiveProjectId());
@@ -371,7 +392,7 @@ export default function ProgrammePage() {
                 </select>
               </label>
               <div className="programme-template-actions"><a className="add-event-button" href="/api/programme/template" download="SitePulse-Programme-Template.xlsx">Download SitePulse Programme Template (.xlsx)</a><span>{importSource === "p6-xlsx" ? "Requires TASK; TASKPRED, RSRC and TASKRSRC are supported." : importSource === "asta-xlsx" ? "Use an Asta activity or task export with visible column headings." : "Download the official workbook, complete its programme rows, then upload it below. Budget hours or production rate will calculate the other value."}</span></div>
-              {!canManage && <p style={{ margin: 0, fontWeight: 700 }}>Project membership is required to review and publish a programme.</p>}
+              {!canManage && <p style={{ margin: 0, fontWeight: 700 }}>{demoMode ? "Sandbox mode validates the workbook locally. Sign in to publish it." : "Project membership is required to review and publish a programme."}</p>}
               <label className="attendance-field" style={{ maxWidth: 360 }}>
                 <span>Single building value (optional)</span>
                 <input value={buildingDefault} onChange={(event) => setBuildingDefault(event.target.value)} placeholder="e.g. HBX" />
@@ -389,7 +410,7 @@ export default function ProgrammePage() {
                     onChange={(event) => selectWorkbook(event.target.files?.[0])}
                   />
                 </label>
-                <button type="button" className="secondary-button" style={touchButtonStyle} disabled={!canManage || !selectedFile || busy} onClick={() => void reviewImport()}>
+                <button type="button" className="secondary-button" style={touchButtonStyle} disabled={!selectedFile || busy || (!canManage && !demoMode)} onClick={() => void reviewImport()}>
                   {busy && selectedFile && !preview ? "Reviewing…" : "Review Import"}
                 </button>
                 <button type="button" className="add-event-button" style={{ ...touchButtonStyle, width: "auto" }} disabled={!canManage || busy || preview?.status !== "draft" || !preview.importId} onClick={() => preview && void publish(preview.importId)}>

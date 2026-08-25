@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getActiveDate, getActiveProject, getActiveProjectId, setActiveDate } from "@/lib/storage";
-import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
-import { loadV2DailyRecords } from "@/lib/supabase/v2Data";
+import { loadV2DailyRecords, loadV2Programme } from "@/lib/supabase/v2Data";
+import { V2_DEMO_PROJECT } from "@/lib/v2Demo";
 import { plannedQuantityToDate, v2Productivity, type V2DailyRecord } from "@/lib/v2Productivity";
 import type { ProgrammeActivity, Project } from "@/types/site";
 
@@ -19,8 +19,8 @@ export default function OverviewPage() {
 
   useEffect(() => {
     queueMicrotask(() => { setDate(getActiveDate()); setProject(getActiveProject()); });
-    Promise.all([loadPublishedProgramme(getActiveProjectId()), loadV2DailyRecords(getActiveProjectId())])
-      .then(([programme, daily]) => { setActivities(programme.activities); setRecords(daily); })
+    Promise.all([loadV2Programme(getActiveProjectId()), loadV2DailyRecords(getActiveProjectId())])
+      .then(([programme, daily]) => { setActivities(programme.activities); setRecords(daily); if (programme.demo) { setProject(V2_DEMO_PROJECT); setDate("2026-08-25"); } })
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load overview."));
   }, []);
 

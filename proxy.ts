@@ -6,6 +6,7 @@ const retiredRoutes = ["/activities", "/activity-log", "/attendance", "/constrai
 
 export async function proxy(request: NextRequest) {
   if (retiredRoutes.some((route) => request.nextUrl.pathname === route || request.nextUrl.pathname.startsWith(`${route}/`))) return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (["/", "/dashboard", "/programme", "/daily-update"].includes(request.nextUrl.pathname)) return NextResponse.next({ request });
   return updateSession(request);
 }
 

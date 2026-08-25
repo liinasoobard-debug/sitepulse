@@ -2,8 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getActiveDate, getActiveProject, getActiveProjectId, setActiveDate } from "@/lib/storage";
-import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
-import { loadV2DailyRecords, saveV2DailyRecord } from "@/lib/supabase/v2Data";
+import { loadV2DailyRecords, loadV2Programme, saveV2DailyRecord } from "@/lib/supabase/v2Data";
 import { plannedQuantityToDate, v2Productivity, type V2DailyRecord } from "@/lib/v2Productivity";
 import type { ProgrammeActivity } from "@/types/site";
 
@@ -28,8 +27,8 @@ export default function DailyUpdatePage() {
 
   useEffect(() => {
     queueMicrotask(() => setDate(getActiveDate()));
-    Promise.all([loadPublishedProgramme(getActiveProjectId()), loadV2DailyRecords(getActiveProjectId())])
-      .then(([programme, daily]) => { setActivities(programme.activities); setRecords(daily); setActivityId(programme.activities[0]?.programmeActivityId ?? ""); })
+    Promise.all([loadV2Programme(getActiveProjectId()), loadV2DailyRecords(getActiveProjectId())])
+      .then(([programme, daily]) => { setActivities(programme.activities); setRecords(daily); setActivityId(programme.activities[0]?.programmeActivityId ?? ""); if (programme.demo) setDate("2026-08-25"); })
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load daily update."));
   }, []);
 

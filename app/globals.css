@@ -3192,3 +3192,4 @@ h1 {
 @media(max-width:760px){.v2-page{padding:20px 14px 96px}.v2-hero{display:grid;align-items:stretch}.v2-hero label{min-width:0}.v2-kpis{grid-template-columns:1fr 1fr}.v2-kpis article{min-height:112px;padding:14px}.v2-grid,.v2-daily-form{grid-template-columns:1fr}.v2-field-wide{grid-column:auto}.v2-result dl{grid-template-columns:1fr 1fr}.v2-list li{display:grid}.programme-gantt-v2 .programme-gantt-toolbar{grid-template-columns:1fr 1fr}}
 @media(max-width:430px){.v2-kpis{grid-template-columns:1fr}.v2-result dl{grid-template-columns:1fr 1fr}.programme-gantt-v2 .programme-gantt-toolbar{grid-template-columns:1fr}}
 .v2-position-ahead,.v2-position-complete{color:#18734d}.v2-position-behind{color:#a23128}.v2-position-on{color:#60706c}
+.v2-demo-banner{padding:9px 16px;text-align:center;background:#fff3cd;color:#694f00;font-size:.84rem;font-weight:750}.v2-demo-banner a{color:inherit;font-weight:900}
