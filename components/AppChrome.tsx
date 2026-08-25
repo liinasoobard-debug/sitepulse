@@ -9,8 +9,8 @@ import ActivityTracker from "@/components/ActivityTracker";
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLogin = pathname === "/login";
-  const usesSiteDate = ["/daily-plan", "/attendance", "/crews", "/timeline"].some((route) => pathname.startsWith(route));
+  const isLogin = pathname === "/login" || pathname === "/signin";
+  const usesDailyRecords = ["/daily-plan", "/attendance", "/crews", "/timeline"].some((route) => pathname.startsWith(route));
   if (isLogin) return children;
   return <SharedDataSync>
     <ActivityTracker />
@@ -19,7 +19,7 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
       <span>Construction production control</span>
     </header>
     <BottomNav />
-    <div className="context-controls"><ProjectSelector />{usesSiteDate && <DateSelector />}</div>
+    <div className="context-controls"><ProjectSelector /><DateSelector showDuplicate={usesDailyRecords} /></div>
     <div className="sitepulse-page-content">{children}</div>
   </SharedDataSync>;
 }

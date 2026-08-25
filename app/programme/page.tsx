@@ -3,17 +3,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductivityRagBadge from "@/components/ProductivityRagBadge";
+import ProgrammeGantt from "@/components/programme/ProgrammeGantt";
 import { productivityPerformance, productivityRag, productivityRagLabels, ragDistribution, type ProductivityRag } from "@/lib/productivityRag";
-import { getActiveProject, getActiveProjectId, updateProject } from "@/lib/storage";
+import { getActiveDate, getActiveProject, getActiveProjectId, updateProject } from "@/lib/storage";
 import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
 import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import {
   loadProgrammeImports,
   loadActualProductivity,
+  loadProgrammeOperationalMetrics,
   loadProjectRole,
   loadPublishedProgramme,
   updateProgrammeBaseline,
 } from "@/lib/supabase/programmeData";
+import type { ProgrammeOperationalMetric } from "@/lib/supabase/programmeData";
 import type { ProgrammeActivity } from "@/types/site";
 
 type ImportIssue = {
@@ -69,6 +72,9 @@ export default function ProgrammePage() {
   const [constraints, setConstraints] = useState<ConstraintRecord[]>([]);
   const [constraintLinks, setConstraintLinks] = useState<ConstraintActivityLink[]>([]);
   const [actualProductivity, setActualProductivity] = useState<Record<string, number>>({});
+  const [operationalMetrics, setOperationalMetrics] = useState<Record<string, ProgrammeOperationalMetric>>({});
+  const [dataDate, setDataDate] = useState("");
+  const [programmeDataDate, setProgrammeDataDate] = useState<string>();
   const [imports, setImports] = useState<Record<string, unknown>[]>([]);
   const [role, setRole] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -110,11 +116,14 @@ export default function ProgrammePage() {
         loadConstraintLinks(projectId),
       ]);
       setActivities(programme.activities);
+      setDataDate(getActiveDate());
+      setProgrammeDataDate(programme.dataDate);
       setImports(history as Record<string, unknown>[]);
       setRole(currentRole);
       setActualProductivity(productivity);
       setConstraints(constraintRows);
       setConstraintLinks(links);
+      setOperationalMetrics(await loadProgrammeOperationalMetrics(projectId, programme.activities, getActiveProject()?.productivityFactorThresholds));
       setError("");
     } catch (loadError) {
       setError(
@@ -311,7 +320,7 @@ export default function ProgrammePage() {
   );
 
   return (
-    <main className="timeline-page">
+    <main className="timeline-page programme-page">
       <section className="timeline-panel">
         <header className="timeline-header">
           <div>
@@ -324,6 +333,16 @@ export default function ProgrammePage() {
             <Link href="/timeline" className="secondary-button">Timeline</Link>
           </div>
         </header>
+
+        <ProgrammeGantt
+          activities={activities}
+          constraints={constraints}
+          constraintLinks={constraintLinks}
+          metrics={operationalMetrics}
+          dataDate={dataDate || new Date().toISOString().slice(0, 10)}
+          programmeDataDate={programmeDataDate}
+          loading={loading}
+        />
 
         <section style={{ padding: 20, border: "1px solid #d7dde3", borderRadius: 18, marginBottom: 20, background: "#f7f9fa" }}>
           <div className="programme-import-heading"><div><h2>Import Programme</h2><p>Choose a source. Every workbook is validated and mapped into the same SitePulse programme model before publication.</p></div><div><strong>Programme Source</strong><span>{publishedSource ? sourceLabels[publishedSource] ?? String(publishedImport?.source_type) : "No published programme"}</span>{publishedImport?.imported_at ? <small>Last import: {new Date(String(publishedImport.imported_at)).toLocaleString("en-GB")}</small> : null}</div></div>
@@ -450,6 +469,8 @@ export default function ProgrammePage() {
           </section>
         )}
 
+        <details className="programme-admin-details">
+          <summary>Detailed programme data and productivity baselines</summary>
         <div className="programme-search-row" style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
           <strong>{loading ? "Loading programme…" : `${activities.length} published activities`}</strong>
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search activity" />
@@ -531,6 +552,7 @@ export default function ProgrammePage() {
             </article>;
           })}
         </div>
+        </details>
       </section>
     </main>
   );

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/client";
 import { plannedWorkingDaysBetween } from "@/lib/manDayProductivity";
 import { deriveProgrammeActualDates, type ProgrammeActualRecord } from "@/lib/programmeActuals";
 import type { ProgrammeActivity } from "@/types/site";
+import { calculateProductivityFactor, type ProductivityFactorMetrics, type ProductivityFactorThresholds } from "@/lib/manDayProductivity";
 
 type DbActivity = {
   id: string; project_id: string; programme_import_id: string; external_activity_id: string;
@@ -42,9 +43,9 @@ export function programmeActivityFromDb(row: DbActivity, source?: { source_type?
   };
 }
 
-export async function loadPublishedProgramme(projectId: string): Promise<{ importId: string; activities: ProgrammeActivity[] }> {
+export async function loadPublishedProgramme(projectId: string): Promise<{ importId: string; dataDate?: string; activities: ProgrammeActivity[] }> {
   const supabase = createClient();
-  const { data: published, error: importError } = await supabase.from("programme_imports").select("id,source_type,source_filename,imported_at,imported_by").eq("project_id", projectId).eq("status", "published").maybeSingle();
+  const { data: published, error: importError } = await supabase.from("programme_imports").select("id,source_type,source_filename,imported_at,imported_by,data_date").eq("project_id", projectId).eq("status", "published").maybeSingle();
   if (importError) throw importError;
   if (!published) return { importId: "", activities: [] };
   const [activityResult, resourceResult, assignmentResult, actualResult] = await Promise.all([
@@ -121,7 +122,33 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
       materialResourceNames: uniqueNames(materialResources),
     };
   });
-  return { importId: published.id, activities };
+  return { importId: published.id, dataDate: published.data_date ?? undefined, activities };
+}
+
+export type ProgrammeOperationalMetric = ProductivityFactorMetrics & { actualCrew: number | null };
+
+export async function loadProgrammeOperationalMetrics(projectId: string, activities: ProgrammeActivity[], thresholds?: ProductivityFactorThresholds): Promise<Record<string, ProgrammeOperationalMetric>> {
+  const { data, error } = await createClient().from("timeline_events")
+    .select("external_activity_id,event_date,actual_quantity,timeline_event_labour(operative_id)")
+    .eq("project_id", projectId).eq("event_type", "work").eq("status", "completed").is("deleted_at", null);
+  if (error) throw error;
+  const totals = new Map<string, { quantity: number; contributorDays: Map<string, Set<string>> }>();
+  for (const row of data ?? []) {
+    if (!row.external_activity_id) continue;
+    const key = String(row.external_activity_id);
+    const current = totals.get(key) ?? { quantity: 0, contributorDays: new Map() };
+    current.quantity += Number(row.actual_quantity ?? 0);
+    const people = current.contributorDays.get(String(row.event_date)) ?? new Set<string>();
+    for (const labour of row.timeline_event_labour ?? []) if (labour.operative_id) people.add(String(labour.operative_id));
+    current.contributorDays.set(String(row.event_date), people);
+    totals.set(key, current);
+  }
+  return Object.fromEntries(activities.map((activity) => {
+    const total = totals.get(activity.programmeActivityId);
+    const actualManDays = total ? [...total.contributorDays.values()].reduce((sum, people) => sum + people.size, 0) : null;
+    const latestCrew = total ? [...total.contributorDays.entries()].sort(([a], [b]) => b.localeCompare(a))[0]?.[1].size : null;
+    return [activity.programmeActivityId, { ...calculateProductivityFactor(total?.quantity ?? 0, activity.plannedManDayProductivity, actualManDays, thresholds), actualCrew: latestCrew ?? null }];
+  }));
 }
 
 export async function loadProgrammeImports(projectId: string) {

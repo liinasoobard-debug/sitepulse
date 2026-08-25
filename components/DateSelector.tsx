@@ -16,7 +16,7 @@ function moveDate(date: string, amount: number): string {
   return getLocalDate(next);
 }
 
-export default function DateSelector() {
+export default function DateSelector({ showDuplicate = false }: { showDuplicate?: boolean }) {
   const pathname = usePathname();
   const [date, setDate] = useState("");
 
@@ -66,9 +66,9 @@ export default function DateSelector() {
         <button type="button" className="secondary-button" onClick={() => openDate(moveDate(date, 1))} aria-label="Next day">
           Next →
         </button>
-        <button type="button" className="secondary-button" onClick={duplicate}>
+        {showDuplicate && <button type="button" className="secondary-button" onClick={duplicate}>
           Duplicate Previous Day
-        </button>
+        </button>}
       </div>
     </section>
   );
