@@ -113,6 +113,10 @@ export interface ProgrammeActivity {
   labourResourceNames?: string[];
   materialResourceNames?: string[];
   dataDate?: string;
+  forecastFinish?: string;
+  totalFloat?: number;
+  activityType?: string;
+  measurementClass?: "measurable" | "context" | "milestone";
   sourceType?: "sitepulse-template" | "p6-xlsx" | "asta-xlsx" | "manual";
   sourceImportId?: string;
   sourceFilename?: string;

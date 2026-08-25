@@ -38,8 +38,11 @@ export function programmeActivityFromDb(row: DbActivity, source?: { source_type?
     actualStart: row.actual_start ?? undefined, actualFinish: row.actual_finish ?? undefined,
     originalDuration: row.original_duration ?? undefined, remainingDuration: row.remaining_duration ?? undefined,
     physicalPercentComplete: row.percent_complete ?? undefined, calendar: row.calendar_name ?? "",
+    forecastFinish: raw.forecastFinish ? String(raw.forecastFinish) : undefined,
+    totalFloat: raw.totalFloat === null || raw.totalFloat === undefined ? undefined : Number(raw.totalFloat),
+    measurementClass: ["measurable", "context", "milestone"].includes(String(raw.measurementClass)) ? raw.measurementClass as ProgrammeActivity["measurementClass"] : undefined,
     sourceType, sourceImportId: row.programme_import_id, sourceFilename: source?.source_filename, importDate: source?.imported_at, importedBy: source?.imported_by, missingFromLatestUpdate: row.is_missing_from_latest,
-    productivityBaselineComplete: Boolean(row.unit && row.planned_man_day_productivity && assumedGangSize && row.planned_quantity), createdAt: row.created_at, updatedAt: row.updated_at,
+    productivityBaselineComplete: Boolean(row.unit && row.planned_man_days && row.planned_quantity), createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
@@ -116,7 +119,7 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
       actualFinish,
       physicalPercentComplete,
       unit,
-      productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedManDayProductivity && assumedGangSize && unit),
+      productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedManDays && unit),
       resourceNames: uniqueNames(activityResources),
       labourResourceNames: uniqueNames(labourResources),
       materialResourceNames: uniqueNames(materialResources),

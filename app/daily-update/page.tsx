@@ -28,7 +28,7 @@ export default function DailyUpdatePage() {
   useEffect(() => {
     queueMicrotask(() => setDate(getActiveDate()));
     Promise.all([loadV2Programme(getActiveProjectId()), loadV2DailyRecords(getActiveProjectId())])
-      .then(([programme, daily]) => { setActivities(programme.activities); setRecords(daily); setActivityId(programme.activities[0]?.programmeActivityId ?? ""); if (programme.demo) setDate("2026-08-25"); })
+      .then(([programme, daily]) => { setActivities(programme.activities); setRecords(daily); setActivityId(programme.activities.find((row) => row.plannedQuantity > 0 && Boolean(row.unit) && Number(row.plannedManDays) > 0)?.programmeActivityId ?? ""); if (programme.demo) setDate("2026-08-25"); })
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load daily update."));
   }, []);
 
@@ -60,7 +60,7 @@ export default function DailyUpdatePage() {
     <header className="v2-hero"><div><p className="eyebrow">Daily Update</p><h1>Record today&apos;s result</h1><p>One programme activity, completed quantity and the labour used.</p></div></header>
     <form className="v2-panel v2-daily-form" onSubmit={submit}>
       <label>Date<input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-      <label className="v2-field-wide">Programme activity<select required value={activityId} onChange={(event) => setActivityId(event.target.value)}><option value="">Select activity</option>{activities.map((row) => <option key={row.id} value={row.programmeActivityId}>{row.activityName || row.activity} · {row.elevation} {row.level}</option>)}</select></label>
+      <label className="v2-field-wide">Programme activity<select required value={activityId} onChange={(event) => setActivityId(event.target.value)}><option value="">Select activity</option>{activities.filter((row) => row.plannedQuantity > 0 && Boolean(row.unit) && Number(row.plannedManDays) > 0).map((row) => <option key={row.id} value={row.programmeActivityId}>{row.activityName || row.activity} · {row.elevation} {row.level}</option>)}</select></label>
       {activity && <div className="v2-activity-context v2-field-wide"><span>Planned: {activity.plannedQuantity} {activity.unit}</span><span>Budget: {display(activity.plannedManDays ?? null)} MD</span><span>Target: {display(target)} {activity.unit}/MD</span></div>}
       <label>Quantity completed<input required min="0" step="any" inputMode="decimal" type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
       <label>Actual labour<div className="v2-inline-input"><input required min="0.01" step="any" inputMode="decimal" type="number" value={labour} onChange={(event) => setLabour(event.target.value)} /><select value={labourUnit} onChange={(event) => setLabourUnit(event.target.value as "hours" | "md")}><option value="hours">Hours</option><option value="md">Man-days</option></select></div></label>

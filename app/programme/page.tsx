@@ -18,6 +18,7 @@ import {
 import type { ProgrammeOperationalMetric } from "@/lib/supabase/programmeData";
 import { loadV2DailyRecords, loadV2Programme } from "@/lib/supabase/v2Data";
 import { v2Productivity } from "@/lib/v2Productivity";
+import { parseSimpleProgrammeRows, suggestProgrammeMapping } from "@/lib/programmeSimpleImport";
 import type { ProgrammeActivity } from "@/types/site";
 
 type ImportIssue = {
@@ -38,6 +39,14 @@ type ImportPreview = {
   assignments: number;
   issues: ImportIssue[];
   sourceType: ImportSource;
+  mapping?: Record<string, string>;
+  excluded?: number;
+  milestones?: number;
+  productivityReady?: number;
+  needsProductivitySetup?: number;
+  duplicates?: number;
+  invalidDates?: number;
+  availableColumns?: string[];
 };
 
 type ImportSource = "sitepulse-template" | "p6-xlsx" | "asta-xlsx";
@@ -88,6 +97,7 @@ export default function ProgrammePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importSource, setImportSource] = useState<ImportSource>("sitepulse-template");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({
     building: "",
@@ -166,7 +176,9 @@ export default function ProgrammePage() {
   function selectWorkbook(file: File | undefined) {
     if (!file) return;
     setSelectedFile(file);
+    try { setColumnMapping(JSON.parse(localStorage.getItem(`sitepulse-v2-import-mapping-${importSource}`) || "{}")); } catch { setColumnMapping({}); }
     setPreview(null);
+    setColumnMapping({});
     setMessage("");
     setError("");
   }
@@ -190,10 +202,13 @@ export default function ProgrammePage() {
         const XLSX = await import("xlsx");
         const workbook = XLSX.read(await selectedFile.arrayBuffer(), { type: "array" });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = firstSheet ? XLSX.utils.sheet_to_json<unknown[]>(firstSheet, { header: 1, blankrows: false }) : [];
-        const count = Math.max(0, rows.length - 1);
-        setPreview({ importId: "", status: count ? "draft" : "failed", filename: selectedFile.name, activities: count, relationships: 0, resources: 0, assignments: 0, issues: count ? [] : [{ sheet: workbook.SheetNames[0] || "Workbook", severity: "error", message: "No programme rows were found." }], sourceType: importSource });
-        setMessage(count ? `Sandbox validation found ${count} data rows. Sign in to map and publish the workbook.` : "");
+        const rows = firstSheet ? XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: "", raw: true }) : [];
+        const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+        const mapping = { ...suggestProgrammeMapping(columns), ...columnMapping };
+        const parsed = parseSimpleProgrammeRows(rows, mapping, "sitepulse-v2-demo", "sandbox", hoursPerManDay);
+        setColumnMapping(mapping as Record<string, string>);
+        setPreview({ importId: "", status: parsed.activities.length ? "draft" : "failed", filename: selectedFile.name, activities: parsed.summary.valid, relationships: 0, resources: 0, assignments: 0, issues: parsed.issues.map((issue) => ({ sheet: workbook.SheetNames[0] || "Workbook", rowNumber: issue.row, activityId: issue.activityId, severity: "error", message: issue.message })), sourceType: importSource, mapping: mapping as Record<string, string>, availableColumns: columns, ...parsed.summary });
+        setMessage(parsed.activities.length ? `Sandbox preview found ${parsed.activities.length} valid activities. Sign in to import and publish.` : "");
         return;
       }
       if (!canManage) return;
@@ -203,6 +218,7 @@ export default function ProgrammePage() {
       form.set("building", buildingDefault);
       form.set("sourceType", importSource);
       form.set("hoursPerManDay", String(hoursPerManDay));
+      form.set("columnMapping", JSON.stringify(columnMapping));
       const activeProject = getActiveProject();
       if (activeProject && activeProject.hoursPerManDay !== hoursPerManDay) updateProject({ ...activeProject, hoursPerManDay });
       const response = await fetch("/api/programme/import", {
@@ -231,8 +247,12 @@ export default function ProgrammePage() {
         assignments: assignmentCount,
         issues: Array.isArray(summary.issues) ? summary.issues : Array.isArray(storedValidation?.issues) ? storedValidation.issues : [],
         sourceType: (body.sourceType ?? storedImport?.source_type ?? importSource) as ImportSource,
+        mapping: body.mapping && typeof body.mapping === "object" ? body.mapping as Record<string, string> : undefined,
+        availableColumns: Array.isArray(body.availableColumns) ? body.availableColumns.map(String) : undefined,
+        excluded: Number(summary.excluded ?? 0), milestones: Number(summary.milestones ?? 0), productivityReady: Number(summary.productivityReady ?? 0), needsProductivitySetup: Number(summary.needsProductivitySetup ?? 0), duplicates: Number(summary.duplicates ?? 0), invalidDates: Number(summary.invalidDates ?? 0),
       };
       setPreview(result);
+      if (result.mapping) { setColumnMapping(result.mapping); localStorage.setItem(`sitepulse-v2-import-mapping-${result.sourceType}`, JSON.stringify(result.mapping)); }
       if (!response.ok) {
         setError(
           body.error ||
@@ -431,10 +451,13 @@ export default function ProgrammePage() {
               <p><strong>Detected format:</strong> {sourceLabels[preview.sourceType]}{preview.sourceType !== importSource ? " (automatically selected from workbook structure)" : ""}</p>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                 {[
-                  ["Activities", preview.activities],
-                  ["Relationships", preview.relationships],
-                  ["Resources", preview.resources],
-                  ["Assignments", preview.assignments],
+                  ["Valid activities", preview.activities],
+                  ["Excluded rows", preview.excluded ?? 0],
+                  ["Milestones / context", preview.milestones ?? 0],
+                  ["Ready for productivity", preview.productivityReady ?? 0],
+                  ["Needs productivity setup", preview.needsProductivitySetup ?? 0],
+                  ["Duplicate IDs", preview.duplicates ?? 0],
+                  ["Invalid dates", preview.invalidDates ?? 0],
                 ].map(([label, count]) => (
                   <div key={String(label)} style={{ padding: 14, borderRadius: 10, background: "#eef2f5" }}>
                     <strong style={{ display: "block", fontSize: 24 }}>{count}</strong>
@@ -442,6 +465,7 @@ export default function ProgrammePage() {
                   </div>
                 ))}
               </div>
+              {preview.mapping && <details className="v2-mapping-review" open><summary>Review suggested column mapping</summary><div className="v2-mapping-grid">{Object.entries(preview.mapping).map(([field, column]) => <label key={field}><span>{field.replaceAll("_", " ")}{["Activity_ID","Activity_Name","Planned_Start","Planned_Finish"].includes(field) ? " *" : ""}</span><select value={column} onChange={(event) => { const next={...columnMapping,[field]:event.target.value};setColumnMapping(next);setPreview((current)=>current?{...current,mapping:next}:current); }}><option value="">Not mapped</option>{preview.availableColumns?.map((option)=><option key={option}>{option}</option>)}</select></label>)}</div><button type="button" className="secondary-button" onClick={() => void reviewImport()}>Recheck mapping</button></details>}
               <h4>Validation</h4>
               {preview.issues.length === 0 ? (
                 <p style={{ color: "#087443", fontWeight: 700 }}>Validation completed successfully. The draft is ready to publish.</p>
