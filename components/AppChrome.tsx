@@ -19,7 +19,9 @@ export default function AppChrome({ children }: { children: React.ReactNode }) {
       <span>Construction production control</span>
     </header>
     <BottomNav />
-    <div className="context-controls"><ProjectSelector />{usesSiteDate && <DateSelector />}</div>
-    <div className="sitepulse-page-content">{children}</div>
+    <div className="app-main">
+      <div className="context-controls"><ProjectSelector />{usesSiteDate && <DateSelector />}</div>
+      <div className="sitepulse-page-content">{children}</div>
+    </div>
   </SharedDataSync>;
 }

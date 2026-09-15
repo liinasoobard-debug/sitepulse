@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HealthCards, NeedsAttention, PeriodProgress, ProductionPerformance, TodayPlanCard, type HealthCard, type HealthTone, type PerformancePoint } from "@/components/dashboard/ProjectHealthDashboard";
 import { EarnedValueChart } from "@/components/dashboard/EarnedValueChart";
 import { HistoricalLabourChart } from "@/components/dashboard/HistoricalLabourChart";
+import { WorkBreakdownChart } from "@/components/dashboard/WorkBreakdownChart";
 import { buildDashboardData, classifyDashboardBlocker, dashboardRange, dashboardStartDate, type DashboardFilters, type DashboardPeriod, type DatedDashboardEvent } from "@/lib/dashboard";
 import { buildEarnedValueData } from "@/lib/earnedValue";
 import { effectiveConstraintRag, type ConstraintActivityLink, type ConstraintRecord } from "@/lib/constraints";
@@ -136,6 +137,7 @@ export default function DashboardPage() {
       {(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}
     </section>
     {earnedValue && <EarnedValueChart data={earnedValue}/>}
+    <WorkBreakdownChart events={events} range={range}/>
     <HistoricalLabourChart data={labourHistory}/>
     <HealthCards cards={cards}/>
     <PeriodProgress planned={data.kpis.expected} actual={data.kpis.achieved} unit={data.unit} tone={progressTone} mixed={!reliableQuantity}/>
