@@ -316,6 +316,55 @@ h1 {
   font: inherit;
 }
 
+.password-field-wrapper {
+  position: relative;
+}
+
+.password-field-wrapper input {
+  padding-right: 44px;
+}
+
+.password-toggle-button {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  color: #5f6b76;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-toggle-button:hover {
+  color: #176b87;
+  background: #f1f6f8;
+}
+
+.forgot-password-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #176b87;
+  font-weight: 700;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.forgot-password-panel {
+  padding: 14px;
+  border: 1px solid #dde4e8;
+  border-radius: 12px;
+  background: #f5f8fa;
+}
+
 .site-record-modal {
   position: fixed;
   top: 50%;
