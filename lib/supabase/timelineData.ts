@@ -56,6 +56,7 @@ export function timelineEventFromDb(row: DbEvent): TimelineEvent {
     ),
     reason: row.change_category ? String(row.change_category) : encodedChangeType,
     notes: note.replace(CHANGE_TYPE_PREFIX, "").trim() || undefined,
+    lostLabourHours: row.affected_labour_hours === null || row.affected_labour_hours === undefined ? undefined : Number(row.affected_labour_hours),
     photoIds: [],
   };
 }

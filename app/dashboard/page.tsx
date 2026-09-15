@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { HealthCards, NeedsAttention, PeriodProgress, ProductionPerformance, TodayPlanCard, type HealthCard, type HealthTone, type PerformancePoint } from "@/components/dashboard/ProjectHealthDashboard";
 import { EarnedValueChart } from "@/components/dashboard/EarnedValueChart";
+import { HistoricalLabourChart } from "@/components/dashboard/HistoricalLabourChart";
 import { buildDashboardData, classifyDashboardBlocker, dashboardRange, dashboardStartDate, type DashboardFilters, type DashboardPeriod, type DatedDashboardEvent } from "@/lib/dashboard";
 import { buildEarnedValueData } from "@/lib/earnedValue";
 import { effectiveConstraintRag, type ConstraintActivityLink, type ConstraintRecord } from "@/lib/constraints";
@@ -12,6 +13,7 @@ import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintD
 import { loadPublishedProgramme } from "@/lib/supabase/programmeData";
 import { loadTimelineEventsBetween } from "@/lib/supabase/timelineData";
 import { loadDailyPlan } from "@/lib/supabase/dailyPlanData";
+import { loadDailyAttendanceTotals, type DailyAttendanceTotal } from "@/lib/supabase/attendanceData";
 import type { DailyPlanAllocation } from "@/lib/dailyPlan";
 import type { ProgrammeActivity, Project, SiteDay } from "@/types/site";
 
@@ -33,6 +35,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [todayPlan, setTodayPlan] = useState<DailyPlanAllocation[]>([]);
+  const [attendanceTotals, setAttendanceTotals] = useState<DailyAttendanceTotal[]>([]);
   const [performanceView, setPerformanceView] = useState("Daily Output");
 
   useEffect(() => { queueMicrotask(() => { const today=getActiveDate();setSelectedDate(today);setCustomStart(today); }); }, []);
@@ -41,11 +44,11 @@ export default function DashboardPage() {
     async function load() {
       setLoading(true); setError(""); const projectId = getActiveProjectId(); setProject(getActiveProject());
       try {
-        const [published, timeline, constraintRows, links, dailyPlan] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadConstraints(projectId), loadConstraintLinks(projectId), loadDailyPlan(projectId, getActiveDate())]);
+        const [published, timeline, constraintRows, links, dailyPlan, attendanceTotalsResult] = await Promise.all([loadPublishedProgramme(projectId), loadTimelineEventsBetween(projectId, "1000-01-01", "9999-12-31"), loadConstraints(projectId), loadConstraintLinks(projectId), loadDailyPlan(projectId, getActiveDate()), loadDailyAttendanceTotals(projectId, "1000-01-01", "9999-12-31")]);
         if (cancelled) return;
         const days = new Map<string, SiteDay>(loadSiteDaysBetween("1000-01-01", "9999-12-31", projectId).map((day) => [day.date, day]));
         timeline.forEach(({ date }) => { if (!days.has(date)) days.set(date, { date, attendance: [], crews: [], events: [] }); });
-        setProgramme(published.activities); setEvents(timeline.map(({ date, event }) => ({ date, event, day: days.get(date)! }))); setConstraints(constraintRows); setConstraintLinks(links); setTodayPlan(dailyPlan.allocations);
+        setProgramme(published.activities); setEvents(timeline.map(({ date, event }) => ({ date, event, day: days.get(date)! }))); setConstraints(constraintRows); setConstraintLinks(links); setTodayPlan(dailyPlan.allocations); setAttendanceTotals(attendanceTotalsResult);
       } catch (caught) { if (!cancelled) setError(caught instanceof Error ? caught.message : "Unable to load dashboard data."); }
       finally { if (!cancelled) setLoading(false); }
     }
@@ -69,6 +72,7 @@ export default function DashboardPage() {
 
   if (!selectedDate || !data) return null;
   const range = dashboardRange(period, selectedDate, dashboardStartDate(programme, events, selectedDate), customStart);
+  const labourHistory = attendanceTotals.filter((row) => row.date >= range.start && row.date <= range.end);
   const reliableQuantity = !data.mixedUnits;
   const reliableProductivity = reliableQuantity && selectedProductTypes.length <= 1;
   const progress = reliableQuantity ? data.kpis.achievement : null;
@@ -76,7 +80,13 @@ export default function DashboardPage() {
   const productivity = reliableProductivity ? data.kpis.productivityFactor : null;
   const productivityTone: HealthTone = productivity === null ? "neutral" : data.kpis.productivityFactorRag === "green" ? "green" : data.kpis.productivityFactorRag === "amber" ? "amber" : data.kpis.productivityFactorRag === "red" ? "red" : "neutral";
   const lateForecasts = forecasts.filter(({ forecast }) => (forecast.likely.variance ?? 0) > 0).sort((a, b) => (b.forecast.likely.variance ?? 0) - (a.forecast.likely.variance ?? 0));
-  const programmeTone: HealthTone = programme.length ? (data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0) > 0 ? "red" : "green" : "neutral";
+  const overdueCount = data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0;
+  const forecastRedCount = forecasts.filter(({ forecast }) => forecast.forecastRag === "red").length;
+  const forecastAmberCount = forecasts.filter(({ forecast }) => forecast.forecastRag === "amber").length;
+  const programmeTone: HealthTone = !programme.length ? "neutral"
+    : overdueCount > 0 || forecastRedCount > 0 ? "red"
+    : forecastAmberCount > 0 ? "amber"
+    : "green";
   const openConstraints = constraints.filter((row) => ["OPEN", "ACTIONED / MONITORING"].includes(row.status));
   const redConstraints = openConstraints.filter((row) => effectiveConstraintRag(row, selectedDate).effective === "RED");
   const blockingIds = new Set(constraintLinks.filter((row) => ["Blocking Start", "Blocking Progress", "Blocking Completion"].includes(row.blocking_relationship)).map((row) => row.constraint_id));
@@ -88,7 +98,7 @@ export default function DashboardPage() {
   const activeChanges = data.changes.filter((row) => !["closed", "completed"].includes(row.status.toLowerCase()));
 
   const cards: HealthCard[] = [
-    { title: "Programme", value: programmeTone === "neutral" ? "Status unavailable" : programmeTone === "red" ? `${data.programmeStatus.find((row) => row.status === "Overdue")?.count ?? 0} overdue activities` : "On programme dates", detail: "Published programme status", tone: programmeTone, href: "/programme" },
+    { title: "Programme", value: programmeTone === "neutral" ? "Status unavailable" : programmeTone === "red" ? (overdueCount > 0 ? `${overdueCount} overdue activities` : `${forecastRedCount} activities forecast late`) : programmeTone === "amber" ? `${forecastAmberCount} activities at emerging risk` : "On programme dates", detail: programmeTone === "red" && overdueCount === 0 && forecastRedCount > 0 ? "Evidence-led forecast indicates late finish" : "Published programme status", tone: programmeTone, href: "/programme" },
     { title: "Constraints", value: `${openConstraints.length} Open · ${blocking.length} Blocking`, detail: `${redConstraints.length} Red constraint${redConstraints.length === 1 ? "" : "s"}`, tone: constraintTone, href: "/constraints" },
     { title: "Disruption", value: data.kpis.lostHours === null ? "No disruption recorded" : `${format(data.kpis.lostHours)} labour hrs`, detail: disruptionPercent === null ? "Recorded labour share unavailable" : `${format(disruptionPercent)}% of recorded productive + lost hours`, tone: disruptionTone, href: "/timeline" },
     { title: "Forecast", value: forecasts.length ? `${lateForecasts.length} activities forecast late` : "Forecast unavailable", detail: lateForecasts[0] ? `Worst: +${format(lateForecasts[0].forecast.likely.variance ?? 0, 0)} working days` : "No evidence-led late forecast", tone: !forecasts.length ? "neutral" : lateForecasts.length ? "red" : "green", href: "/forecast" },
@@ -126,6 +136,7 @@ export default function DashboardPage() {
       {(filters.productType || filters.elevation || filters.gang) && <button className="secondary-button" onClick={() => setFilters(blankFilters)}>Clear</button>}
     </section>
     {earnedValue && <EarnedValueChart data={earnedValue}/>}
+    <HistoricalLabourChart data={labourHistory}/>
     <HealthCards cards={cards}/>
     <PeriodProgress planned={data.kpis.expected} actual={data.kpis.achieved} unit={data.unit} tone={progressTone} mixed={!reliableQuantity}/>
     <ProductionPerformance view={performanceView} setView={changePerformanceView} points={performancePoints} unit={data.unit} quantityCompatible={reliableQuantity} productivityCompatible={reliableProductivity}/>
