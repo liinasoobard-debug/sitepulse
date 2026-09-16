@@ -231,10 +231,6 @@ export default function SettingsPage() {
   return <main className="timeline-page"><section className="timeline-panel">
     <header className="timeline-header"><div><p className="eyebrow">Current project</p><h1>Settings</h1><p style={{ marginBottom: 0, color: "#5f6b76" }}>{project?.name ?? "Loading project…"}</p></div></header>
 
-    <div role="alert" style={{ padding: 16, marginBottom: 28, border: "1px solid #d39b22", borderRadius: 12, background: "#fff8e7", color: "#684b0c", fontWeight: 700 }}>
-      SitePulse shared-drive files are not live multi-user data. Only one person should edit the project file at a time.
-    </div>
-
     {error && <p role="alert" style={{ padding: 14, borderRadius: 10, background: "#fff0ee", color: "#b42318", fontWeight: 700 }}>{error}</p>}
     {message && <p role="status" style={{ padding: 14, borderRadius: 10, background: "#eaf7ef", color: "#17633a", fontWeight: 700 }}>{message}</p>}
 

@@ -234,7 +234,7 @@ export default function ProjectSelector() {
 
         {accessibleProjectIds && !visibleProjects.length && (
           <p style={{ marginTop: 10, color: "#5f6b76" }}>
-            You do not have access to a project yet. Ask a project admin to add you under Settings → Users &amp; Access, or create a new project.
+            You do not have access to a project yet. Ask a project admin to add you under Settings → Project Team &amp; Access, or create a new project.
           </p>
         )}
 

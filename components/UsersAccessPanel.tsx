@@ -102,10 +102,10 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
   return (
     <section style={{ marginBottom: 36 }}>
       <p className="eyebrow">Access</p>
-      <h2>Users &amp; Access</h2>
-      <p>Manage who can access this project and their role. Only existing SitePulse users with an account can be added here.</p>
+      <h2>Project Team &amp; Access</h2>
+      <p>Manage who can access this project and their role.</p>
 
-      {loading && isAdmin === null && <p>Loading users &amp; access…</p>}
+      {loading && isAdmin === null && <p>Loading project team &amp; access…</p>}
 
       {isAdmin && (
         <>
@@ -153,7 +153,7 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
 
           <form onSubmit={handleAdd} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
             <label className="attendance-field" style={{ minWidth: 260 }}>
-              <span>Add user by email</span>
+              <span>Add team member</span>
               <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" />
             </label>
             <label className="attendance-field">
