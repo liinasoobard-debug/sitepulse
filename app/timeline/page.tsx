@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import AddWorkModal from "@/components/AddWorkModal";
 import EditTimelineEvent from "@/components/EditTimelineEvent";
+import NaturalLanguageUpdateEntry from "@/components/NaturalLanguageUpdateEntry";
 import { getActiveDate, getActiveProjectId, loadDay, loadOperatives, saveDay } from "@/lib/storage";
 import { loadActivityInstalledQuantity, loadProjectRole, loadPublishedProgramme, recalculateProgrammeProgress } from "@/lib/supabase/programmeData";
 import { loadPublishedProgrammeRelationships } from "@/lib/supabase/programmeData";
@@ -517,6 +518,8 @@ export default function TimelinePage() {
           <span>+</span>
           Add Site Record
         </button>
+
+        <NaturalLanguageUpdateEntry programmeActivities={programmeActivities} />
 
         <button
           type="button"

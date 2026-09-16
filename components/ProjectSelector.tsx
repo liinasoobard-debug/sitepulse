@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import {
   addProject,
@@ -12,6 +13,7 @@ import {
 import type { Project } from "@/types/site";
 import { flushSharedWrite } from "@/lib/sharedSync";
 import { PROJECTS_STORAGE_KEY } from "@/lib/storage";
+import { createClient } from "@/lib/supabase/client";
 import { createProjectMembership } from "@/lib/supabase/projectData";
 import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
@@ -28,6 +30,9 @@ export default function ProjectSelector() {
   const [location, setLocation] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  // Site test V1: a user must only see/select projects they are an explicit
+  // member of. null = memberships not loaded yet (do not show anything).
+  const [accessibleProjectIds, setAccessibleProjectIds] = useState<Set<string> | null>(null);
 
   function refreshProjects() {
     const allProjects = loadProjects();
@@ -36,11 +41,23 @@ export default function ProjectSelector() {
     setActiveProjectIdState(getActiveProjectId());
   }
 
+  async function refreshAccessibleProjects() {
+    try {
+      const { data, error } = await createClient().from("sitepulse_project_members").select("project_id");
+      if (error) throw error;
+      setAccessibleProjectIds(new Set((data ?? []).map((row) => String(row.project_id))));
+    } catch (caught) {
+      console.error("Unable to load accessible projects:", caught);
+      setAccessibleProjectIds(new Set());
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled) refreshProjects();
     });
+    void refreshAccessibleProjects();
 
     function handleProjectChange() {
       refreshProjects();
@@ -52,6 +69,17 @@ export default function ProjectSelector() {
       window.removeEventListener("sitepulse-project-changed", handleProjectChange);
     };
   }, []);
+
+  const visibleProjects = accessibleProjectIds ? projects.filter((project) => accessibleProjectIds.has(project.id)) : [];
+  const visibleArchivedProjects = accessibleProjectIds ? archivedProjects.filter((project) => accessibleProjectIds.has(project.id)) : [];
+
+  useEffect(() => {
+    if (!accessibleProjectIds || !visibleProjects.length) return;
+    if (accessibleProjectIds.has(activeProjectId)) return;
+    setActiveProject(visibleProjects[0].id);
+    reloadCurrentPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessibleProjectIds, activeProjectId]);
 
   function reloadCurrentPage() {
     window.location.assign(pathname || "/");
@@ -113,9 +141,9 @@ export default function ProjectSelector() {
   }
 
   async function handleArchiveProject() {
-    const active = projects.find((project) => project.id === activeProjectId);
+    const active = visibleProjects.find((project) => project.id === activeProjectId);
     if (!active) return;
-    if (projects.length === 1) {
+    if (visibleProjects.length === 1) {
       setError("Create another active project before archiving this one.");
       return;
     }
@@ -167,6 +195,7 @@ export default function ProjectSelector() {
             id="sitepulse-project"
             value={activeProjectId}
             onChange={(event) => handleSelect(event.target.value)}
+            disabled={!accessibleProjectIds}
             style={{
               minWidth: 220,
               minHeight: 40,
@@ -178,7 +207,9 @@ export default function ProjectSelector() {
               fontWeight: 700,
             }}
           >
-            {projects.map((project) => (
+            {!accessibleProjectIds && <option value="">Loading projects…</option>}
+            {accessibleProjectIds && !visibleProjects.length && <option value="">No accessible projects</option>}
+            {visibleProjects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.code ? `${project.code} — ${project.name}` : project.name}
               </option>
@@ -201,10 +232,16 @@ export default function ProjectSelector() {
           <UserIndicator />
         </div>
 
-        {archivedProjects.length > 0 && <details style={{ marginTop: 10 }}>
-          <summary style={{ cursor: "pointer", fontWeight: 700, color: "#4a5560" }}>Archived projects ({archivedProjects.length})</summary>
+        {accessibleProjectIds && !visibleProjects.length && (
+          <p style={{ marginTop: 10, color: "#5f6b76" }}>
+            You do not have access to a project yet. Ask a project admin to add you under Settings → Users &amp; Access, or create a new project.
+          </p>
+        )}
+
+        {visibleArchivedProjects.length > 0 && <details style={{ marginTop: 10 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 700, color: "#4a5560" }}>Archived projects ({visibleArchivedProjects.length})</summary>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-            {archivedProjects.map((project) => <button type="button" className="secondary-button" key={project.id} onClick={() => void handleRestoreProject(project)}>Restore {project.name}</button>)}
+            {visibleArchivedProjects.map((project) => <button type="button" className="secondary-button" key={project.id} onClick={() => void handleRestoreProject(project)}>Restore {project.name}</button>)}
           </div>
         </details>}
 
