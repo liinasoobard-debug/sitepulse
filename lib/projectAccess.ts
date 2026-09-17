@@ -3,7 +3,7 @@ export type ProjectMemberRole = "admin" | "planner" | "commercial" | "site_team"
 export const PROJECT_MEMBER_ROLES: ProjectMemberRole[] = ["admin", "planner", "commercial", "site_team"];
 
 const ROLE_LABELS: Record<ProjectMemberRole, string> = {
-  admin: "Admin",
+  admin: "Project Admin",
   planner: "Planner",
   commercial: "Commercial",
   site_team: "Site Team",

@@ -9,11 +9,11 @@ import {
   updateProjectMemberRole,
   type ProjectMember,
 } from "@/lib/supabase/projectMembers";
-import { loadProjectRole } from "@/lib/supabase/programmeData";
+import { canManageProject } from "@/lib/supabase/organisationData";
 import { isLastRemainingAdmin, projectMemberRoleLabel, PROJECT_MEMBER_ROLES, type ProjectMemberRole } from "@/lib/projectAccess";
 
 export default function UsersAccessPanel({ projectId }: { projectId: string }) {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [canManage, setCanManage] = useState<boolean | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -26,10 +26,9 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const currentRole = await loadProjectRole(projectId);
-      const admin = currentRole === "admin";
-      setIsAdmin(admin);
-      setMembers(admin ? await loadProjectMembers(projectId) : []);
+      const allowed = await canManageProject(projectId);
+      setCanManage(allowed);
+      setMembers(allowed ? await loadProjectMembers(projectId) : []);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load project members.");
     } finally {
@@ -97,7 +96,7 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
     }
   }
 
-  if (isAdmin === false) return null;
+  if (canManage === false) return null;
 
   return (
     <section style={{ marginBottom: 36 }}>
@@ -105,9 +104,9 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
       <h2>Project Team &amp; Access</h2>
       <p>Manage who can access this project and their role.</p>
 
-      {loading && isAdmin === null && <p>Loading project team &amp; access…</p>}
+      {loading && canManage === null && <p>Loading project team &amp; access…</p>}
 
-      {isAdmin && (
+      {canManage && (
         <>
           {error && <p role="alert" style={{ padding: 14, borderRadius: 10, background: "#fff0ee", color: "#b42318", fontWeight: 700 }}>{error}</p>}
           {message && <p role="status" style={{ padding: 14, borderRadius: 10, background: "#eaf7ef", color: "#17633a", fontWeight: 700 }}>{message}</p>}

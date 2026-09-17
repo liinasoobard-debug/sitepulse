@@ -19,6 +19,7 @@ import {
 } from "@/lib/projectBackup";
 import type { LabourRateSettings, Project } from "@/types/site";
 import UsersAccessPanel from "@/components/UsersAccessPanel";
+import OrganisationPanel from "@/components/OrganisationPanel";
 
 interface FileSystemWritableFileStream {
   write(data: Blob): Promise<void>;
@@ -233,6 +234,8 @@ export default function SettingsPage() {
 
     {error && <p role="alert" style={{ padding: 14, borderRadius: 10, background: "#fff0ee", color: "#b42318", fontWeight: 700 }}>{error}</p>}
     {message && <p role="status" style={{ padding: 14, borderRadius: 10, background: "#eaf7ef", color: "#17633a", fontWeight: 700 }}>{message}</p>}
+
+    <OrganisationPanel activeProjectId={project?.id} />
 
     {project && <UsersAccessPanel projectId={project.id} />}
 

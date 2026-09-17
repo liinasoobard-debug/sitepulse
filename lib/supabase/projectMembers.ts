@@ -12,9 +12,8 @@ export type ProjectMember = {
   isCurrentUser: boolean;
 };
 
-// Admin-only: lists every member of the project with their email, resolved
-// server-side by the sitepulse_list_project_members RPC. Returns an empty
-// list if the caller is not currently an admin of projectId.
+// Lists members for callers authorized by the server as Project Admin or
+// Organisation Admin; email resolution stays inside the RPC.
 export async function loadProjectMembers(projectId: string): Promise<ProjectMember[]> {
   const supabase = createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -43,8 +42,7 @@ export async function loadProjectMembers(projectId: string): Promise<ProjectMemb
   }));
 }
 
-// Admin-only: adds an EXISTING SitePulse user (resolved by email server-side)
-// to projectId with the given role. Does not send an invitation.
+// Adds an existing SitePulse account through the guarded management RPC.
 export async function addProjectMember(
   projectId: string,
   email: string,
@@ -59,30 +57,29 @@ export async function addProjectMember(
   if (error) throw new Error(error.message);
 }
 
-// Admin-only under RLS (members_update_admin). The database also refuses to
-// change the last admin's role away from admin.
+// The guarded RPC authorizes Project/Organisation Admins and preserves the
+// database's final Project Admin protection.
 export async function updateProjectMemberRole(
   projectId: string,
   userId: string,
   role: ProjectMemberRole
 ): Promise<void> {
   const supabase = createClient();
-  const { error } = await supabase
-    .from("sitepulse_project_members")
-    .update({ role })
-    .eq("project_id", projectId)
-    .eq("user_id", userId);
+  const { error } = await supabase.rpc("sitepulse_update_project_member_role", {
+    target_project: projectId,
+    target_user: userId,
+    target_role: role,
+  });
   if (error) throw new Error(error.message);
 }
 
-// Admin-only under RLS (members_delete_admin). The database also refuses to
-// remove the last admin from a project.
+// The guarded RPC authorizes Project/Organisation Admins and preserves the
+// database's final Project Admin protection.
 export async function removeProjectMember(projectId: string, userId: string): Promise<void> {
   const supabase = createClient();
-  const { error } = await supabase
-    .from("sitepulse_project_members")
-    .delete()
-    .eq("project_id", projectId)
-    .eq("user_id", userId);
+  const { error } = await supabase.rpc("sitepulse_remove_project_member", {
+    target_project: projectId,
+    target_user: userId,
+  });
   if (error) throw new Error(error.message);
 }

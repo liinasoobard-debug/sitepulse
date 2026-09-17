@@ -14,7 +14,8 @@ import type { Project } from "@/types/site";
 import { flushSharedWrite } from "@/lib/sharedSync";
 import { PROJECTS_STORAGE_KEY } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
-import { createProjectMembership, rollbackProjectCreation } from "@/lib/supabase/projectData";
+import { loadCurrentOrganisation } from "@/lib/supabase/organisationData";
+import { createOrganisationProject, rollbackProjectCreation, setCanonicalProjectArchived } from "@/lib/supabase/projectData";
 import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import UserIndicator from "@/components/UserIndicator";
@@ -30,6 +31,7 @@ export default function ProjectSelector() {
   const [location, setLocation] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [isOrganisationAdmin, setIsOrganisationAdmin] = useState(false);
   // Site test V1: a user must only see/select projects they are an explicit
   // member of. null = memberships not loaded yet (do not show anything).
   const [accessibleProjectIds, setAccessibleProjectIds] = useState<Set<string> | null>(null);
@@ -43,9 +45,13 @@ export default function ProjectSelector() {
 
   async function refreshAccessibleProjects() {
     try {
-      const { data, error } = await createClient().from("sitepulse_project_members").select("project_id");
+      const [{ data, error }, organisation] = await Promise.all([
+        createClient().from("sitepulse_project_members").select("project_id"),
+        loadCurrentOrganisation(),
+      ]);
       if (error) throw error;
       setAccessibleProjectIds(new Set((data ?? []).map((row) => String(row.project_id))));
+      setIsOrganisationAdmin(organisation?.role === "organisation_admin");
     } catch (caught) {
       console.error("Unable to load accessible projects:", caught);
       setAccessibleProjectIds(new Set());
@@ -131,7 +137,7 @@ export default function ProjectSelector() {
     }
 
     try {
-      await createProjectMembership(createdProjectId);
+      await createOrganisationProject(createdProjectId, trimmedName, code.trim(), location.trim());
     } catch (caught) {
       await rollBackLocalProject();
       setError(caught instanceof Error ? caught.message : "Unable to create the project.");
@@ -172,6 +178,12 @@ export default function ProjectSelector() {
       return;
     }
     if (!window.confirm(`Archive “${active.name}”? It will be hidden, but its records and audit history will not be deleted.`)) return;
+    try {
+      await setCanonicalProjectArchived(active.id, true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to archive the project.");
+      return;
+    }
     const updatedProjects = archiveProject(active.id);
     try {
       await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
@@ -183,6 +195,12 @@ export default function ProjectSelector() {
   }
 
   async function handleRestoreProject(project: Project) {
+    try {
+      await setCanonicalProjectArchived(project.id, false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to restore the project.");
+      return;
+    }
     const updatedProjects = updateProject({ ...project, isArchived: false });
     try {
       await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
@@ -250,7 +268,8 @@ export default function ProjectSelector() {
             ))}
           </select>
 
-          <button
+          {isOrganisationAdmin && <button
+            id="sitepulse-new-project"
             type="button"
             className="secondary-button"
             onClick={() => {
@@ -259,10 +278,10 @@ export default function ProjectSelector() {
             }}
           >
             {showForm ? "Cancel" : "+ New Project"}
-          </button>
-          <button type="button" className="secondary-button" onClick={handleArchiveProject} disabled={!activeProjectId}>
+          </button>}
+          {isOrganisationAdmin && <button type="button" className="secondary-button" onClick={handleArchiveProject} disabled={!activeProjectId}>
             Archive Project
-          </button>
+          </button>}
           <UserIndicator />
         </div>
 

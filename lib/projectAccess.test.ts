@@ -3,7 +3,7 @@ import test from "node:test";
 import { isLastRemainingAdmin, projectMemberRoleLabel } from "./projectAccess.ts";
 
 test("projectMemberRoleLabel maps every enum value to a friendly label", () => {
-  assert.equal(projectMemberRoleLabel("admin"), "Admin");
+  assert.equal(projectMemberRoleLabel("admin"), "Project Admin");
   assert.equal(projectMemberRoleLabel("planner"), "Planner");
   assert.equal(projectMemberRoleLabel("commercial"), "Commercial");
   assert.equal(projectMemberRoleLabel("site_team"), "Site Team");
