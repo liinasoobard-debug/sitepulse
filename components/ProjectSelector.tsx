@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import {
-  addProject,
+  addProjectWithoutActivation,
   archiveProject,
   getActiveProjectId,
   loadProjects,
@@ -14,7 +14,7 @@ import type { Project } from "@/types/site";
 import { flushSharedWrite } from "@/lib/sharedSync";
 import { PROJECTS_STORAGE_KEY } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
-import { createProjectMembership } from "@/lib/supabase/projectData";
+import { createProjectMembership, rollbackProjectCreation } from "@/lib/supabase/projectData";
 import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import UserIndicator from "@/components/UserIndicator";
@@ -111,33 +111,57 @@ export default function ProjectSelector() {
 
     setCreating(true);
     setError("");
-    let createdProjectId = "";
-    try {
-      const updatedProjects = addProject({
-        name: trimmedName,
-        code: code.trim(),
-        location: location.trim(),
-        isArchived: false,
-      });
-      createdProjectId = getActiveProjectId();
-      await createProjectMembership(createdProjectId);
-      await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
-      setProjects(updatedProjects.filter((project) => !project.isArchived));
-      setActiveProjectIdState(createdProjectId);
-      setName("");
-      setCode("");
-      setLocation("");
-      setShowForm(false);
-      reloadCurrentPage();
-    } catch (caught) {
-      if (createdProjectId) {
-        const rolledBack = removeProject(createdProjectId);
+
+    const { newProject, updatedProjects } = addProjectWithoutActivation({
+      name: trimmedName,
+      code: code.trim(),
+      location: location.trim(),
+      isArchived: false,
+    });
+    const createdProjectId = newProject.id;
+
+    async function rollBackLocalProject() {
+      const rolledBack = removeProject(createdProjectId);
+      refreshProjects();
+      try {
         await flushSharedWrite(PROJECTS_STORAGE_KEY, rolledBack);
-        refreshProjects();
+      } catch (caught) {
+        console.error("Unable to sync the rolled-back project list:", caught);
       }
+    }
+
+    try {
+      await createProjectMembership(createdProjectId);
+    } catch (caught) {
+      await rollBackLocalProject();
       setError(caught instanceof Error ? caught.message : "Unable to create the project.");
       setCreating(false);
+      return;
     }
+
+    try {
+      await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
+    } catch (caught) {
+      await rollBackLocalProject();
+      try {
+        await rollbackProjectCreation(createdProjectId);
+      } catch (rollbackCaught) {
+        console.error("Unable to roll back project membership after a failed create:", rollbackCaught);
+      }
+      setError(caught instanceof Error ? caught.message : "Unable to save the new project. Please try again.");
+      setCreating(false);
+      return;
+    }
+
+    setAccessibleProjectIds((current) => new Set([...(current ?? []), createdProjectId]));
+    setProjects(updatedProjects.filter((project) => !project.isArchived));
+    setActiveProjectIdState(createdProjectId);
+    setName("");
+    setCode("");
+    setLocation("");
+    setShowForm(false);
+    setActiveProject(createdProjectId);
+    reloadCurrentPage();
   }
 
   async function handleArchiveProject() {
@@ -149,13 +173,23 @@ export default function ProjectSelector() {
     }
     if (!window.confirm(`Archive “${active.name}”? It will be hidden, but its records and audit history will not be deleted.`)) return;
     const updatedProjects = archiveProject(active.id);
-    await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
+    try {
+      await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to archive the project.");
+      return;
+    }
     reloadCurrentPage();
   }
 
   async function handleRestoreProject(project: Project) {
     const updatedProjects = updateProject({ ...project, isArchived: false });
-    await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
+    try {
+      await flushSharedWrite(PROJECTS_STORAGE_KEY, updatedProjects);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to restore the project.");
+      return;
+    }
     setActiveProject(project.id);
     reloadCurrentPage();
   }

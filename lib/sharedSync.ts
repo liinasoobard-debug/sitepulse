@@ -82,9 +82,12 @@ async function writeSharedRecord(key: string, payload: unknown): Promise<void> {
     payload,
     client_id: getSyncClientId(),
   });
-  if (error) console.error(`Unable to sync ${key}:`, error.message);
+  if (error) throw new Error(`Unable to sync ${key}: ${error.message}`);
 }
 
+// Unlike queueSharedWrite, this propagates a failed write to the caller so
+// callers with correctness requirements (e.g. project creation) can react
+// instead of silently proceeding as if the write had succeeded.
 export async function flushSharedWrite(key: string, payload: unknown): Promise<void> {
   if (typeof window === "undefined" || !isSharedStorageKey(key)) return;
   const pending = pendingWrites.get(key);
@@ -101,7 +104,9 @@ export function queueSharedWrite(key: string, payload: unknown): void {
     key,
     setTimeout(() => {
       pendingWrites.delete(key);
-      void writeSharedRecord(key, payload);
+      writeSharedRecord(key, payload).catch((error) => {
+        console.error(`Unable to sync ${key}:`, error instanceof Error ? error.message : error);
+      });
     }, 150)
   );
 }

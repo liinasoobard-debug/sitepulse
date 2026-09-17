@@ -370,6 +370,23 @@ export function addProject(
   return updatedProjects;
 }
 
+export function addProjectWithoutActivation(
+  project: Omit<Project, "id" | "createdAt">
+): { newProject: Project; updatedProjects: Project[] } {
+  const projects = loadProjects();
+  const newProject: Project = {
+    id: createId("project"),
+    name: project.name.trim(),
+    code: project.code?.trim() || "",
+    location: project.location?.trim() || "",
+    isArchived: false,
+    createdAt: new Date().toISOString(),
+  };
+  const updatedProjects = [...projects, newProject];
+  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updatedProjects.map(normaliseProject)));
+  return { newProject, updatedProjects };
+}
+
 export function removeProject(projectId: string): Project[] {
   const updatedProjects = loadProjects().filter((project) => project.id !== projectId);
   saveProjects(updatedProjects);
