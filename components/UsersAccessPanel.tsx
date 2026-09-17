@@ -3,18 +3,24 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
-  addProjectMember,
   loadProjectMembers,
   removeProjectMember,
   updateProjectMemberRole,
   type ProjectMember,
 } from "@/lib/supabase/projectMembers";
+import {
+  loadProjectInvites,
+  revokeProjectInvite,
+  sendProjectInvite,
+  type ProjectInvite,
+} from "@/lib/supabase/projectInvites";
 import { canManageProject } from "@/lib/supabase/organisationData";
 import { isLastRemainingAdmin, projectMemberRoleLabel, PROJECT_MEMBER_ROLES, type ProjectMemberRole } from "@/lib/projectAccess";
 
 export default function UsersAccessPanel({ projectId }: { projectId: string }) {
   const [canManage, setCanManage] = useState<boolean | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [invites, setInvites] = useState<ProjectInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -28,7 +34,17 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
     try {
       const allowed = await canManageProject(projectId);
       setCanManage(allowed);
-      setMembers(allowed ? await loadProjectMembers(projectId) : []);
+      if (allowed) {
+        const [memberRows, inviteRows] = await Promise.all([
+          loadProjectMembers(projectId),
+          loadProjectInvites(projectId),
+        ]);
+        setMembers(memberRows);
+        setInvites(inviteRows);
+      } else {
+        setMembers([]);
+        setInvites([]);
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load project members.");
     } finally {
@@ -46,22 +62,52 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
     event.preventDefault();
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setError("Enter the email address of an existing SitePulse user.");
+      setError("Enter the team member's email address.");
       return;
     }
     setAdding(true);
     setError("");
     setMessage("");
     try {
-      await addProjectMember(projectId, trimmedEmail, role);
+      await sendProjectInvite(projectId, trimmedEmail, role);
       setEmail("");
       setRole("site_team");
-      setMessage(`${trimmedEmail} was given ${projectMemberRoleLabel(role)} access.`);
+      setMessage("Invite sent.");
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to add this user.");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleResend(invite: ProjectInvite) {
+    setBusyUserId(invite.id);
+    setError("");
+    setMessage("");
+    try {
+      await sendProjectInvite(projectId, invite.email, invite.role);
+      setMessage(`A new invitation was sent to ${invite.email}.`);
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to resend this invitation.");
+    } finally {
+      setBusyUserId("");
+    }
+  }
+
+  async function handleRevoke(invite: ProjectInvite) {
+    setBusyUserId(invite.id);
+    setError("");
+    setMessage("");
+    try {
+      await revokeProjectInvite(invite.id);
+      setMessage(`Invitation for ${invite.email} was revoked.`);
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to revoke this invitation.");
+    } finally {
+      setBusyUserId("");
     }
   }
 
@@ -152,7 +198,7 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
 
           <form onSubmit={handleAdd} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
             <label className="attendance-field" style={{ minWidth: 260 }}>
-              <span>Add team member</span>
+              <span>Invite team member</span>
               <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" />
             </label>
             <label className="attendance-field">
@@ -164,9 +210,31 @@ export default function UsersAccessPanel({ projectId }: { projectId: string }) {
               </select>
             </label>
             <button type="submit" className="primary-button" style={{ width: "auto", minHeight: 42, marginTop: 0, padding: "9px 18px" }} disabled={adding}>
-              {adding ? "Adding…" : "Add access"}
+              {adding ? "Sending…" : "Send invite"}
             </button>
           </form>
+
+          <div style={{ marginTop: 24 }}>
+            <h3>Pending invitations</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              {invites.filter((invite) => invite.status === "pending").map((invite) => (
+                <div key={invite.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: 10, border: "1px solid #d7dde3", borderRadius: 8 }}>
+                  <strong>{invite.email}</strong>
+                  <span>{projectMemberRoleLabel(invite.role)}</span>
+                  <span style={{ color: "#687580", fontSize: 13 }}>
+                    Sent {new Date(invite.createdAt).toLocaleDateString("en-GB")} · expires {new Date(invite.expiresAt).toLocaleDateString("en-GB")}
+                  </span>
+                  <button type="button" className="secondary-button" disabled={busyUserId === invite.id} onClick={() => void handleResend(invite)}>
+                    Resend
+                  </button>
+                  <button type="button" className="secondary-button" disabled={busyUserId === invite.id} onClick={() => void handleRevoke(invite)}>
+                    Revoke
+                  </button>
+                </div>
+              ))}
+              {!invites.some((invite) => invite.status === "pending") && <p style={{ color: "#687580" }}>No pending invitations.</p>}
+            </div>
+          </div>
         </>
       )}
     </section>

@@ -5,6 +5,7 @@ import { getSupabaseConfig, isSupabaseConfigured } from "@/lib/supabase/config";
 export async function updateSession(request: NextRequest) {
   const isLogin = request.nextUrl.pathname === "/login";
   const isResetPassword = request.nextUrl.pathname === "/reset-password";
+  const isInviteAcceptance = request.nextUrl.pathname === "/invite/accept";
   if (!isSupabaseConfigured()) {
     if (isLogin) return NextResponse.next({ request });
     const url = request.nextUrl.clone();
@@ -28,7 +29,7 @@ export async function updateSession(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(data?.claims?.sub);
-  if (!isAuthenticated && !isLogin && !isResetPassword) {
+  if (!isAuthenticated && !isLogin && !isResetPassword && !isInviteAcceptance) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);

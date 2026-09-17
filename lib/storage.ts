@@ -387,6 +387,15 @@ export function addProjectWithoutActivation(
   return { newProject, updatedProjects };
 }
 
+export function cacheAccessibleProject(project: Project): void {
+  if (typeof window === "undefined") return;
+  const projects = loadProjects();
+  const updatedProjects = projects.some((item) => item.id === project.id)
+    ? projects.map((item) => item.id === project.id ? normaliseProject(project) : item)
+    : [...projects, normaliseProject(project)];
+  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updatedProjects));
+}
+
 export function removeProject(projectId: string): Project[] {
   const updatedProjects = loadProjects().filter((project) => project.id !== projectId);
   saveProjects(updatedProjects);

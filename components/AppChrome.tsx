@@ -9,9 +9,9 @@ import ActivityTracker from "@/components/ActivityTracker";
 
 export default function AppChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLogin = pathname === "/login";
+  const isPublicAuthPage = pathname === "/login" || pathname === "/reset-password" || pathname === "/invite/accept";
   const usesSiteDate = ["/daily-plan", "/attendance", "/crews", "/timeline"].some((route) => pathname.startsWith(route));
-  if (isLogin) return children;
+  if (isPublicAuthPage) return children;
   return <SharedDataSync>
     <ActivityTracker />
     <header className="sitepulse-app-header">

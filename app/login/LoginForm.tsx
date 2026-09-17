@@ -1,19 +1,14 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { login, signup } from "@/app/login/actions";
+import { login } from "@/app/login/actions";
 import { createClient } from "@/lib/supabase/client";
 import PasswordField from "@/components/PasswordField";
 
 type ForgotStatus = "idle" | "sending" | "sent" | "error";
 
-export default function LoginForm() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+export default function LoginForm({ nextPath = "" }: { nextPath?: string }) {
   const [loginState, loginAction, loginPending] = useActionState(login, undefined);
-  const [signupState, signupAction, signupPending] = useActionState(signup, undefined);
-  const isSignup = mode === "signup";
-  const state = isSignup ? signupState : loginState;
-  const pending = isSignup ? signupPending : loginPending;
 
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
@@ -44,18 +39,17 @@ export default function LoginForm() {
   }
 
   return <div style={{ display: "grid", gap: 16 }}>
-    <form action={isSignup ? signupAction : loginAction} style={{ display: "grid", gap: 16 }}>
+    <form action={loginAction} style={{ display: "grid", gap: 16 }}>
+      <input type="hidden" name="next" value={nextPath} />
       <label className="attendance-field"><span>Email address</span><input name="email" type="email" autoComplete="email" required /></label>
-      <PasswordField label="Password" name="password" minLength={isSignup ? 8 : undefined} autoComplete={isSignup ? "new-password" : "current-password"} />
-      {isSignup && <PasswordField label="Confirm password" name="confirmPassword" minLength={8} autoComplete="new-password" />}
-      {!isSignup && <button type="button" className="forgot-password-link" onClick={() => { setForgotOpen((open) => !open); setForgotStatus("idle"); setForgotError(""); }}>
+      <PasswordField label="Password" name="password" autoComplete="current-password" />
+      <button type="button" className="forgot-password-link" onClick={() => { setForgotOpen((open) => !open); setForgotStatus("idle"); setForgotError(""); }}>
         Forgot password?
-      </button>}
-      {state?.error && <p role="alert" style={{ margin: 0, color: "#b42318", fontWeight: 700 }}>{state.error}</p>}
-      {state?.message && <p role="status" style={{ margin: 0, color: "#176b45", fontWeight: 700 }}>{state.message}</p>}
-      <button type="submit" className="primary-button" disabled={pending}>{pending ? (isSignup ? "Creating account…" : "Signing in…") : (isSignup ? "Create account" : "Sign in")}</button>
+      </button>
+      {loginState?.error && <p role="alert" style={{ margin: 0, color: "#b42318", fontWeight: 700 }}>{loginState.error}</p>}
+      <button type="submit" className="primary-button" disabled={loginPending}>{loginPending ? "Signing in…" : "Sign in"}</button>
     </form>
-    {!isSignup && forgotOpen && <div className="forgot-password-panel">
+    {forgotOpen && <div className="forgot-password-panel">
       {forgotStatus === "sent" ? (
         <p role="status" style={{ margin: 0, color: "#176b45", fontWeight: 700 }}>
           If an account exists for that email, a password reset link has been sent.
@@ -73,8 +67,5 @@ export default function LoginForm() {
         </form>
       )}
     </div>}
-    <button type="button" className="secondary-button" onClick={() => setMode(isSignup ? "login" : "signup")} disabled={pending}>
-      {isSignup ? "Already have an account? Sign in" : "New to SitePulse? Create an account"}
-    </button>
   </div>;
 }
