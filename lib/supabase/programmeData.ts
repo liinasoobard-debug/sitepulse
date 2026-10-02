@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { plannedWorkingDaysBetween } from "@/lib/manDayProductivity";
-import { deriveProgrammeActualDates, type ProgrammeActualRecord } from "@/lib/programmeActuals";
+import { resolveProgrammeActuals, type ImportedProgrammeActuals, type ProgrammeActualRecord } from "@/lib/programmeActuals";
 import type { ProgrammeActivity } from "@/types/site";
 
 type DbActivity = {
@@ -96,10 +96,14 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const plannedGangDailyOutput = activity.plannedGangDailyOutput || (plannedManDayProductivity && assumedGangSize ? plannedManDayProductivity * assumedGangSize : undefined);
     const plannedManDays = activity.plannedManDays || (plannedManDayProductivity ? plannedQuantity / plannedManDayProductivity : undefined);
     const activityActuals = actuals.get(activity.programmeActivityId) ?? [];
-    const derivedActuals = deriveProgrammeActualDates(activityActuals, plannedQuantity);
-    const actualStart = derivedActuals.actualStart ?? activity.actualStart;
-    const actualFinish = activityActuals.length ? derivedActuals.actualFinish : activity.actualFinish;
-    const physicalPercentComplete = activityActuals.length && plannedQuantity > 0 ? derivedActuals.percentComplete : activity.physicalPercentComplete;
+    const imported = row.raw_data?.importedActuals as ImportedProgrammeActuals | undefined;
+    const sourceActuals = imported ?? (activity.sourceType === "p6-xlsx" || activity.sourceType === "asta-xlsx" || !activityActuals.length ? {
+      actualStart: activity.actualStart, actualFinish: activity.actualFinish,
+      percentComplete: activity.physicalPercentComplete, status: activity.activityStatus,
+    } : {});
+    const resolved = resolveProgrammeActuals(activityActuals, plannedQuantity, sourceActuals);
+    const { actualStart, actualFinish } = resolved;
+    const physicalPercentComplete = resolved.percentComplete;
     return {
       ...activity,
       plannedQuantity,
@@ -114,6 +118,8 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
       actualStart,
       actualFinish,
       physicalPercentComplete,
+      activityStatus: resolved.status,
+      status: resolved.status,
       unit,
       productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedManDayProductivity && assumedGangSize && unit),
       resourceNames: uniqueNames(activityResources),
