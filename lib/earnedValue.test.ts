@@ -38,7 +38,7 @@ test("caps baseline earned progress at 100 percent", () => {
 });
 
 test("excludes unallocated labour and reports its hours", () => {
-  const unallocated = work("unallocated", "2026-08-05", undefined, 6);
+  const unallocated: { date: string; day: SiteDay; event: TimelineEvent } = work("unallocated", "2026-08-05", undefined, 6);
   unallocated.event.programmeActivityId = undefined;
   const result = buildEarnedValueData({ programme: [activity], events: [work("allocated", "2026-08-05", 10, 8), unallocated], reportingDate: "2026-08-07", filters });
   assert.equal(result.metrics.actualHours, 8);

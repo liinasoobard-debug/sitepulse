@@ -1,9 +1,9 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { plannedWorkingDaysBetween } from "@/lib/manDayProductivity";
+import { applyProgrammeResources, quantityBaseline } from "@/lib/programmeResources";
 import { resolveProgrammeActuals, type ImportedProgrammeActuals, type ProgrammeActualRecord } from "@/lib/programmeActuals";
-import type { ProgrammeActivity } from "@/types/site";
+import type { ProgrammeActivity, ProgrammeResource, ProgrammeResourceAssignment } from "@/types/site";
 
 type DbActivity = {
   id: string; project_id: string; programme_import_id: string; external_activity_id: string;
@@ -30,6 +30,8 @@ export function programmeActivityFromDb(row: DbActivity, source?: { source_type?
     activityStatus: row.activity_status ?? "", wbsCode: row.wbs_code ?? "", wbsPath: row.wbs_name ?? row.wbs_code ?? "",
     building: row.building ?? "", elevation: row.area ?? "", level: row.level ?? "", gridline: row.gridline ?? "",
     productType: row.product_type ?? String(raw.productType ?? ""), status: row.programme_status ?? String(raw.programmeStatus ?? row.activity_status ?? ""), unit: row.unit ?? "", plannedQuantity: Number(row.planned_quantity ?? 0), budgetLabourHours: row.budget_labour_hours ?? (raw.budgetLabourHours === null || raw.budgetLabourHours === undefined ? undefined : Number(raw.budgetLabourHours)), plannedProductionRate: row.productivity_target ?? undefined,
+    importedLabourManDays: raw.importedLabourManDays == null ? undefined : Number(raw.importedLabourManDays),
+    importedActualLabourManDays: raw.importedActualLabourManDays == null ? undefined : Number(raw.importedActualLabourManDays),
     plannedCrewSize: row.planned_crew_size ?? undefined, plannedManDayProductivity: row.planned_man_day_productivity ?? undefined,
     assumedGangSize, plannedGangDailyOutput: row.planned_gang_daily_output ?? undefined,
     plannedManDays: row.planned_man_days ?? undefined, plannedDurationDays: row.planned_duration_days ?? undefined,
@@ -50,7 +52,7 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
   const [activityResult, resourceResult, assignmentResult, actualResult] = await Promise.all([
     supabase.from("programme_activities").select("*").eq("project_id", projectId).eq("programme_import_id", published.id).order("activity_name"),
     supabase.from("programme_resources").select("external_resource_id,resource_name,resource_type,unit").eq("project_id", projectId).eq("programme_import_id", published.id),
-    supabase.from("programme_assignments").select("activity_external_id,resource_external_id,budgeted_units").eq("project_id", projectId).eq("programme_import_id", published.id),
+    supabase.from("programme_assignments").select("activity_external_id,resource_external_id,budgeted_units,actual_units,remaining_units,raw_data").eq("project_id", projectId).eq("programme_import_id", published.id),
     supabase.from("timeline_events").select("external_activity_id,event_date,actual_quantity,status").eq("project_id", projectId).eq("event_type", "work").is("deleted_at", null).order("event_date"),
   ]);
   if (activityResult.error) throw activityResult.error;
@@ -63,38 +65,22 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const key = String(row.external_activity_id);
     actuals.set(key, [...(actuals.get(key) ?? []), { date: String(row.event_date), quantity: Math.max(0, Number(row.actual_quantity ?? 0)), completed: row.status === "completed" }]);
   }
-  const resources = new Map((resourceResult.data ?? []).map((row) => [String(row.external_resource_id), { name: String(row.resource_name), type: String(row.resource_type ?? ""), unit: String(row.unit ?? "") }]));
-  const assigned = new Map<string, Array<{ name: string; type: string; unit: string; budgetedUnits: number }>>();
-  for (const row of assignmentResult.data ?? []) {
-    const resource = resources.get(String(row.resource_external_id));
-    if (!resource) continue;
-    const activityId = String(row.activity_external_id);
-    assigned.set(activityId, [...(assigned.get(activityId) ?? []), { ...resource, budgetedUnits: Number(row.budgeted_units ?? 0) }]);
-  }
-  const uniqueNames = (items: Array<{ name: string }>) => [...new Set(items.map((item) => item.name).filter(Boolean))];
-  const isMaterial = (type: string) => /^(?:rt_)?mat(?:erial)?$/i.test(type);
-  const isLabour = (type: string) => /^(?:rt_)?labou?r$/i.test(type);
+  const resources: ProgrammeResource[] = (resourceResult.data ?? []).map(row => ({ id: String(row.external_resource_id), projectId, sourceImportId: published.id,
+    resourceId: String(row.external_resource_id), resourceName: String(row.resource_name), resourceType: String(row.resource_type ?? ""), unitOfMeasure: String(row.unit ?? "") }));
+  const assignments: ProgrammeResourceAssignment[] = (assignmentResult.data ?? []).map(row => {
+    const raw = row.raw_data as Record<string, unknown> | null;
+    return { id: "", projectId, sourceImportId: published.id, programmeActivityId: String(row.activity_external_id), resourceId: String(row.resource_external_id),
+      budgetedLabourUnits: row.budgeted_units == null ? undefined : Number(row.budgeted_units),
+      actualLabourUnits: row.actual_units == null ? undefined : Number(row.actual_units),
+      remainingLabourUnits: row.remaining_units == null ? undefined : Number(row.remaining_units),
+      plannedResourceCount: raw?.plannedResourceCount == null ? undefined : Number(raw.plannedResourceCount),
+      budgetedManDays: raw?.budgetedManDays == null ? undefined : Number(raw.budgetedManDays),
+      actualManDays: raw?.actualManDays == null ? undefined : Number(raw.actualManDays),
+      sharedCrewWith: raw?.sharedCrewWith ? String(raw.sharedCrewWith) : undefined };
+  });
   const activities = ((activityResult.data ?? []) as DbActivity[]).map((row) => {
-    const activity = programmeActivityFromDb(row, published);
-    const activityResources = assigned.get(activity.programmeActivityId) ?? [];
-    const labourResources = activityResources.filter((resource) => isLabour(resource.type));
-    const materialResources = activityResources.filter((resource) => isMaterial(resource.type));
-    const labourHourResources = labourResources.filter((resource) => /^(?:h|hr|hrs|hour|hours)$/i.test(resource.unit.trim()));
-    const labourCountResources = labourResources.filter((resource) => !labourHourResources.includes(resource));
-    const assignedLabourHours = labourHourResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
-    const assignedCrewSize = labourCountResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
-    const assignedMaterialQuantity = materialResources.reduce((total, resource) => total + resource.budgetedUnits, 0);
-    const derivedLabourHours = assignedLabourHours || (assignedCrewSize && activity.originalDuration ? assignedCrewSize * activity.originalDuration : 0);
-    const budgetLabourHours = activity.budgetLabourHours || derivedLabourHours || undefined;
-    const plannedQuantity = activity.plannedQuantity || assignedMaterialQuantity || 0;
-    const unit = activity.unit || materialResources.map((resource) => resource.unit).find(Boolean) || "";
-    const plannedCrewSize = activity.plannedCrewSize || assignedCrewSize || (budgetLabourHours && activity.originalDuration ? budgetLabourHours / activity.originalDuration : undefined);
-    const assumedGangSize = activity.assumedGangSize || plannedCrewSize;
-    const plannedProductionRate = activity.plannedProductionRate || (plannedQuantity > 0 && budgetLabourHours ? plannedQuantity / budgetLabourHours : undefined);
-    const plannedDurationDays = activity.plannedDurationDays ?? plannedWorkingDaysBetween(activity.plannedStart, activity.plannedFinish);
-    const plannedManDayProductivity = activity.plannedManDayProductivity || (plannedQuantity > 0 && plannedDurationDays && plannedDurationDays > 0 && assumedGangSize && assumedGangSize > 0 ? plannedQuantity / (plannedDurationDays * assumedGangSize) : undefined);
-    const plannedGangDailyOutput = activity.plannedGangDailyOutput || (plannedManDayProductivity && assumedGangSize ? plannedManDayProductivity * assumedGangSize : undefined);
-    const plannedManDays = activity.plannedManDays || (plannedManDayProductivity ? plannedQuantity / plannedManDayProductivity : undefined);
+    const activity = applyProgrammeResources(programmeActivityFromDb(row, published), resources, assignments);
+    const { plannedQuantity } = activity;
     const activityActuals = actuals.get(activity.programmeActivityId) ?? [];
     const imported = row.raw_data?.importedActuals as ImportedProgrammeActuals | undefined;
     const sourceActuals = imported ?? (activity.sourceType === "p6-xlsx" || activity.sourceType === "asta-xlsx" || !activityActuals.length ? {
@@ -104,28 +90,8 @@ export async function loadPublishedProgramme(projectId: string): Promise<{ impor
     const resolved = resolveProgrammeActuals(activityActuals, plannedQuantity, sourceActuals);
     const { actualStart, actualFinish } = resolved;
     const physicalPercentComplete = resolved.percentComplete;
-    return {
-      ...activity,
-      plannedQuantity,
-      budgetLabourHours,
-      plannedCrewSize,
-      assumedGangSize,
-      plannedDurationDays,
-      plannedManDayProductivity,
-      plannedGangDailyOutput,
-      plannedManDays,
-      plannedProductionRate,
-      actualStart,
-      actualFinish,
-      physicalPercentComplete,
-      activityStatus: resolved.status,
-      status: resolved.status,
-      unit,
-      productivityBaselineComplete: Boolean(plannedQuantity > 0 && plannedManDayProductivity && assumedGangSize && unit),
-      resourceNames: uniqueNames(activityResources),
-      labourResourceNames: uniqueNames(labourResources),
-      materialResourceNames: uniqueNames(materialResources),
-    };
+    return { ...activity, actualStart, actualFinish, physicalPercentComplete, activityStatus: resolved.status, status: resolved.status };
+
   });
   return { importId: published.id, activities };
 }
@@ -187,6 +153,18 @@ export async function loadProjectRole(projectId: string): Promise<"planner" | "a
   if (error) throw error;
   console.info("Programme project authorization", { userId: user.id, projectId, membership: data });
   return data?.role as "planner" | "admin" | "commercial" | "site_team" | undefined;
+}
+
+export async function updateProgrammeQuantity(activity: ProgrammeActivity, quantity: number, unit: string) {
+  const baseline = quantityBaseline(activity, quantity, unit);
+  const supabase = createClient();
+  const { data: row, error: readError } = await supabase.from("programme_activities").select("raw_data").eq("id", activity.id).single();
+  if (readError) throw readError;
+  const { error } = await supabase.from("programme_activities").update({ ...baseline,
+    raw_data: { ...(row.raw_data as Record<string, unknown> ?? {}), manualQuantity: { quantity, unit: unit.trim() } },
+    updated_at: new Date().toISOString(),
+  }).eq("id", activity.id);
+  if (error) throw error;
 }
 
 export async function updateProgrammeBaseline(activityId: string, unit: string, plannedManDayProductivity: number, assumedGangSize: number) {

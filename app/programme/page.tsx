@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { completedP6Productivity } from "@/lib/programmeResources";
 import ProductivityRagBadge from "@/components/ProductivityRagBadge";
 import { productivityPerformance, productivityRag, productivityRagLabels, ragDistribution, type ProductivityRag } from "@/lib/productivityRag";
 import { getActiveProject, getActiveProjectId, updateProject } from "@/lib/storage";
@@ -13,6 +14,7 @@ import {
   loadProjectRole,
   loadPublishedProgramme,
   updateProgrammeBaseline,
+  updateProgrammeQuantity,
 } from "@/lib/supabase/programmeData";
 import type { ProgrammeActivity } from "@/types/site";
 
@@ -95,6 +97,7 @@ export default function ProgrammePage() {
   const [crewSize, setCrewSize] = useState("");
   const [unit, setUnit] = useState("");
   const [rate, setRate] = useState("");
+  const [quantity, setQuantity] = useState("");
   const canManage = Boolean(role);
 
   const refresh = useCallback(async () => {
@@ -244,23 +247,26 @@ export default function ProgrammePage() {
     }
   }
 
+  function openBaseline(item: ProgrammeActivity) {
+    setEdit(item); setUnit(item.unit); setQuantity(item.plannedQuantity > 0 ? String(item.plannedQuantity) : "");
+    setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? ""));
+  }
+
   async function saveBaseline() {
-    if (!edit || !unit.trim() || !(Number(rate) > 0) || !Number.isInteger(Number(crewSize)) || Number(crewSize) < 1) {
-      setError("Unit, Planned Man-Day Productivity, and Assumed Gang Size are required.");
-      return;
+    if (!edit || !unit.trim() || !(Number(quantity) > 0)) {
+      setError("Enter the material quantity and its unit."); return;
     }
+    setBusy(true);
     try {
-      await updateProgrammeBaseline(edit.id, unit.trim(), Number(rate), Number(crewSize));
-      setEdit(null);
-      setMessage("Productivity baseline updated.");
+      await updateProgrammeQuantity(edit, Number(quantity), unit.trim());
+      if (!edit.importedLabourManDays && Number(rate) > 0 && Number(crewSize) > 0) {
+        await updateProgrammeBaseline(edit.id, unit.trim(), Number(rate), Number(crewSize));
+      }
+      setEdit(null); setError(""); setMessage("Quantity saved. Productivity uses the imported labour man-days where available.");
       await refresh();
     } catch (baselineError) {
-      setError(
-        baselineError instanceof Error
-          ? baselineError.message
-          : "Unable to update baseline."
-      );
-    }
+      setError(baselineError instanceof Error ? baselineError.message : "Unable to save quantity.");
+    } finally { setBusy(false); }
   }
 
   const options = useMemo(
@@ -278,7 +284,7 @@ export default function ProgrammePage() {
   const productivityFactorThresholds = getActiveProject()?.productivityFactorThresholds;
 
   const productivityRows = useMemo(() => activities.map((item) => {
-    const actual = actualProductivity[item.programmeActivityId];
+    const actual = actualProductivity[item.programmeActivityId] ?? completedP6Productivity(item);
     const rag = productivityRag(item.plannedManDayProductivity, actual, productivityFactorThresholds);
     return { item, actual, rag, performance: productivityPerformance(item.plannedManDayProductivity, actual) };
   }), [activities, actualProductivity, productivityFactorThresholds]);
@@ -440,13 +446,15 @@ export default function ProgrammePage() {
 
         {edit && (
           <section style={{ padding: 16, border: "1px solid #d7dde3", borderRadius: 12, marginBottom: 16 }}>
-            <h3>Complete baseline — {edit.activityName}</h3>
+            <h3>Material quantity — {edit.activityName}</h3>
+            {edit.importedLabourManDays ? <p>P6 planned labour: {formatNumber(edit.importedLabourManDays)} man-days. {edit.assumedGangSize ? `Planned people: ${formatNumber(edit.assumedGangSize)}.` : ""} Enter quantity and unit; productivity is calculated automatically.</p> : <p>No usable P6 labour effort is available for this activity. You can save its quantity now and complete the labour baseline later.</p>}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <label className="attendance-field"><span>Material quantity</span><input type="number" min="0" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
               <label className="attendance-field"><span>Unit</span><input value={unit} onChange={(event) => setUnit(event.target.value)} /></label>
-              <label className="attendance-field"><span>Planned Man-Day Productivity</span><input type="number" value={rate} onChange={(event) => setRate(event.target.value)} /></label>
-              <label className="attendance-field"><span>Assumed Gang Size</span><input type="number" min="1" step="1" value={crewSize} onChange={(event) => setCrewSize(event.target.value)} /></label>
+              <label className="attendance-field"><span>Planned Man-Day Productivity</span><input type="number" readOnly={Boolean(edit.importedLabourManDays)} value={edit.importedLabourManDays ? (Number(quantity) > 0 ? Number(quantity) / edit.importedLabourManDays : "") : rate} onChange={(event) => setRate(event.target.value)} /></label>
+              <label className="attendance-field"><span>Planned gang size</span><input type="number" readOnly={Boolean(edit.importedLabourManDays)} min="0" step="any" value={crewSize} onChange={(event) => setCrewSize(event.target.value)} /></label>
             </div>
-            <button className="add-event-button" style={{ width: "auto" }} onClick={() => void saveBaseline()}>Save</button>
+            <button className="add-event-button" style={{ width: "auto" }} disabled={busy} onClick={() => void saveBaseline()}>Save quantity</button>
           </section>
         )}
 
@@ -474,19 +482,19 @@ export default function ProgrammePage() {
 
         <div className="programme-desktop-table" style={{ overflowX: "auto" }}>
           <table className="programme-grid" style={{ width: "100%", minWidth: 1900, borderCollapse: "collapse" }}>
-            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Open Constraints", "Product Type", "Labour Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "Assumed Gang Size", "Productivity RAG", "Planned Man-Day Productivity", "Actual Man-Day Productivity", "Productivity Performance %"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
+            <thead><tr>{["Building", "Area", "Gridline", "Level", "Activity", "Open Constraints", "Product Type", "Labour Resources", "Plant Resources", "Material Resources", "Planned Start", "Planned Finish", "Actual Start", "Actual Finish", "% Complete", "Quantity", "Planned Gang Size", "P6 Planned Man-Days", "P6 Actual Man-Days", "Productivity RAG", "Planned Man-Day Productivity", "Actual Man-Day Productivity", "Productivity Performance %"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead>
             <tbody>
               {filtered.map(({ item, actual, rag, performance }) => (
                 <tr key={item.id}>
                   <td>{item.building || "—"}</td><td>{item.elevation || "—"}</td><td>{item.gridline || "—"}</td><td>{item.level || "—"}</td>
                   <td><strong>{item.activityName}</strong><small style={{ display: "block" }}>{item.programmeActivityId}</small><Link href={`/forecast?activity=${encodeURIComponent(item.programmeActivityId)}`}>View Forecast &amp; Recovery</Link><small style={{ display: "block" }}><Link href="/readiness">Site readiness / release</Link></small></td>
                   <td>{(() => { const ids=new Set(constraintLinks.filter((link)=>link.programme_activity_external_id===item.programmeActivityId).map((link)=>link.constraint_id)); const openRows=constraints.filter((row)=>ids.has(row.id)&&["OPEN","ACTIONED / MONITORING"].includes(row.status)); const worst=openRows.some((row)=>row.rag==="RED")?"RED":openRows.some((row)=>row.rag==="AMBER")?"AMBER":openRows.length?"GREEN":""; return openRows.length?<Link href={`/constraints?activity=${encodeURIComponent(item.programmeActivityId)}`}><span className={`calloff-rag ${worst.toLowerCase()}`}>{openRows.length} · {worst}</span></Link>:"—"; })()}</td><td>{item.productType || "—"}</td>
-                  <td>{item.labourResourceNames?.join(", ") || "—"}</td><td>{item.materialResourceNames?.join(", ") || "—"}</td>
+                  <td>{item.labourResourceNames?.join(", ") || "—"}</td><td>{item.plantResourceNames?.join(", ") || "—"}</td><td>{item.materialResourceNames?.join(", ") || "—"}</td>
                   <td>{item.plannedStart || "—"}</td><td>{item.plannedFinish || "—"}</td><td>{item.actualStart || "—"}</td><td>{item.actualFinish || "—"}</td><td>{formatNumber(item.physicalPercentComplete)}%</td>
-                  <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.assumedGangSize)}</td>
+                  <td>{item.plannedQuantity ? `${formatNumber(item.plannedQuantity)} ${item.unit}` : "—"}</td><td>{formatNumber(item.assumedGangSize)}</td><td>{formatNumber(item.importedLabourManDays)}</td><td>{formatNumber(item.importedActualLabourManDays)}</td>
                   <td><ProductivityRagBadge status={rag} /></td>
-                  <td>{item.plannedManDayProductivity ? <>{formatNumber(item.plannedManDayProductivity)} {item.unit}/man-day{item.assumedGangSize ? <small style={{ display: "block" }}>Daily Gang Output: {formatNumber(item.plannedGangDailyOutput ?? item.plannedManDayProductivity * item.assumedGangSize)} {item.unit}/day</small> : null}{canManage && <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? "")); }}>Edit baseline</button>}</> : canManage ? <button className="secondary-button" onClick={() => { setEdit(item); setUnit(item.unit); setRate(""); setCrewSize(String(item.assumedGangSize ?? "")); }}>Complete baseline</button> : "Man-day productivity baseline required"}</td>
-                  <td>{actual === undefined ? "—" : `${formatNumber(actual)} ${item.unit}/man-day`}</td><td>{performance === null ? "—" : `${formatNumber(performance)}%`}</td>
+                  <td>{item.plannedManDayProductivity ? <>{formatNumber(item.plannedManDayProductivity)} {item.unit}/man-day{item.assumedGangSize ? <small style={{ display: "block" }}>Daily Gang Output: {formatNumber(item.plannedGangDailyOutput ?? item.plannedManDayProductivity * item.assumedGangSize)} {item.unit}/day</small> : null}{canManage && <button className="secondary-button" onClick={() => openBaseline(item)}>Edit quantity</button>}</> : canManage ? <button className="secondary-button" onClick={() => openBaseline(item)}>Enter quantity</button> : "Man-day productivity baseline required"}</td>
+                  <td>{actual === undefined ? "—" : <>{formatNumber(actual)} {item.unit}/man-day{actualProductivity[item.programmeActivityId] === undefined && <small style={{ display: "block" }}>Completed scope / P6 actual labour</small>}</>}</td><td>{performance === null ? "—" : `${formatNumber(performance)}%`}</td>
                 </tr>
               ))}
             </tbody>
@@ -510,6 +518,8 @@ export default function ProgrammePage() {
                 <div><dt>Productivity Performance</dt><dd>{performance === null ? "—" : `${formatNumber(performance)}%`}</dd></div>
                   <div><dt>Product type</dt><dd>{item.productType || "—"}</dd></div>
                   <div><dt>Labour resources</dt><dd>{item.labourResourceNames?.join(", ") || "—"}</dd></div>
+                  <div><dt>Plant resources</dt><dd>{item.plantResourceNames?.join(", ") || "—"}</dd></div>
+                  <div><dt>P6 planned / actual man-days</dt><dd>{formatNumber(item.importedLabourManDays)} / {formatNumber(item.importedActualLabourManDays)}</dd></div>
                   <div><dt>Material resources</dt><dd>{item.materialResourceNames?.join(", ") || "—"}</dd></div>
               </dl>
               <details>
@@ -525,7 +535,7 @@ export default function ProgrammePage() {
                   <div><dt>Planned Man-Days</dt><dd>{formatNumber(item.plannedManDays)}</dd></div>
                 </dl>
               </details>
-              {canManage && <button className="secondary-button programme-baseline-action" onClick={() => { setEdit(item); setUnit(item.unit); setRate(String(item.plannedManDayProductivity ?? "")); setCrewSize(String(item.assumedGangSize ?? "")); }}>{baselineComplete ? "Edit baseline" : "Complete baseline"}</button>}
+              {canManage && <button className="secondary-button programme-baseline-action" onClick={() => openBaseline(item)}>{baselineComplete ? "Edit quantity" : "Enter quantity"}</button>}
               <Link className="secondary-button programme-baseline-action" href={`/forecast?activity=${encodeURIComponent(item.programmeActivityId)}`}>View Forecast &amp; Recovery</Link>
               <Link className="secondary-button programme-baseline-action" href="/readiness">Site Readiness / Release</Link>
             </article>;

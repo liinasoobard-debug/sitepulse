@@ -111,7 +111,10 @@ export interface ProgrammeActivity {
   calendar?: string;
   resourceNames?: string[];
   labourResourceNames?: string[];
+  plantResourceNames?: string[];
   materialResourceNames?: string[];
+  importedLabourManDays?: number;
+  importedActualLabourManDays?: number;
   dataDate?: string;
   sourceType?: "sitepulse-template" | "p6-xlsx" | "asta-xlsx" | "manual";
   sourceImportId?: string;
@@ -159,6 +162,10 @@ export interface ProgrammeResourceAssignment {
   actualLabourUnits?: number;
   remainingLabourUnits?: number;
   atCompletionUnits?: number;
+  plannedResourceCount?: number;
+  budgetedManDays?: number;
+  actualManDays?: number;
+  sharedCrewWith?: string;
   sourceImportId: string;
 }
 
