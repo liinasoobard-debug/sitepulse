@@ -3,7 +3,10 @@ import { plannedWorkingDaysBetween } from "./manDayProductivity.ts";
 
 // Confirmed by the planner: these are two labels for the same HVB workforce.
 // Prefer the first resource when both are assigned; unrelated crews stay separate.
-export const sharedP6Crews = [["HVB - F-INST", "HVB-INST-CLAD"]] as const;
+export const sharedP6Crews = [
+  ["HVB - F-INST", "HVB-INST-CLAD"],
+  ["HVB - F-INST", "HVB-INST-ROOF"],
+] as const;
 export const isLabourResource = (type?: string) => /^(?:rt_)?labou?r$/i.test(type ?? "");
 export const isPlantResource = (type?: string) => /^(?:rt_)?nonlabou?r$/i.test(type ?? "");
 const hourUnit = (unit?: string) => /^(h|hr|hrs|hour|hours)$/i.test(unit?.trim() ?? "");

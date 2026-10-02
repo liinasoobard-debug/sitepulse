@@ -98,3 +98,28 @@ test("quantities with different material units are not added together", () => {
   sheets.TASKRSRC.push({ task_id: "EAST", rsrc_id: "FIXINGS", target_qty: "600" });
   assert.equal(parseP6Workbook(sheets, "project", "import", mapping, [], 8).activities[0].plannedQuantity, 0);
 });
+
+
+test("roofers and facade installers count as one crew with effort preserved after reload", () => {
+  const sheets = source();
+  sheets.RSRC[1].rsrc_short_name = "HVB-INST-ROOF";
+  sheets.RSRC[1].rsrc_name = "Roofers";
+  sheets.TASKRSRC[2].rsrc_id = "HVB-INST-ROOF";
+  for (const row of sheets.TASKRSRC.slice(1, 3)) {
+    row.target_qty_per_hr = "4";
+    row.target_qty = "20";
+    row.act_qty = "24";
+  }
+  const parsed = parseP6Workbook(sheets, "project", "import", mapping, [], 8);
+  const a = applyProgrammeResources(parsed.activities[0], parsed.resources, JSON.parse(JSON.stringify(parsed.assignments)));
+  assert.equal(a.assumedGangSize, 4);
+  assert.equal(a.importedLabourManDays, 20);
+  assert.equal(a.importedActualLabourManDays, 24);
+  assert.equal(a.budgetLabourHours, 160);
+  assert.equal(parsed.assignments[1].sharedCrewWith, "HVB - F-INST");
+  assert.equal(quantityBaseline(a, 100, "m²").planned_man_day_productivity, 5);
+  sheets.TASKRSRC.splice(1, 1);
+  const roofOnly = parseP6Workbook(sheets, "project", "import", mapping, [], 8).activities[0];
+  assert.equal(roofOnly.assumedGangSize, 4);
+  assert.equal(roofOnly.importedLabourManDays, 20);
+});
