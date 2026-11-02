@@ -18,6 +18,7 @@ import {
   validateProjectBackup,
 } from "@/lib/projectBackup";
 import type { LabourRateSettings, Project } from "@/types/site";
+import { saveProjectSettings } from "@/lib/supabase/projectData";
 import UsersAccessPanel from "@/components/UsersAccessPanel";
 import OrganisationPanel from "@/components/OrganisationPanel";
 
@@ -83,7 +84,7 @@ export default function SettingsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  function saveRateSettings(event: FormEvent<HTMLFormElement>) {
+  async function saveRateSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!project) return;
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(rateSettings.backshiftStart) || !Number.isFinite(rateSettings.backshiftMultiplier) || rateSettings.backshiftMultiplier <= 0) {
@@ -91,6 +92,12 @@ export default function SettingsPage() {
       return;
     }
     const nextProject = { ...project, labourRateSettings: normaliseLabourRateSettings(rateSettings) };
+    try {
+      await saveProjectSettings(nextProject);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save project settings.");
+      return;
+    }
     updateProject(nextProject);
     setProject(nextProject);
     setRateSettings(nextProject.labourRateSettings);
@@ -107,13 +114,19 @@ export default function SettingsPage() {
     }));
   }
 
-  function saveFactorThresholds(event: FormEvent<HTMLFormElement>) {
+  async function saveFactorThresholds(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!project || !(factorThresholds.greenMax > 0) || factorThresholds.amberMax < factorThresholds.greenMax) {
       setError("Productivity Factor Amber maximum must be at least the Green maximum.");
       return;
     }
     const nextProject = { ...project, productivityFactorThresholds: normaliseProductivityFactorThresholds(factorThresholds) };
+    try {
+      await saveProjectSettings(nextProject);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save project settings.");
+      return;
+    }
     updateProject(nextProject); setProject(nextProject); setFactorThresholds(nextProject.productivityFactorThresholds); setError(""); setMessage("Productivity Factor thresholds saved for this project.");
   }
 
