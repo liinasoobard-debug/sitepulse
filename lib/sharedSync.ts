@@ -5,8 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 export const SHARED_STATE_TABLE = "sitepulse_shared_state";
 export const SHARED_SYNC_EVENT = "sitepulse-shared-data-changed";
 
+// Project metadata is NOT synced here: it lives in the RLS-protected
+// sitepulse_projects table (see lib/supabase/projectData.ts).
 const SHARED_KEY_PREFIXES = [
-  "sitepulse-projects",
   "sitepulse-operatives-project-",
   "sitepulse-day-project-",
 ];
@@ -39,7 +40,7 @@ export function getLocalSharedRecords(projectId?: string): Map<string, unknown> 
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
     if (!key || !isSharedStorageKey(key)) continue;
-    if (projectId && key !== "sitepulse-projects" && !key.includes(projectId)) continue;
+    if (projectId && !key.includes(projectId)) continue;
     const value = localStorage.getItem(key);
     if (value === null) continue;
     try {

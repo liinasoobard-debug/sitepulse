@@ -64,7 +64,7 @@ export async function loadTimelineEvents(projectId: string, date: string): Promi
   const supabase = createClient();
   const [{ data, error }, evidenceResult] = await Promise.all([
     supabase.from("timeline_events").select("*,timeline_event_photos(storage_path),timeline_event_labour(operative_id),plant_usage(plant_hire_record_id)").eq("project_id", projectId).eq("event_date", date).is("deleted_at", null).order("start_time"),
-    supabase.from("evidence_records").select("record_id,storage_path").eq("project_id",projectId).eq("record_type","timeline"),
+    supabase.from("evidence_records").select("record_id,storage_path").eq("project_id",projectId).eq("record_type","timeline").is("deleted_at",null),
   ]);
   if (error) throw error;
   return Promise.all(

@@ -6,6 +6,7 @@ import { completedP6Productivity } from "@/lib/programmeResources";
 import ProductivityRagBadge from "@/components/ProductivityRagBadge";
 import { productivityPerformance, productivityRag, productivityRagLabels, ragDistribution, type ProductivityRag } from "@/lib/productivityRag";
 import { getActiveProject, getActiveProjectId, updateProject } from "@/lib/storage";
+import { saveProjectSettings } from "@/lib/supabase/projectData";
 import { loadConstraintLinks, loadConstraints } from "@/lib/supabase/constraintData";
 import type { ConstraintActivityLink, ConstraintRecord } from "@/lib/constraints";
 import {
@@ -167,7 +168,11 @@ export default function ProgrammePage() {
       form.set("sourceType", importSource);
       form.set("hoursPerManDay", String(hoursPerManDay));
       const activeProject = getActiveProject();
-      if (activeProject && activeProject.hoursPerManDay !== hoursPerManDay) updateProject({ ...activeProject, hoursPerManDay });
+      if (activeProject && activeProject.hoursPerManDay !== hoursPerManDay) {
+        const nextProject = { ...activeProject, hoursPerManDay };
+        updateProject(nextProject);
+        saveProjectSettings(nextProject).catch((caught) => console.error(caught instanceof Error ? caught.message : caught));
+      }
       const response = await fetch("/api/programme/import", {
         method: "POST",
         body: form,

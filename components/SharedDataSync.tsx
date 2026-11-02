@@ -10,8 +10,8 @@ import {
   SHARED_STATE_TABLE,
   type SharedStateRow,
 } from "@/lib/sharedSync";
-import { ACTIVE_PROJECT_STORAGE_KEY, getActiveProjectId, loadProjects } from "@/lib/storage";
-import type { Project } from "@/types/site";
+import { ACTIVE_PROJECT_STORAGE_KEY, PROJECTS_STORAGE_KEY, getActiveProjectId, loadProjects } from "@/lib/storage";
+import { loadAccessibleProjects } from "@/lib/supabase/projectData";
 
 type SyncStatus = "connecting" | "synced" | "offline" | "setup-required";
 
@@ -31,15 +31,40 @@ export default function SharedDataSync({ children }: { children: React.ReactNode
     let channel: ReturnType<typeof supabase.channel> | undefined;
 
     async function startSync() {
-      const localProjects = loadProjects();
-      const projectId = localProjects.length ? getActiveProjectId() : "";
+      // 1. Project list comes from the RLS-protected projects table only.
+      try {
+        const projects = await loadAccessibleProjects();
+        if (!active) return;
+        localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+        const storedActive = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+        const firstLive = projects.find((project) => !project.isArchived) ?? projects[0];
+        if (firstLive && !projects.some((project) => project.id === storedActive && !project.isArchived)) {
+          localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, firstLive.id);
+        }
+        if (!projects.length) {
+          localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+          console.warn("No SitePulse projects are available for this account.");
+        }
+      } catch (caught) {
+        console.error(caught instanceof Error ? caught.message : caught);
+        setStatus("offline");
+        setReady(true);
+        return;
+      }
+
+      // 2. Per-project shared records (operatives and site days).
+      const projectId = loadProjects().length ? getActiveProjectId() : "";
+      if (!projectId) {
+        setStatus("synced");
+        setReady(true);
+        return;
+      }
       const operativeKey = `sitepulse-operatives-project-${projectId}`;
       const dayPrefix = `sitepulse-day-project-${projectId}-%`;
-      let remoteQuery = supabase.from(SHARED_STATE_TABLE).select("record_key,payload,client_id,updated_at");
-      remoteQuery = projectId
-        ? remoteQuery.or(`record_key.eq.sitepulse-projects,record_key.eq.${operativeKey},record_key.like.${dayPrefix}`)
-        : remoteQuery.eq("record_key", "sitepulse-projects");
-      const { data, error } = await remoteQuery;
+      const { data, error } = await supabase
+        .from(SHARED_STATE_TABLE)
+        .select("record_key,payload,client_id,updated_at")
+        .or(`record_key.eq.${operativeKey},record_key.like.${dayPrefix}`);
 
       if (!active) return;
       if (error) {
@@ -64,42 +89,6 @@ export default function SharedDataSync({ children }: { children: React.ReactNode
         if (seedError) console.error("Unable to upload existing SitePulse data:", seedError.message);
       } else {
         remoteRecords.forEach(applyRemoteRecord);
-      }
-
-      const { data: memberships, error: membershipError } = await supabase
-        .from("sitepulse_project_members")
-        .select("project_id")
-        .order("project_id");
-      if (membershipError) {
-        console.error("Unable to recover project memberships:", membershipError.message);
-      } else {
-        const accessibleIds = [...new Set((memberships ?? []).map((row) => String(row.project_id)))];
-        const stored = loadProjects();
-        const validStored = stored.filter((project) => accessibleIds.includes(project.id));
-        const missingIds = accessibleIds.filter((id) => !validStored.some((project) => project.id === id));
-        if (missingIds.length) {
-          const recovered: Project[] = missingIds.map((id, index) => ({
-            id,
-            name: accessibleIds.length === 1 ? "Test Project" : `Recovered Project ${index + 1}`,
-            code: accessibleIds.length === 1 ? "TEST-001" : `REC-${id.slice(0, 6).toUpperCase()}`,
-            createdAt: new Date().toISOString(),
-          }));
-          const projects = [...validStored, ...recovered];
-          localStorage.setItem("sitepulse-projects", JSON.stringify(projects));
-          localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, projects[0].id);
-          const { error: recoveryError } = await supabase.from(SHARED_STATE_TABLE).upsert({
-            record_key: "sitepulse-projects",
-            payload: projects,
-            client_id: clientId,
-          });
-          if (recoveryError) console.error("Unable to persist recovered project list:", recoveryError.message);
-        }
-      }
-
-      // A fresh hostname has no local project context. Do not manufacture and
-      // upload a default project before the authoritative shared list arrives.
-      if (!loadProjects().length && !remoteRecords.some((row) => row.record_key === "sitepulse-projects")) {
-        console.warn("No shared SitePulse project list is available for this account.");
       }
 
       if (!active) return;
